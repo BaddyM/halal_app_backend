@@ -1,0 +1,166 @@
+generator client {
+    provider = "prisma-client-js"
+    //   output   = "../generated/prisma"
+}
+
+datasource db {
+    provider = "mysql"
+    url      = env("DATABASE_URL")
+}
+
+model User {
+    id             String          @id @default(uuid())
+    name           String
+    email          String          @unique
+    password       String
+    role           Role
+    profilePicture String?
+    isActive       Boolean         @default(false)
+    accessToken    String?
+    Stock          Stock[]
+    Order          Order[]
+    Service        Service[]
+    Payment        Payment[]
+    createdAt      DateTime        @default(now())
+    updatedAt      DateTime        @updatedAt
+    Expense        Expense[]
+    Staff          Staff[]
+    Notifications  Notifications[]
+}
+
+enum Role {
+    ADMIN
+    BAR
+    SAUNA
+    PARKING
+    KITCHEN
+}
+
+model Order {
+    id        String      @id @default(uuid())
+    customer  String?
+    table     String
+    items     String
+    status    OrderStatus @default(PENDING)
+    Payment   Payment[]
+    userId    String
+    user      User        @relation(fields: [userId], references: [id])
+    createdAt DateTime    @default(now())
+    updatedAt DateTime    @updatedAt
+}
+
+enum OrderStatus {
+    PENDING
+    SERVED
+    PREPARING
+    FAILED
+}
+
+model Service {
+    id          String      @id @default(uuid())
+    userId      String
+    user        User        @relation(fields: [userId], references: [id])
+    customer    String?
+    phoneNumber String?
+    service     ServiceList
+    Payment     Payment[]
+    duration    Int
+    memo        String?     @db.LongText
+    createdAt   DateTime    @default(now())
+    updatedAt   DateTime    @updatedAt
+}
+
+enum ServiceList {
+    SAUNA
+    PARKING
+    GARDENS
+}
+
+model Payment {
+    id        String        @id @default(uuid())
+    userId    String
+    user      User          @relation(fields: [userId], references: [id])
+    orderId   String?
+    order     Order?        @relation(fields: [orderId], references: [id])
+    serviceId String?
+    service   Service?      @relation(fields: [serviceId], references: [id])
+    amount    Int           @default(0)
+    status    PaymentStatus @default(PENDING)
+    createdAt DateTime      @default(now())
+    updatedAt DateTime      @updatedAt
+}
+
+enum PaymentStatus {
+    PENDING
+    CANCELLED
+    PAID
+}
+
+model Stock {
+    id        String        @id @default(uuid())
+    userId    String
+    user      User          @relation(fields: [userId], references: [id])
+    item      String
+    category  StockCategory
+    qty       Int           @default(1)
+    UnitPrice Int
+    image     String?
+    status    StockStatus   @default(AVAILABLE)
+    createdAt DateTime      @default(now())
+    updatedAt DateTime      @updatedAt
+}
+
+enum StockCategory {
+    PRODUCE
+    DRINKS
+    MEAT
+    DRY_GOODS
+    OTHERS
+}
+
+enum StockStatus {
+    AVAILABLE
+    OUT_OF_STOCK
+    LOW_STOCK
+}
+
+model Expense {
+    id        String   @id @default(uuid())
+    item      String
+    amount    Int      @default(0)
+    userId    String
+    user      User     @relation(fields: [userId], references: [id])
+    createdAt DateTime @default(now())
+    updatedAt DateTime @updatedAt
+}
+
+model Staff {
+    id         String             @id @default(uuid())
+    name       String
+    baseSalary Int
+    role       String
+    payPeriod  DateTime?
+    status     StaffPaymentStatus @default(PENDING)
+    userId     String
+    user       User               @relation(fields: [userId], references: [id])
+    createdAt  DateTime           @default(now())
+    updatedAt  DateTime           @updatedAt
+}
+
+enum StaffPaymentStatus {
+    PENDING
+    PAID
+    FAILED
+}
+
+model Notifications {
+    id        String   @id @default(uuid())
+    title     String
+    message   String
+    to        String
+    userId    String
+    user      User     @relation(fields: [userId], references: [id])
+    read      Boolean  @default(false)
+    createdAt DateTime @default(now())
+    updatedAt DateTime @updatedAt
+}
