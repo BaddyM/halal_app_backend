@@ -21,11 +21,27 @@ model User {
     Order          Order[]
     Service        Service[]
     Payment        Payment[]
-    createdAt      DateTime        @default(now())
-    updatedAt      DateTime        @updatedAt
     Expense        Expense[]
     Staff          Staff[]
     Notifications  Notifications[]
+    createdAt      DateTime        @default(now())
+    updatedAt      DateTime        @updatedAt
+    Attendance     Attendance[]
+}
+
+model Attendance {
+    id        String           @id @default(uuid())
+    userId    String
+    user      User             @relation(fields: [userId], references: [id])
+    status    AttendanceStatus @default(PRESENT)
+    memo      String?          @db.LongText
+    createdAt DateTime         @default(now())
+    updatedAt DateTime         @updatedAt
+}
+
+enum AttendanceStatus {
+    PRESENT
+    ABSENT
 }
 
 enum Role {
@@ -36,15 +52,40 @@ enum Role {
     KITCHEN
 }
 
-model Order {
+model Table {
     id        String      @id @default(uuid())
-    customer  String?
-    table     String
-    items     String
+    name      String
+    status    TableStatus @default(FREE)
+    createdAt DateTime    @default(now())
+    updatedAt DateTime    @updatedAt
+}
+
+enum TableStatus {
+    TAKEN
+    FREE
+}
+
+model Order {
+    id           String         @id @default(uuid())
+    customer     String?
+    table        String
+    items        String
+    status       OrderStatus    @default(PENDING)
+    Payment      Payment[]
+    userId       String
+    user         User           @relation(fields: [userId], references: [id])
+    createdAt    DateTime       @default(now())
+    updatedAt    DateTime       @updatedAt
+    KitchenOrder KitchenOrder[]
+}
+
+model KitchenOrder {
+    id        String      @id @default(uuid())
+    orderId   String
+    order     Order       @relation(fields: [orderId], references: [id])
+    item      String      @db.LongText
+    estTime   String?
     status    OrderStatus @default(PENDING)
-    Payment   Payment[]
-    userId    String
-    user      User        @relation(fields: [userId], references: [id])
     createdAt DateTime    @default(now())
     updatedAt DateTime    @updatedAt
 }
@@ -64,7 +105,7 @@ model Service {
     phoneNumber String?
     service     ServiceList
     Payment     Payment[]
-    duration    Int
+    duration    String
     memo        String?     @db.LongText
     createdAt   DateTime    @default(now())
     updatedAt   DateTime    @updatedAt
@@ -84,7 +125,9 @@ model Payment {
     order     Order?        @relation(fields: [orderId], references: [id])
     serviceId String?
     service   Service?      @relation(fields: [serviceId], references: [id])
+    paid      Int           @default(0)
     amount    Int           @default(0)
+    balance   Int           @default(0)
     status    PaymentStatus @default(PENDING)
     createdAt DateTime      @default(now())
     updatedAt DateTime      @updatedAt
@@ -103,7 +146,7 @@ model Stock {
     item      String
     category  StockCategory
     qty       Int           @default(1)
-    UnitPrice Int
+    UnitPrice Int           @default(0)
     image     String?
     status    StockStatus   @default(AVAILABLE)
     createdAt DateTime      @default(now())
@@ -135,16 +178,26 @@ model Expense {
 }
 
 model Staff {
-    id         String             @id @default(uuid())
+    id         String          @id @default(uuid())
     name       String
-    baseSalary Int
+    baseSalary Int             @default(0)
     role       String
     payPeriod  DateTime?
-    status     StaffPaymentStatus @default(PENDING)
     userId     String
-    user       User               @relation(fields: [userId], references: [id])
-    createdAt  DateTime           @default(now())
-    updatedAt  DateTime           @updatedAt
+    user       User            @relation(fields: [userId], references: [id])
+    salary     SalaryPayment[]
+    createdAt  DateTime        @default(now())
+    updatedAt  DateTime        @updatedAt
+}
+
+model SalaryPayment {
+    id         String   @id @default(uuid())
+    staffId    String
+    staff      Staff    @relation(fields: [staffId], references: [id])
+    amountPaid Int      @default(0)
+    period     String
+    createdAt  DateTime @default(now())
+    updatedAt  DateTime @updatedAt
 }
 
 enum StaffPaymentStatus {

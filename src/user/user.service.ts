@@ -38,6 +38,14 @@ export class UserService {
                     not: "arnoldhenry958@gmail.com",
                 }
             },
+            select:{
+                id:true,
+                name:true,
+                email:true,
+                profilePicture:true,
+                isActive:true,
+                role:true
+            }
         });
         return data;
     }

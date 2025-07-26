@@ -33,7 +33,7 @@ export class UserController {
 
     @ApiBearerAuth()
     @UseGuards(AuthGuard)
-    @Get()
+    @Get("all")
     findAll() {
         return this.userService.findAll();
     }

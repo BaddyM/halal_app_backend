@@ -1,0 +1,62 @@
+import { Injectable } from '@nestjs/common';
+import { CreateServiceDto } from './dto/create-service.dto';
+import { UpdateServiceDto } from './dto/update-service.dto';
+import { PrismaService } from 'src/prisma/prisma.service';
+
+@Injectable()
+export class ServicesService {
+    constructor(private prisma: PrismaService) { }
+
+    async create(userId: string, createServiceDto: CreateServiceDto) {
+        const data = await this.prisma.service.create({
+            data: {
+                userId: userId,
+                customer: createServiceDto.customer,
+                phoneNumber: createServiceDto.phoneNumber,
+                service: createServiceDto.service,
+                memo: createServiceDto.memo,
+                duration: createServiceDto.duration,
+            }
+        });
+        return data;
+    }
+
+    async findAll(page: number, limit: number) {
+        const data = await this.prisma.service.findMany({
+            take: limit,
+            skip: (page - 1) * limit,
+            orderBy: {
+                createdAt: "desc",
+            }
+        });
+        return data;
+    }
+
+    async findOne(id: string) {
+        const data = await this.prisma.service.findUnique({
+            where: {
+                id: id,
+            }
+        });
+        return data;
+    }
+
+    async update(id: string, updateServiceDto: UpdateServiceDto) {
+        const data = await this.prisma.service.update({
+            where: {
+                id: id,
+            },
+            data: updateServiceDto,
+        });
+        return data;
+    }
+
+    async remove(id: string) {
+        const data = await this.prisma.service.delete({
+            where: {
+                id: id,
+            },
+        });
+        return data;
+    }
+}

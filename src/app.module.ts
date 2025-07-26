@@ -4,6 +4,14 @@ import { PrismaModule } from './prisma/prisma.module';
 import { AuthModule } from './auth/auth.module';
 import { ConfigModule } from '@nestjs/config';
 import { JwtModule } from '@nestjs/jwt';
+import { DashboardModule } from './dashboard/dashboard.module';
+import { OrderModule } from './order/order.module';
+import { StockModule } from './stock/stock.module';
+import { ServicesModule } from './services/services.module';
+import { AttendanceModule } from './attendance/attendance.module';
+import { SalaryModule } from './salary/salary.module';
+import { StaffModule } from './staff/staff.module';
+import { ExpenseModule } from './expense/expense.module';
 
 @Module({
   imports: [
@@ -14,7 +22,12 @@ import { JwtModule } from '@nestjs/jwt';
       secret: process.env.SYSTEM_SECRET,
       signOptions: { expiresIn: '30d' },
     }),
-    UserModule, PrismaModule, AuthModule],
+    UserModule, 
+    PrismaModule, 
+    AuthModule, 
+    DashboardModule, 
+    OrderModule, StockModule, ServicesModule, AttendanceModule, SalaryModule, StaffModule, ExpenseModule,
+],
   controllers: [],
   providers: [],
 })
