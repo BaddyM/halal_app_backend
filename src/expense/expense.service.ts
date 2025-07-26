@@ -1,26 +1,58 @@
 import { Injectable } from '@nestjs/common';
 import { CreateExpenseDto } from './dto/create-expense.dto';
 import { UpdateExpenseDto } from './dto/update-expense.dto';
+import { PrismaService } from 'src/prisma/prisma.service';
 
 @Injectable()
 export class ExpenseService {
-  create(createExpenseDto: CreateExpenseDto) {
-    return 'This action adds a new expense';
-  }
+    constructor(private prisma: PrismaService) { }
 
-  findAll() {
-    return `This action returns all expense`;
-  }
+    async create(userId: string, createExpenseDto: CreateExpenseDto) {
+        const data = await this.prisma.expense.create({
+            data: {
+                userId: userId,
+                ...createExpenseDto,
+            }
+        });
+        return data;
+    }
 
-  findOne(id: number) {
-    return `This action returns a #${id} expense`;
-  }
+    async findAll(page: number, limit: number, from: string, to: string) {
+        const data = await this.prisma.expense.findMany({
+            take: limit,
+            skip: (page - 1) * limit,
+            orderBy: {
+                createdAt: "desc",
+            },
+            include:{
+                user:{
+                    select:{
+                        name:true,
+                        email:true,
+                        role:true,
+                    }
+                }
+            }
+        });
+        return data;
+    }
 
-  update(id: number, updateExpenseDto: UpdateExpenseDto) {
-    return `This action updates a #${id} expense`;
-  }
+    async update(id: string, updateExpenseDto: UpdateExpenseDto) {
+        const data = await this.prisma.expense.update({
+            where: {
+                id: id,
+            },
+            data: updateExpenseDto,
+        });
+        return data;
+    }
 
-  remove(id: number) {
-    return `This action removes a #${id} expense`;
-  }
+    async remove(id: string) {
+        const data = await this.prisma.expense.delete({
+            where: {
+                id: id,
+            }
+        });
+        return data;
+    }
 }

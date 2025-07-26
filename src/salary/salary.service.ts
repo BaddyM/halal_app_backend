@@ -31,6 +31,16 @@ export class SalaryService {
         const data = await this.prisma.salaryPayment.findMany({
             take: limit,
             skip: (page - 1) * limit,
+            include:{
+                staff:{
+                    select:{
+                        name:true,
+                        baseSalary:true,
+                        payPeriod:true,
+                        role:true,
+                    }
+                },
+            }
         });
         return data;
     }
