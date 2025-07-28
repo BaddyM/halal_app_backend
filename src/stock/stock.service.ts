@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { CreateStockDto } from './dto/create-stock.dto';
 import { UpdateStockDto } from './dto/update-stock.dto';
 import { PrismaService } from 'src/prisma/prisma.service';
+import { StockCategory } from '@prisma/client';
 
 @Injectable()
 export class StockService {
@@ -20,7 +21,30 @@ export class StockService {
         return data;
     }
 
-    async findAll(page: number, limit: number) {
+    async findAll(page: number, limit: number, stockType?: StockCategory) {
+        if (stockType != undefined) {
+            const data = await this.prisma.stock.findMany({
+                take: limit,
+                skip: (page - 1) * limit,
+                where:{
+                    category:stockType
+                },
+                include: {
+                    user: {
+                        select: {
+                            name: true,
+                            email: true,
+                            role: true,
+                            isActive: true,
+                        }
+                    },
+                },
+                orderBy: {
+                    createdAt: "desc"
+                }
+            });
+            return data;
+        }
         const data = await this.prisma.stock.findMany({
             take: limit,
             skip: (page - 1) * limit,
@@ -34,6 +58,9 @@ export class StockService {
                     }
                 },
             },
+            orderBy: {
+                createdAt: "desc"
+            }
         });
         return data;
     }

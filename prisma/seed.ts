@@ -1,5 +1,5 @@
 // prisma/seed.ts
-import { PrismaClient, Role, StockCategory } from '@prisma/client';
+import { OrderType, PrismaClient, Role, StockCategory } from '@prisma/client';
 const bcrypt = require("bcryptjs")
 const prisma = new PrismaClient();
 
@@ -15,6 +15,14 @@ interface User {
     email: string,
     password: string,
     role: Role,
+}
+
+interface Order {
+    customer: string,
+    table: string,
+    itemId: string,
+    orderType: OrderType,
+    userId: string,
 }
 
 async function main() {
@@ -80,14 +88,51 @@ async function main() {
         }
     ];
 
-    for (let i = 0; i < users.length; i++) {
-        let password = await bcrypt.hash(users[i].password, 10);
-        await prisma.user.create({
+    // for (let i = 0; i < users.length; i++) {
+    //     let password = await bcrypt.hash(users[i].password, 10);
+    //     await prisma.user.create({
+    //         data: {
+    //             name: users[i].name,
+    //             email: users[i].email,
+    //             password: password,
+    //             role: users[i].role,
+    //         }
+    //     });
+    // }
+
+    //Orders
+    const orders: Order[] = [
+        {
+            customer: "Mark",
+            table: "1",
+            itemId: "f4fdf681-3c6d-436e-931e-7f30cce50bdb",
+            orderType: "KITCHEN",
+            userId: "e705ed16-3d75-40ca-9bcb-47bb1196e12f",
+        },
+        {
+            customer: "George",
+            table: "5",
+            itemId: "Soda",
+            orderType: "BAR",
+            userId: "e705ed16-3d75-40ca-9bcb-47bb1196e12f",
+        },
+        {
+            customer: "Ruth",
+            table: "2",
+            itemId: "Matooke and Beans",
+            orderType: "KITCHEN",
+            userId: "e705ed16-3d75-40ca-9bcb-47bb1196e12f",
+        },
+    ];
+
+    for (let i = 0; i < orders.length; i++) {
+        await prisma.order.create({
             data: {
-                name: users[i].name,
-                email: users[i].email,
-                password: password,
-                role: users[i].role,
+                customer: orders[i].customer,
+                table: orders[i].table,
+                itemId: orders[i].itemId,
+                orderType: orders[i].orderType,
+                userId: orders[i].userId,
             }
         });
     }

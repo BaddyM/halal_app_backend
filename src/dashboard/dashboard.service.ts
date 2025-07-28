@@ -6,18 +6,27 @@ export class DashboardService {
     constructor(private prisma: PrismaService) { }
 
     async summary() {
+        const now = new Date();
+        const startOfDay = new Date(now.setHours(0, 0, 0, 0));
+        const endOfDay = new Date(now.setHours(24, 0, 0, 0));
         const todayRevenue = await this.prisma.payment.aggregate({
             _sum: {
-                amount: true,
+                paid: true,
             },
             where: {
-                createdAt: new Date(),
+                createdAt: {
+                    gte: startOfDay,
+                    lt: endOfDay,
+                },
             }
         });
         const activeOrders = await this.prisma.order.count({
             where: {
                 status: "PENDING",
-                createdAt: new Date(),
+                createdAt: {
+                    gte: startOfDay,
+                    lt: endOfDay,
+                },
             },
             select: {
                 status: true,
@@ -26,23 +35,29 @@ export class DashboardService {
 
         const totalCustomers = await this.prisma.payment.count({
             where: {
-                createdAt: new Date(),
+                createdAt: {
+                    gte: startOfDay,
+                    lt: endOfDay,
+                },
             }
         });
 
         const activeOrdersList = await this.prisma.order.findMany({
             where: {
                 status: "PENDING",
-                createdAt: new Date(),
+                createdAt: {
+                    gte: startOfDay,
+                    lt: endOfDay,
+                },
             },
-            take:10,
+            take: 10,
         });
 
         const data = {
-            todayRevenue: todayRevenue._sum.amount ?? 0,
+            todayRevenue: todayRevenue._sum.paid ?? 0,
             activeOrders: activeOrders.status,
             totalCustomers: totalCustomers ?? 0,
-            activeOrdersList:activeOrdersList,
+            activeOrdersList: activeOrdersList,
         };
         return data;
     }

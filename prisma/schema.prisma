@@ -66,55 +66,60 @@ enum TableStatus {
 }
 
 model Order {
-    id           String         @id @default(uuid())
-    customer     String?
-    table        String
-    items        String
-    status       OrderStatus    @default(PENDING)
-    Payment      Payment[]
-    userId       String
-    user         User           @relation(fields: [userId], references: [id])
-    createdAt    DateTime       @default(now())
-    updatedAt    DateTime       @updatedAt
-    KitchenOrder KitchenOrder[]
+    id            String      @id @default(uuid())
+    customer      String?
+    table         String
+    itemId        String
+    item          Stock       @relation(fields: [itemId], references: [id])
+    qty           Int         @default(1)
+    status        OrderStatus @default(PENDING)
+    kitchenStatus OrderStatus @default(PENDING)
+    orderType     OrderType   @default(BAR)
+    Payment       Payment[]
+    userId        String
+    user          User        @relation(fields: [userId], references: [id])
+    createdAt     DateTime    @default(now())
+    updatedAt     DateTime    @updatedAt
 }
 
-model KitchenOrder {
-    id        String      @id @default(uuid())
-    orderId   String
-    order     Order       @relation(fields: [orderId], references: [id])
-    item      String      @db.LongText
-    estTime   String?
-    status    OrderStatus @default(PENDING)
-    createdAt DateTime    @default(now())
-    updatedAt DateTime    @updatedAt
+enum OrderType {
+    KITCHEN
+    BAR
 }
 
 enum OrderStatus {
     PENDING
     SERVED
     PREPARING
-    FAILED
+    CANCELLED
 }
 
 model Service {
-    id          String      @id @default(uuid())
+    id          String        @id @default(uuid())
     userId      String
-    user        User        @relation(fields: [userId], references: [id])
+    user        User          @relation(fields: [userId], references: [id])
     customer    String?
     phoneNumber String?
     service     ServiceList
     Payment     Payment[]
+    amount      Int           @default(0)
+    status      ServiceStatus @default(PENDING)
     duration    String
-    memo        String?     @db.LongText
-    createdAt   DateTime    @default(now())
-    updatedAt   DateTime    @updatedAt
+    memo        String?       @db.LongText
+    createdAt   DateTime      @default(now())
+    updatedAt   DateTime      @updatedAt
 }
 
 enum ServiceList {
     SAUNA
     PARKING
     GARDENS
+}
+
+enum ServiceStatus {
+    PAID
+    PENDING
+    CANCELLED
 }
 
 model Payment {
@@ -126,8 +131,6 @@ model Payment {
     serviceId String?
     service   Service?      @relation(fields: [serviceId], references: [id])
     paid      Int           @default(0)
-    amount    Int           @default(0)
-    balance   Int           @default(0)
     status    PaymentStatus @default(PENDING)
     createdAt DateTime      @default(now())
     updatedAt DateTime      @updatedAt
@@ -143,7 +146,7 @@ model Stock {
     id        String        @id @default(uuid())
     userId    String
     user      User          @relation(fields: [userId], references: [id])
-    item      String
+    item      String        @unique
     category  StockCategory
     qty       Int           @default(1)
     UnitPrice Int           @default(0)
@@ -151,11 +154,13 @@ model Stock {
     status    StockStatus   @default(AVAILABLE)
     createdAt DateTime      @default(now())
     updatedAt DateTime      @updatedAt
+    Order     Order[]
 }
 
 enum StockCategory {
     PRODUCE
     DRINKS
+    FOOD
     MEAT
     DRY_GOODS
     OTHERS

@@ -44,7 +44,11 @@ export class UserService {
                 email:true,
                 profilePicture:true,
                 isActive:true,
-                role:true
+                role:true,
+                createdAt:true,
+            },
+            orderBy:{
+                createdAt:"desc"
             }
         });
         return data;

@@ -1,5 +1,5 @@
 import { ApiProperty } from "@nestjs/swagger";
-import { StockCategory } from "@prisma/client";
+import { StockCategory, StockStatus } from "@prisma/client";
 import { IsEnum, IsNotEmpty, IsNumber, IsOptional, IsString } from "class-validator";
 
 export class CreateStockDto {
@@ -18,8 +18,13 @@ export class CreateStockDto {
     @IsNotEmpty()
     qty: number;
 
-    @ApiProperty({ name: "unit_price", example: "1", type: "number" })
+    @ApiProperty({ name: "UnitPrice", example: "1", type: "number" })
     @IsNumber()
     @IsOptional()
     unit_price: number;
+
+    @ApiProperty({ name: "status", example: "AVAILABLE", type: "string" })
+    @IsEnum(StockStatus,{message:"Please select the right status"})
+    @IsOptional()
+    status: StockStatus;
 }

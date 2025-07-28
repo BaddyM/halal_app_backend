@@ -50,7 +50,7 @@ export class UserController {
     @UseGuards(AuthGuard)
     @ApiParam({name:"userId"})
     @Patch(':userId')
-    update(@Param('id') userId: string, @Body() updateUserDto: UpdateUserDto) {
+    update(@Param('userId') userId: string, @Body() updateUserDto: UpdateUserDto) {
         return this.userService.update(userId, updateUserDto);
     }
 

@@ -1,5 +1,5 @@
 import { ApiProperty } from "@nestjs/swagger";
-import { ServiceList } from "@prisma/client";
+import { ServiceList, ServiceStatus } from "@prisma/client";
 import { IsEnum, IsNotEmpty, IsNumber, IsOptional, IsString } from "class-validator";
 
 export class CreateServiceDto {
@@ -8,23 +8,33 @@ export class CreateServiceDto {
     @IsNotEmpty()
     service: ServiceList;
 
-    @ApiProperty({name:"customer",type:"string"})
+    @ApiProperty({ name: "customer", type: "string" })
     @IsString()
     @IsOptional()
-    customer:string;
+    customer: string;
 
-    @ApiProperty({name:"phoneNumber",type:"string"})
+    @ApiProperty({ name: "phoneNumber", type: "string" })
     @IsString()
     @IsOptional()
-    phoneNumber:string;
+    phoneNumber: string;
 
-    @ApiProperty({name:"duration",type:"string"})
+    @ApiProperty({ name: "amount", type: "number" })
+    @IsNumber()
+    @IsNotEmpty()
+    amount: number;
+
+    @ApiProperty({ name: "duration", type: "string" })
     @IsString()
     @IsNotEmpty()
-    duration:string;
+    duration: string;
 
-    @ApiProperty({name:"memo",type:"string"})
+    @ApiProperty({ name: "memo", type: "string" })
     @IsString()
     @IsOptional()
-    memo:string;
+    memo: string;
+
+    @ApiProperty({ enum: ["PAID", "PENDING", "CANCELLED"] })
+    @IsEnum(ServiceStatus, { message: "Select a service" })
+    @IsOptional()
+    status: ServiceStatus;
 }

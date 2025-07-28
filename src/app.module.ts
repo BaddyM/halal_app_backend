@@ -12,6 +12,8 @@ import { AttendanceModule } from './attendance/attendance.module';
 import { SalaryModule } from './salary/salary.module';
 import { StaffModule } from './staff/staff.module';
 import { ExpenseModule } from './expense/expense.module';
+import { PaymentModule } from './payment/payment.module';
+import { PrinterModule } from './printer/printer.module';
 
 @Module({
   imports: [
@@ -26,7 +28,7 @@ import { ExpenseModule } from './expense/expense.module';
     PrismaModule, 
     AuthModule, 
     DashboardModule, 
-    OrderModule, StockModule, ServicesModule, AttendanceModule, SalaryModule, StaffModule, ExpenseModule,
+    OrderModule, StockModule, ServicesModule, AttendanceModule, SalaryModule, StaffModule, ExpenseModule, PaymentModule, PrinterModule,
 ],
   controllers: [],
   providers: [],

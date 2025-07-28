@@ -16,6 +16,7 @@ export class ServicesService {
                 service: createServiceDto.service,
                 memo: createServiceDto.memo,
                 duration: createServiceDto.duration,
+                amount: createServiceDto.amount,
             }
         });
         return data;
@@ -27,6 +28,13 @@ export class ServicesService {
             skip: (page - 1) * limit,
             orderBy: {
                 createdAt: "desc",
+            },
+            include: {
+                Payment: {
+                    select: {
+                        paid: true,
+                    }
+                }
             }
         });
         return data;

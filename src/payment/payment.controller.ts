@@ -1,25 +1,21 @@
-import { Controller, Get, Post, Body, Patch, Param, Delete, UseGuards, Headers, Res, BadRequestException, Query } from '@nestjs/common';
-import { StockService } from './stock.service';
-import { CreateStockDto } from './dto/create-stock.dto';
-import { UpdateStockDto } from './dto/update-stock.dto';
-import { ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
-import { AuthGuard } from 'src/auth/auth.guard';
-import { PrismaService } from 'src/prisma/prisma.service';
+import { Controller, Get, Post, Body, Patch, Param, Delete, Query, Res, BadRequestException, Headers } from '@nestjs/common';
+import { PaymentService } from './payment.service';
+import { CreatePaymentDto } from './dto/create-payment.dto';
+import { UpdatePaymentDto } from './dto/update-payment.dto';
+import { ApiQuery } from '@nestjs/swagger';
 import { Response } from 'express';
-import { StockCategory } from '@prisma/client';
+import { PrismaService } from 'src/prisma/prisma.service';
 
-@ApiBearerAuth()
-@UseGuards(AuthGuard)
-@Controller('stock')
-export class StockController {
+@Controller('payment')
+export class PaymentController {
     constructor(
-        private readonly stockService: StockService,
+        private readonly paymentService: PaymentService,
         private prisma: PrismaService,
     ) { }
 
-    @Post("create")
+    @Post()
     async create(
-        @Body() createStockDto: CreateStockDto,
+        @Body() createPaymentDto: CreatePaymentDto,
         @Headers("authorization") authHeader: any,
         @Res() res: Response,
     ) {
@@ -33,7 +29,7 @@ export class StockController {
                     id: true,
                 }
             });
-            const data = await this.stockService.create(createStockDto, userIdFromToken!.id);
+            const data = await this.paymentService.create(userIdFromToken!.id, createPaymentDto);
             return res.status(200).json({
                 success: true,
                 data: data,
@@ -42,25 +38,31 @@ export class StockController {
             console.log(err);
             throw new BadRequestException({
                 success: false,
-                message: "User not Authorized",
+                message: `Error = ${err}`
             });
         }
     }
 
     @Get()
-    @ApiQuery({ name: "page", type: Number })
-    @ApiQuery({ name: "limit", type: Number })
-    @ApiQuery({ name: "category", required:false, })
+    @ApiQuery({ name: "page", type: "number" })
+    @ApiQuery({ name: "limit", type: "number" })
+    @ApiQuery({ name: "userId", type: "string", required: false, })
+    @ApiQuery({ name: "from", type: "string", required: false })
+    @ApiQuery({ name: "to", type: "string", required: false })
+    @ApiQuery({ name: "filter", type: "string", required: false })
+    @ApiQuery({ name: "status", type: "string", required: false })
     async findAll(
-        @Res() res: Response,
         @Query("page") page: string,
+        @Query("userId") userId: string,
         @Query("limit") limit: string,
-        @Query("category") category?: StockCategory,
+        @Query("from") from: string,
+        @Query("to") to: string,
+        @Res() res: Response,
     ) {
         try {
             const currentPage = page ?? 1;
             const currentLimit = limit ?? 20;
-            const data = await this.stockService.findAll(parseInt(currentPage), parseInt(currentLimit), category);
+            const data = await this.paymentService.findAll(parseInt(currentPage), parseInt(currentLimit), from, to,userId);
             return res.status(200).json({
                 success: true,
                 data: data,
@@ -69,27 +71,7 @@ export class StockController {
             console.log(err);
             throw new BadRequestException({
                 success: false,
-                error: `Error = ${err}`
-            });
-        }
-    }
-
-    @Get(':id')
-    async findOne(
-        @Param('id') id: string,
-        @Res() res: Response,
-    ) {
-        try {
-            const data = await this.stockService.findOne(id);
-            return res.status(200).json({
-                success: true,
-                data: data,
-            });
-        } catch (err) {
-            console.log(err);
-            throw new BadRequestException({
-                success: false,
-                error: `Error = ${err}`
+                message: `Error = ${err}`
             });
         }
     }
@@ -97,11 +79,11 @@ export class StockController {
     @Patch(':id')
     async update(
         @Param('id') id: string,
-        @Body() updateStockDto: UpdateStockDto,
+        @Body() updatePaymentDto: UpdatePaymentDto,
         @Res() res: Response,
     ) {
         try {
-            const data = await this.stockService.update(id, updateStockDto);
+            const data = await this.paymentService.update(id, updatePaymentDto);
             return res.status(200).json({
                 success: true,
                 data: data,
@@ -121,7 +103,7 @@ export class StockController {
         @Res() res: Response,
     ) {
         try {
-            const data = await this.stockService.remove(id);
+            const data = await this.paymentService.remove(id);
             return res.status(200).json({
                 success: true,
                 data: data,

@@ -18,18 +18,43 @@ export class ExpenseService {
     }
 
     async findAll(page: number, limit: number, from: string, to: string) {
+        if (from != undefined && to != undefined) {
+            const data = await this.prisma.expense.findMany({
+                take: limit,
+                skip: (page - 1) * limit,
+                orderBy: {
+                    createdAt: "desc",
+                },
+                include: {
+                    user: {
+                        select: {
+                            name: true,
+                            email: true,
+                            role: true,
+                        }
+                    }
+                },
+                where: {
+                    createdAt: {
+                        gte: new Date(from),
+                        lte: new Date(to),
+                    }
+                }
+            });
+            return data;
+        }
         const data = await this.prisma.expense.findMany({
             take: limit,
             skip: (page - 1) * limit,
             orderBy: {
                 createdAt: "desc",
             },
-            include:{
-                user:{
-                    select:{
-                        name:true,
-                        email:true,
-                        role:true,
+            include: {
+                user: {
+                    select: {
+                        name: true,
+                        email: true,
+                        role: true,
                     }
                 }
             }

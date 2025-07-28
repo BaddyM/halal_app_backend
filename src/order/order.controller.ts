@@ -6,6 +6,7 @@ import { PrismaService } from 'src/prisma/prisma.service';
 import { Response } from 'express';
 import { ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
 import { AuthGuard } from 'src/auth/auth.guard';
+import { OrderStatus, OrderType } from '@prisma/client';
 
 @ApiBearerAuth()
 @UseGuards(AuthGuard)
@@ -33,14 +34,21 @@ export class OrderController {
                 }
             });
             const data = await this.orderService.create(createOrderDto, userIdFromToken!.id);
-            return res.status(200).json({
-                success: true,
-                data: data,
-            });
+            if (!data) {
+                throw new BadRequestException({
+                    success: false,
+                    message: "Table not available or Stock is Less"
+                });
+            } else {
+                return res.status(200).json({
+                    success: true,
+                    data: data,
+                });
+            }
         } catch (err) {
             console.log(err);
             throw new BadRequestException({
-                success: true,
+                success: false,
                 message: `Error = ${err}`
             });
         }
@@ -49,15 +57,19 @@ export class OrderController {
     @Get("all")
     @ApiQuery({ name: "page", type: "number" })
     @ApiQuery({ name: "limit", type: "number" })
+    @ApiQuery({ name: "filter", type: "string", required: false })
+    @ApiQuery({ name: "status", type: "string", required: false })
     async findAll(
         @Query("page") page: string,
         @Query("limit") limit: string,
+        @Query("filter") filter: OrderType,
+        @Query("status") status: OrderStatus,
         @Res() res: Response,
     ) {
         try {
             const currentPage = page ?? 1;
             const currentLimit = limit ?? 20;
-            const data = await this.orderService.findAll(parseInt(currentPage), parseInt(currentLimit));
+            const data = await this.orderService.findAll(parseInt(currentPage), parseInt(currentLimit), filter, status);
             return res.status(200).json({
                 success: true,
                 data: data,

@@ -1,5 +1,6 @@
 import { ApiProperty } from "@nestjs/swagger";
-import { IsNotEmpty, IsNumber, IsOptional, IsString } from "class-validator";
+import { OrderType } from "@prisma/client";
+import { IsEnum, isEnum, IsNotEmpty, IsNumber, IsOptional, IsString } from "class-validator";
 
 export class CreateOrderDto {
     @ApiProperty({ name: "customer", type: "string" })
@@ -12,8 +13,18 @@ export class CreateOrderDto {
     @IsNotEmpty()
     table: string;
 
-    @ApiProperty({ name: "items", type: "string" })
+    @ApiProperty({ name: "itemId", type: "string" })
     @IsString()
     @IsNotEmpty()
-    items: string;
+    itemId: string;
+
+    @ApiProperty({ name: "qty", type: "number" })
+    @IsNumber()
+    @IsNotEmpty()
+    qty: number;
+
+    @ApiProperty({ enum: ["BAR", "KITCHEN"] })
+    @IsEnum(OrderType, { message: "Order type must either be from Bar or Kitchen" })
+    @IsNotEmpty()
+    orderType: OrderType;
 }
