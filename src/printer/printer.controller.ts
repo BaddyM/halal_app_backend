@@ -60,7 +60,8 @@ export class PrinterController {
                 this.printGateway.sendPrintJob(data);
                 return res.status(200).json({
                     success: true,
-                    data: data,
+                    data:data,
+                    message: "Print successfull",
                 });
             } else {
                 throw new BadRequestException({
