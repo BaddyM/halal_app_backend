@@ -11,4 +11,9 @@ export class LoginDto {
     @IsString()
     @IsNotEmpty()
     password: string;
+
+    @ApiProperty({ name: "fcmToken", type: "string", example: "xxxxxxxxxxxxxxxxxxxxxxxxx" })
+    @IsString()
+    @IsNotEmpty()
+    fcmToken: string;
 }

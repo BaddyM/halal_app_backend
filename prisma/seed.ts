@@ -63,79 +63,79 @@ async function main() {
     //Users
     const users: User[] = [
         {
-            name: "George",
-            email: "george@gmail.com",
-            password: "123",
-            role: "BAR"
+            name: "Arnold Henry",
+            email: "arnoldhenry958@gmail.com",
+            password: "baddy",
+            role: "ADMIN"
         },
         {
-            name: "Clair",
-            email: "clair@gmail.com",
+            name: "Thecla",
+            email: "thecla@gmail.com",
             password: "123",
-            role: "SAUNA"
+            role: "ADMIN"
         },
-        {
-            name: "Joseph",
-            email: "joseph@gmail.com",
-            password: "123",
-            role: "PARKING"
-        },
-        {
-            name: "Macqline",
-            email: "mackline@gmail.com",
-            password: "123",
-            role: "KITCHEN"
-        }
+        // {
+        //     name: "Joseph",
+        //     email: "joseph@gmail.com",
+        //     password: "123",
+        //     role: "PARKING"
+        // },
+        // {
+        //     name: "Macqline",
+        //     email: "mackline@gmail.com",
+        //     password: "123",
+        //     role: "KITCHEN"
+        // }
     ];
 
-    // for (let i = 0; i < users.length; i++) {
-    //     let password = await bcrypt.hash(users[i].password, 10);
-    //     await prisma.user.create({
-    //         data: {
-    //             name: users[i].name,
-    //             email: users[i].email,
-    //             password: password,
-    //             role: users[i].role,
-    //         }
-    //     });
-    // }
-
-    //Orders
-    const orders: Order[] = [
-        {
-            customer: "Mark",
-            table: "1",
-            itemId: "f4fdf681-3c6d-436e-931e-7f30cce50bdb",
-            orderType: "KITCHEN",
-            userId: "e705ed16-3d75-40ca-9bcb-47bb1196e12f",
-        },
-        {
-            customer: "George",
-            table: "5",
-            itemId: "Soda",
-            orderType: "BAR",
-            userId: "e705ed16-3d75-40ca-9bcb-47bb1196e12f",
-        },
-        {
-            customer: "Ruth",
-            table: "2",
-            itemId: "Matooke and Beans",
-            orderType: "KITCHEN",
-            userId: "e705ed16-3d75-40ca-9bcb-47bb1196e12f",
-        },
-    ];
-
-    for (let i = 0; i < orders.length; i++) {
-        await prisma.order.create({
+    for (let i = 0; i < users.length; i++) {
+        let password = await bcrypt.hash(users[i].password, 10);
+        await prisma.user.create({
             data: {
-                customer: orders[i].customer,
-                table: orders[i].table,
-                itemId: orders[i].itemId,
-                orderType: orders[i].orderType,
-                userId: orders[i].userId,
+                name: users[i].name,
+                email: users[i].email,
+                password: password,
+                role: users[i].role,
             }
         });
     }
+
+    //Orders
+    // const orders: Order[] = [
+    //     {
+    //         customer: "Mark",
+    //         table: "1",
+    //         itemId: "f4fdf681-3c6d-436e-931e-7f30cce50bdb",
+    //         orderType: "KITCHEN",
+    //         userId: "e705ed16-3d75-40ca-9bcb-47bb1196e12f",
+    //     },
+    //     {
+    //         customer: "George",
+    //         table: "5",
+    //         itemId: "Soda",
+    //         orderType: "BAR",
+    //         userId: "e705ed16-3d75-40ca-9bcb-47bb1196e12f",
+    //     },
+    //     {
+    //         customer: "Ruth",
+    //         table: "2",
+    //         itemId: "Matooke and Beans",
+    //         orderType: "KITCHEN",
+    //         userId: "e705ed16-3d75-40ca-9bcb-47bb1196e12f",
+    //     },
+    // ];
+
+    // for (let i = 0; i < orders.length; i++) {
+    //     await prisma.order.create({
+    //         data: {
+    //             customer: orders[i].customer,
+    //             table: orders[i].table,
+    //             itemId: orders[i].itemId,
+    //             orderType: orders[i].orderType,
+    //             userId: orders[i].userId,
+    //         }
+    //     });
+    // }
 
     console.log('Seed completed.');
 }

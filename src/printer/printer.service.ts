@@ -8,7 +8,7 @@ import { PrismaService } from 'src/prisma/prisma.service';
 export class PrinterService {
     constructor(private prisma: PrismaService) { }
 
-    async printText(paymentData: PrinterDto): Promise<string> {
+    async printText(paymentData: PrinterDto): Promise<any[]> {
         const printer = new ThermalPrinter.printer({
             type: ThermalPrinter.types.CUSTOM, // or STAR depending on your printer
             interface: '/dev/usb/lp0', // 'tcp://xxx.xxx.xxx.xxx' for network printers
@@ -52,40 +52,39 @@ export class PrinterService {
             }
         });
 
-        let total:number = 0;
+        // let total:number = 0;
 
-        for (let i = 0; i < data.length; i++) {
-            total = (total + data[i].paid);
-            printer.tableCustom([
-                { text: data[i].order != null ? data[i].order?.item.item : data[i].service?.service, align: "LEFT", width: 0.2 },
-                { text: data[i].order != null ? data[i].order?.qty : data[i].service?.duration, align: "LEFT", width: 0.2 },
-                { text: data[i].paid, align: "LEFT", width: 0.3 },
-            ]);
-        }
+        // for (let i = 0; i < data.length; i++) {
+        //     total = (total + data[i].paid);
+        //     printer.tableCustom([
+        //         { text: data[i].order != null ? data[i].order?.item.item : data[i].service?.service, align: "LEFT", width: 0.2 },
+        //         { text: data[i].order != null ? data[i].order?.qty : data[i].service?.duration, align: "LEFT", width: 0.2 },
+        //         { text: data[i].paid, align: "LEFT", width: 0.3 },
+        //     ]);
+        // }
 
-        printer.drawLine();
+        // printer.drawLine();
 
-        // Totals
-        printer.tableCustom([
-            { text: "Total", align: "LEFT", width: 0.7, bold: true },
-            { text: total, align: "LEFT", width: 0.3, bold: true },
-        ]);
+        // // Totals
+        // printer.tableCustom([
+        //     { text: "Total", align: "LEFT", width: 0.7, bold: true },
+        //     { text: total, align: "LEFT", width: 0.3, bold: true },
+        // ]);
 
+        // // printer.newLine();
+        // // printer.alignCenter();
+        // printer.println("Thank you for coming!");
         // printer.newLine();
-        // printer.alignCenter();
-        printer.println("Thank you for coming!");
-        printer.newLine();
-        printer.cut();
+        // printer.cut();
 
-        const isConnected = await printer.isPrinterConnected();
-        console.log(isConnected);
-        if (!isConnected) {
-            throw new Error('Printer not connected');
-        }
+        // const isConnected = await printer.isPrinterConnected();
+        // console.log(isConnected);
+        // if (!isConnected) {
+        //     throw new Error('Printer not connected');
+        // }
 
-        const success = await printer.execute();
-        console.log(success)
-        // const success = true;
-        return success ? 'Printed successfully' : 'Print failed';
+        // // const success = await printer.execute();
+        // return success ? 'Printed successfully' : 'Print failed';
+        return data;
     }
 }

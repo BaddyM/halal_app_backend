@@ -3,9 +3,10 @@ import { OrderService } from './order.service';
 import { OrderController } from './order.controller';
 import { JwtService } from '@nestjs/jwt';
 import { PrismaService } from 'src/prisma/prisma.service';
+import { NotificationsService } from 'src/notifications/notifications.service';
 
 @Module({
   controllers: [OrderController],
-  providers: [OrderService, JwtService, PrismaService],
+  providers: [OrderService, JwtService, PrismaService, NotificationsService,],
 })
 export class OrderModule {}

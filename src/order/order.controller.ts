@@ -7,6 +7,7 @@ import { Response } from 'express';
 import { ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
 import { AuthGuard } from 'src/auth/auth.guard';
 import { OrderStatus, OrderType } from '@prisma/client';
+import { NotificationsService } from 'src/notifications/notifications.service';
 
 @ApiBearerAuth()
 @UseGuards(AuthGuard)
@@ -15,6 +16,7 @@ export class OrderController {
     constructor(
         private readonly orderService: OrderService,
         private prisma: PrismaService,
+        private notificationService: NotificationsService,
     ) { }
 
     @Post("create")
@@ -31,8 +33,24 @@ export class OrderController {
                 },
                 select: {
                     id: true,
+                    fcmToken: true,
                 }
             });
+
+            const getKitchenTokens = await this.prisma.user.findMany({
+                where: {
+                    role: createOrderDto.orderType == "BAR" ? "BAR" : "KITCHEN",
+                }
+            });
+
+            for (let i = 0; i < getKitchenTokens.length; i++) {
+                //Send Notification
+                if (getKitchenTokens[i]?.fcmToken != null) {
+                    await this.notificationService.sendNotification("Order", "An Order has been created", getKitchenTokens[i]!.fcmToken!);
+                }
+            }
+
+            //Create Data
             const data = await this.orderService.create(createOrderDto, userIdFromToken!.id);
             if (!data) {
                 throw new BadRequestException({

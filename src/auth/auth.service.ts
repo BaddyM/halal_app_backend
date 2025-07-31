@@ -10,7 +10,7 @@ export class AuthService {
         private jwtService: JwtService,
     ) { }
 
-    async login(email: string, password: string) {
+    async login(email: string, password: string, fcmToken?:string) {
         const validate: boolean = await this.userService.validateUser(email, password);
         if (validate) {
             const payload = {
@@ -28,6 +28,17 @@ export class AuthService {
                     accessToken: accessToken,
                 }
             });
+
+            //Update device token
+            await this.prisma.user.update({
+                where:{
+                    email:email,
+                },
+                data:{
+                    fcmToken:fcmToken,
+                }
+            })
+
             return { accessToken, role: user.role, };
         }
         throw new UnauthorizedException({

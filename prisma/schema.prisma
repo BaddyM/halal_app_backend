@@ -17,6 +17,7 @@ model User {
     profilePicture String?
     isActive       Boolean         @default(false)
     accessToken    String?
+    fcmToken       String?
     Stock          Stock[]
     Order          Order[]
     Service        Service[]

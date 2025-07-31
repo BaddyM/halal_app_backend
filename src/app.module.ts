@@ -14,6 +14,8 @@ import { StaffModule } from './staff/staff.module';
 import { ExpenseModule } from './expense/expense.module';
 import { PaymentModule } from './payment/payment.module';
 import { PrinterModule } from './printer/printer.module';
+import { FirebaseModule } from './firebase/firebase.module';
+import { NotificationsModule } from './notifications/notifications.module';
 
 @Module({
   imports: [
@@ -28,7 +30,16 @@ import { PrinterModule } from './printer/printer.module';
     PrismaModule, 
     AuthModule, 
     DashboardModule, 
-    OrderModule, StockModule, ServicesModule, AttendanceModule, SalaryModule, StaffModule, ExpenseModule, PaymentModule, PrinterModule,
+    OrderModule, StockModule, 
+    ServicesModule, 
+    AttendanceModule, 
+    SalaryModule, 
+    StaffModule, 
+    ExpenseModule, 
+    PaymentModule, 
+    PrinterModule,
+    FirebaseModule,
+    NotificationsModule,
 ],
   controllers: [],
   providers: [],

@@ -19,7 +19,7 @@ export class AuthController {
         @Res() res: Response,
     ) {
         try {
-            const data = await this.authService.login(loginData.email, loginData.password);
+            const data = await this.authService.login(loginData.email, loginData.password, loginData.fcmToken);
             return res.status(200).json({
                 success: true,
                 accessToken: data,
