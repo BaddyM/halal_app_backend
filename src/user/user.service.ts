@@ -38,17 +38,17 @@ export class UserService {
                     not: "arnoldhenry958@gmail.com",
                 }
             },
-            select:{
-                id:true,
-                name:true,
-                email:true,
-                profilePicture:true,
-                isActive:true,
-                role:true,
-                createdAt:true,
+            select: {
+                id: true,
+                name: true,
+                email: true,
+                profilePicture: true,
+                isActive: true,
+                role: true,
+                createdAt: true,
             },
-            orderBy:{
-                createdAt:"desc"
+            orderBy: {
+                createdAt: "desc"
             }
         });
         return data;
@@ -73,6 +73,26 @@ export class UserService {
     }
 
     async update(userId: string, updateUserDto: UpdateUserDto) {
+        if (updateUserDto.password != null) {
+            const data = await this.prisma.user.update({
+                where: {
+                    id: userId,
+                },
+                data: {
+                    password: bcrypt.hash(updateUserDto.password, 10),
+                },
+                select: {
+                    name: true,
+                    email: true,
+                    profilePicture: true,
+                    isActive: true,
+                    role: true,
+                    createdAt: true,
+                    updatedAt: true,
+                }
+            });
+            return data;
+        }
         const data = await this.prisma.user.update({
             where: {
                 id: userId,
