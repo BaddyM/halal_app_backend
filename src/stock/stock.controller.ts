@@ -7,6 +7,7 @@ import { AuthGuard } from 'src/auth/auth.guard';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { Response } from 'express';
 import { StockCategory } from '@prisma/client';
+import { TopupStock } from 'src/order/dto/create-order.dto';
 
 @ApiBearerAuth()
 @UseGuards(AuthGuard)
@@ -50,7 +51,7 @@ export class StockController {
     @Get()
     @ApiQuery({ name: "page", type: Number })
     @ApiQuery({ name: "limit", type: Number })
-    @ApiQuery({ name: "category", required:false, })
+    @ApiQuery({ name: "category", required: false, })
     async findAll(
         @Res() res: Response,
         @Query("page") page: string,
@@ -70,6 +71,57 @@ export class StockController {
             throw new BadRequestException({
                 success: false,
                 error: `Error = ${err}`
+            });
+        }
+    }
+
+    @Post("topup")
+    async topupStock(
+        @Body() topup: TopupStock,
+        @Res() res: Response,
+    ) {
+        try {
+            const data = await this.stockService.topUpStock(topup.itemId, topup.qty);
+            if (!data) {
+                throw new BadRequestException({
+                    success: false,
+                    message: `Failed to topup`,
+                });
+            }
+            return res.status(200).json({
+                success: true,
+                message: "Topup successfull"
+            });
+        } catch (err) {
+            console.log(err);
+            throw new BadRequestException({
+                success: false,
+                message: `Error = ${err}`,
+            });
+        }
+    }
+
+    @Get("topupHistory")
+    @ApiQuery({ name: "page" })
+    @ApiQuery({ name: "limit" })
+    async getTopupHistory(
+        @Res() res: Response,
+        @Query("page") page: string,
+        @Query("limit") limit: string,
+    ) {
+        try {
+            const currentPage = page ?? 1;
+            const currentLimit = limit ?? 20;
+            const data = await this.stockService.topupHistory(parseInt(currentPage), parseInt(currentLimit));
+            return res.status(200).json({
+                success: true,
+                data: data,
+            });
+        } catch (err) {
+            console.log(err);
+            throw new BadRequestException({
+                success: false,
+                message: `Error = ${err}`,
             });
         }
     }
