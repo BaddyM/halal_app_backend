@@ -47,7 +47,7 @@ export class PaymentService {
                 }
             });
             return data;
-        } else if (userId != undefined) {
+        } else if (userId != undefined && userId != "undefined") {
             const data = await this.prisma.payment.findMany({
                 skip: (page - 1) * limit,
                 take: limit,

@@ -28,20 +28,20 @@ export class CreateOrderDto {
     @IsNotEmpty()
     orderType: OrderType;
 
-    @ApiProperty({ enum: ["PENDING", "SERVCED", "CANCELLED", "PREPARING"] })
+    @ApiProperty({ enum: ["PENDING", "SERVED", "READY", "CANCELLED", "PREPARING"] })
     @IsEnum(OrderStatus, { message: "Check order status" })
     @IsOptional()
     status: OrderStatus;
 }
 
 export class TopupStock {
-    @ApiProperty({name:"itemId"})
+    @ApiProperty({ name: "itemId" })
     @IsString()
     @IsNotEmpty()
-    itemId:string;
+    itemId: string;
 
-    @ApiProperty({name:"qty", type:"number"})
+    @ApiProperty({ name: "qty", type: "number" })
     @IsNumber()
     @IsNotEmpty()
-    qty:number;
+    qty: number;
 }

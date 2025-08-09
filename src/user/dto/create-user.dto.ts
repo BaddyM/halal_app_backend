@@ -18,7 +18,7 @@ export class CreateUserDto {
     @IsNotEmpty()
     password: string;
 
-    @ApiProperty({name:"role", enum: ['ADMIN', 'BAR', 'SAUNA', 'PARKING', 'KITCHEN'] })
+    @ApiProperty({name:"role", enum: ['ADMIN', 'BAR', 'BAR2', 'SAUNA', 'PARKING', 'KITCHEN'] })
     @IsEnum(Role, { message: "Please add a valid role." })
     @IsNotEmpty()
     role: Role;

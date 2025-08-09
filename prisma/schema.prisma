@@ -48,6 +48,7 @@ enum AttendanceStatus {
 enum Role {
     ADMIN
     BAR
+    BAR2
     SAUNA
     PARKING
     KITCHEN
@@ -92,6 +93,7 @@ enum OrderStatus {
     PENDING
     SERVED
     PREPARING
+    READY
     CANCELLED
 }
 
@@ -115,6 +117,7 @@ enum ServiceList {
     SAUNA
     PARKING
     GARDENS
+    ACCOMODATION
 }
 
 enum ServiceStatus {
