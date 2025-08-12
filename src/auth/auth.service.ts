@@ -39,7 +39,13 @@ export class AuthService {
                 }
             })
 
-            return { accessToken, role: user.role, userId: user.id, isActive:user.isActive };
+            return { accessToken, 
+                role: user.role, 
+                userId: user.id, 
+                isActive:user.isActive, 
+                email:user.email,
+                username:user.name,
+            };
         }
         throw new UnauthorizedException({
             success: false,
