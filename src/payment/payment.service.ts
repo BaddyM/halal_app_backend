@@ -17,16 +17,17 @@ export class PaymentService {
         return data;
     }
 
-    async findAll(page: number, limit: number, from?: string, to?: string, userId?: string) {
+    async findAll(page: number, limit: number, from: string, to?: string, userId?: string) {
+        const start = new Date(from);
+        if (isNaN(start.getTime())) throw new Error("Invalid 'from' date");
+        const end = new Date(start);
+        end.setDate(end.getDate() + 1);
         if (from != undefined && to != undefined) {
             const data = await this.prisma.payment.findMany({
                 skip: (page - 1) * limit,
                 take: limit,
                 where: {
-                    createdAt: {
-                        gte: new Date(from),
-                        lte: new Date(to),
-                    }
+                    createdAt: { gte: start, lt: end },
                 },
                 orderBy: {
                     createdAt: "desc"
@@ -53,6 +54,7 @@ export class PaymentService {
                 take: limit,
                 where: {
                     userId: userId,
+                    createdAt: { gte: start, lt: end },
                 },
                 orderBy: {
                     createdAt: "desc"

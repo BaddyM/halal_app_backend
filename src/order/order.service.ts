@@ -74,7 +74,11 @@ export class OrderService {
         return false;
     }
 
-    async findAll(page: number, limit: number, filter?: OrderType, status?: OrderStatus) {
+    async findAll(page: number, limit: number, date: string, filter?: OrderType, status?: OrderStatus) {
+        const start = new Date(date);
+        if (isNaN(start.getTime())) throw new Error("Invalid 'from' date");
+        const end = new Date(start);
+        end.setDate(end.getDate() + 1);
         if (filter != undefined && status != undefined) {
             const data = await this.prisma.order.findMany({
                 skip: (page - 1) * limit,
@@ -88,7 +92,8 @@ export class OrderService {
 
                 },
                 where: {
-                    orderType: filter
+                    orderType: filter,
+                    createdAt: { gte: start, lt: end },
                 }
             });
             return data;
@@ -103,7 +108,8 @@ export class OrderService {
                     Payment: true,
                 },
                 where: {
-                    orderType: filter
+                    orderType: filter,
+                    createdAt: { gte: start, lt: end },
                 }
             });
             return data;
@@ -118,7 +124,8 @@ export class OrderService {
                     Payment: true,
                 },
                 where: {
-                    status: status
+                    status: status,
+                    createdAt: { gte: start, lt: end },
                 }
             });
             return data;
@@ -131,6 +138,9 @@ export class OrderService {
             },
             include: {
                 Payment: true,
+            },
+            where: {
+                createdAt: { gte: start, lt: end },
             }
         });
         return data;
