@@ -62,15 +62,17 @@ export class ServicesController {
     @Get()
     @ApiQuery({ name: "page", type: "number" })
     @ApiQuery({ name: "limit", type: "number" })
+    @ApiQuery({ name: "date", type: "string" })
     async findAll(
         @Query("page") page: string,
         @Query("limit") limit: string,
+        @Query("date") date: any,
         @Res() res: Response,
     ) {
         try {
             const currentPage = page ?? 1;
             const currentLimit = limit ?? 20;
-            const data = await this.servicesService.findAll(parseInt(currentPage), parseInt(currentLimit));
+            const data = await this.servicesService.findAll(parseInt(currentPage), parseInt(currentLimit), date);
             return res.status(200).json({
                 success: true,
                 data: data,

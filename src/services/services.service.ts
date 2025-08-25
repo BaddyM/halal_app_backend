@@ -22,7 +22,11 @@ export class ServicesService {
         return data;
     }
 
-    async findAll(page: number, limit: number) {
+    async findAll(page: number, limit: number, date: string) {
+        const start = new Date(date);
+        if (isNaN(start.getTime())) throw new Error("Invalid 'from' date");
+        const end = new Date(start);
+        end.setDate(end.getDate() + 1);
         const data = await this.prisma.service.findMany({
             take: limit,
             skip: (page - 1) * limit,
@@ -35,6 +39,9 @@ export class ServicesService {
                         paid: true,
                     }
                 }
+            },
+            where: {
+                createdAt: { gte: start, lt: end },
             }
         });
         return data;
