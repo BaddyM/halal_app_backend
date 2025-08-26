@@ -18,7 +18,8 @@ export class AuthService {
                 password: password,
             }
             const accessToken = this.jwtService.sign(payload, {
-                secret: process.env.SYSTEM_SECRET
+                secret: process.env.SYSTEM_SECRET,
+
             });
             const user = await this.prisma.user.update({
                 where: {
@@ -39,12 +40,13 @@ export class AuthService {
                 }
             })
 
-            return { accessToken, 
-                role: user.role, 
-                userId: user.id, 
-                isActive:user.isActive, 
-                email:user.email,
-                username:user.name,
+            return {
+                accessToken,
+                role: user.role,
+                userId: user.id,
+                isActive: user.isActive,
+                email: user.email,
+                username: user.name,
             };
         }
         throw new UnauthorizedException({

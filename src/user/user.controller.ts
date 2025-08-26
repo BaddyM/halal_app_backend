@@ -40,7 +40,7 @@ export class UserController {
 
     @ApiBearerAuth()
     @UseGuards(AuthGuard)
-    @ApiParam({name:"userId"})
+    @ApiParam({ name: "userId" })
     @Get(':userId')
     findOne(@Param('userId') userId: string) {
         return this.userService.findOne(userId);
@@ -48,7 +48,7 @@ export class UserController {
 
     @ApiBearerAuth()
     @UseGuards(AuthGuard)
-    @ApiParam({name:"userId"})
+    @ApiParam({ name: "userId" })
     @Patch(':userId')
     update(@Param('userId') userId: string, @Body() updateUserDto: UpdateUserDto) {
         return this.userService.update(userId, updateUserDto);
@@ -56,7 +56,30 @@ export class UserController {
 
     @ApiBearerAuth()
     @UseGuards(AuthGuard)
-    @ApiParam({name:"userId"})
+    @ApiParam({ name: "userId" })
+    @Patch('deactivate:userId')
+    async deactivate(
+        @Param('userId') userId: string,
+        @Res() res: Response,
+    ) {
+        try {
+            const data = await this.userService.deactivate(userId);
+            return res.status(200).json({
+                success: true,
+                message: "Account deactivated successfully",
+                data: data,
+            });
+        } catch (e) {
+            throw new BadRequestException({
+                success: false,
+                error: `Error ${e}`
+            });
+        }
+    }
+
+    @ApiBearerAuth()
+    @UseGuards(AuthGuard)
+    @ApiParam({ name: "userId" })
     @Delete(':userId')
     remove(@Param('userId') userId: string) {
         return this.userService.remove(userId);

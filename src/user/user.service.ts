@@ -153,4 +153,25 @@ export class UserService {
         });
         return data;
     }
+
+    async deactivate(userId: string) {
+        const data = await this.prisma.user.update({
+            where: {
+                id: userId,
+            },
+            data: {
+                accessToken: null,
+            },
+            select: {
+                name: true,
+                email: true,
+                profilePicture: true,
+                isActive: true,
+                role: true,
+                createdAt: true,
+                updatedAt: true,
+            }
+        });
+        return data;
+    }
 }

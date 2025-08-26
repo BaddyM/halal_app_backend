@@ -49,19 +49,17 @@ export class ExpenseController {
     @Get()
     @ApiQuery({ name: "page", type: "number" })
     @ApiQuery({ name: "limit", type: "number" })
-    @ApiQuery({ name: "from", type: "string", required: false, })
-    @ApiQuery({ name: "to", type: "string", required: false, })
+    @ApiQuery({ name: "date", type: "string", required: false, })
     async findAll(
         @Query("page") page: string,
         @Query("limit") limit: string,
-        @Query("from") from: string,
-        @Query("to") to: string,
+        @Query("date") date: string,
         @Res() res: Response,
     ) {
         try {
             const currentPage = page ?? 1;
             const currentLimit = limit ?? 20;
-            const data = await this.expenseService.findAll(parseInt(currentPage), parseInt(currentLimit), from, to);
+            const data = await this.expenseService.findAll(parseInt(currentPage), parseInt(currentLimit), date);
             return res.status(200).json({
                 success: true,
                 data: data,

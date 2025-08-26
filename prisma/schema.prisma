@@ -28,6 +28,7 @@ model User {
     createdAt      DateTime        @default(now())
     updatedAt      DateTime        @updatedAt
     Attendance     Attendance[]
+    Banking        Banking[]
 }
 
 model Attendance {
@@ -194,6 +195,22 @@ model Expense {
     user      User     @relation(fields: [userId], references: [id])
     createdAt DateTime @default(now())
     updatedAt DateTime @updatedAt
+}
+
+model Banking {
+    id        String      @id @default(uuid())
+    amount    Int         @default(0)
+    userId    String
+    user      User        @relation(fields: [userId], references: [id])
+    type      BankingType @default(DEPOSIT)
+    memo      String?     @db.LongText
+    createdAt DateTime    @default(now())
+    updatedAt DateTime    @updatedAt
+}
+
+enum BankingType {
+    WITHDRAW
+    DEPOSIT
 }
 
 model Staff {

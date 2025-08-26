@@ -16,6 +16,7 @@ import { PaymentModule } from './payment/payment.module';
 import { PrinterModule } from './printer/printer.module';
 import { FirebaseModule } from './firebase/firebase.module';
 import { NotificationsModule } from './notifications/notifications.module';
+import { BankingModule } from './banking/banking.module';
 
 @Module({
   imports: [
@@ -40,6 +41,7 @@ import { NotificationsModule } from './notifications/notifications.module';
     PrinterModule,
     FirebaseModule,
     NotificationsModule,
+    BankingModule,
 ],
   controllers: [],
   providers: [],
