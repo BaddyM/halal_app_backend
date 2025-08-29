@@ -3,7 +3,7 @@ import { ServiceList, ServiceStatus } from "@prisma/client";
 import { IsEnum, IsNotEmpty, IsNumber, IsOptional, IsString } from "class-validator";
 
 export class CreateServiceDto {
-    @ApiProperty({ name: "service", enum: ["SAUNA", "PARKING", "GARDENS"] })
+    @ApiProperty({ name: "service", enum: ["SAUNA", "PARKING", "GARDENS", "ACCOMODATION", "OTHER"] })
     @IsEnum(ServiceList, { message: "Please add a known service" })
     @IsNotEmpty()
     service: ServiceList;
@@ -31,7 +31,7 @@ export class CreateServiceDto {
     @ApiProperty({ name: "memo", type: "string" })
     @IsString()
     @IsOptional()
-    memo: string;
+    memo?: string;
 
     @ApiProperty({ enum: ["PAID", "PENDING", "CANCELLED"] })
     @IsEnum(ServiceStatus, { message: "Select a service" })

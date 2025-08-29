@@ -119,6 +119,7 @@ enum ServiceList {
     PARKING
     GARDENS
     ACCOMODATION
+    OTHER
 }
 
 enum ServiceStatus {
@@ -250,6 +251,55 @@ model Notifications {
     userId    String
     user      User     @relation(fields: [userId], references: [id])
     read      Boolean  @default(false)
+    createdAt DateTime @default(now())
+    updatedAt DateTime @updatedAt
+}
+
+//Website
+model WebsiteGallery {
+    id          String   @id @default(uuid())
+    title       String
+    description String?
+    image       String   @db.LongText
+    section     String?
+    isActive    Boolean  @default(false)
+    createdAt   DateTime @default(now())
+    updatedAt   DateTime @updatedAt
+}
+
+model WebsiteBlog {
+    id          String   @id @default(uuid())
+    title       String
+    description String?  @db.LongText
+    image       String   @db.LongText
+    section     String?
+    isActive    Boolean  @default(false)
+    createdAt   DateTime @default(now())
+    updatedAt   DateTime @updatedAt
+}
+
+model WebsiteContact {
+    id             String   @id @default(uuid())
+    fname          String
+    lname          String
+    email          String?
+    phone          String
+    serviceNeeded  String
+    eventDate      String?
+    message        String   @db.LongText
+    expectedGuests String
+    isRead         Boolean  @default(false)
+    createdAt      DateTime @default(now())
+    updatedAt      DateTime @updatedAt
+}
+
+model WebsiteTestimonies {
+    id        String   @id @default(uuid())
+    name      String
+    title     String
+    stars     Int
+    message   String   @db.LongText
+    isActive  Boolean  @default(false)
     createdAt DateTime @default(now())
     updatedAt DateTime @updatedAt
 }

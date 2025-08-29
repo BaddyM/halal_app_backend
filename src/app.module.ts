@@ -17,6 +17,10 @@ import { PrinterModule } from './printer/printer.module';
 import { FirebaseModule } from './firebase/firebase.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { BankingModule } from './banking/banking.module';
+import { WebsiteGalleryModule } from './website_gallery/website_gallery.module';
+import { WebsiteBlogModule } from './website_blog/website_blog.module';
+import { WebsiteContactModule } from './website_contact/website_contact.module';
+import { WebsiteTestimonyModule } from './website_testimony/website_testimony.module';
 
 @Module({
   imports: [
@@ -42,6 +46,10 @@ import { BankingModule } from './banking/banking.module';
     FirebaseModule,
     NotificationsModule,
     BankingModule,
+    WebsiteGalleryModule,
+    WebsiteBlogModule,
+    WebsiteContactModule,
+    WebsiteTestimonyModule,
 ],
   controllers: [],
   providers: [],
