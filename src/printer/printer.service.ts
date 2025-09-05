@@ -8,7 +8,7 @@ import { PrismaService } from 'src/prisma/prisma.service';
 export class PrinterService {
     constructor(private prisma: PrismaService) { }
 
-    async printText(paymentData: PrinterDto): Promise<any[]> {
+    async printText(paymentData: PrinterDto) {
         const printer = new ThermalPrinter.printer({
             type: ThermalPrinter.types.CUSTOM, // or STAR depending on your printer
             interface: '/dev/usb/lp0', // 'tcp://xxx.xxx.xxx.xxx' for network printers
@@ -51,6 +51,19 @@ export class PrinterService {
                 }
             }
         });
-        return data;
+        const total = await this.prisma.payment.aggregate({
+            _sum: {
+                paid: true,
+            },
+            where: {
+                id: {
+                    in: ids,
+                },
+            },
+        });
+        return {
+            data,
+            total:total._sum.paid,
+        };
     }
 }
