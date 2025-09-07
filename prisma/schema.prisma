@@ -29,6 +29,7 @@ model User {
     updatedAt      DateTime        @updatedAt
     Attendance     Attendance[]
     Banking        Banking[]
+    Reports        Reports[]
 }
 
 model Attendance {
@@ -251,6 +252,16 @@ model Notifications {
     userId    String
     user      User     @relation(fields: [userId], references: [id])
     read      Boolean  @default(false)
+    createdAt DateTime @default(now())
+    updatedAt DateTime @updatedAt
+}
+
+model Reports {
+    id        String   @id @default(uuid())
+    userId    String
+    user      User     @relation(fields: [userId], references: [id])
+    title     String
+    report    String   @db.LongText
     createdAt DateTime @default(now())
     updatedAt DateTime @updatedAt
 }

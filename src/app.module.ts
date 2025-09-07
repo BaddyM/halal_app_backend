@@ -21,6 +21,7 @@ import { WebsiteGalleryModule } from './website_gallery/website_gallery.module';
 import { WebsiteBlogModule } from './website_blog/website_blog.module';
 import { WebsiteContactModule } from './website_contact/website_contact.module';
 import { WebsiteTestimonyModule } from './website_testimony/website_testimony.module';
+import { ReportsModule } from './reports/reports.module';
 
 @Module({
   imports: [
@@ -50,6 +51,7 @@ import { WebsiteTestimonyModule } from './website_testimony/website_testimony.mo
     WebsiteBlogModule,
     WebsiteContactModule,
     WebsiteTestimonyModule,
+    ReportsModule,
 ],
   controllers: [],
   providers: [],
