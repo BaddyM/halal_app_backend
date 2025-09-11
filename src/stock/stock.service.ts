@@ -78,7 +78,7 @@ export class StockService {
                 take: limit,
                 skip: (page - 1) * limit,
                 where: {
-                    category: stockType
+                    category: stockType,
                 },
                 include: {
                     user: {

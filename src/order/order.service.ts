@@ -12,27 +12,6 @@ export class OrderService {
     ) { }
 
     async create(createOrderDto: CreateOrderDto, userId: string) {
-        // const checkTableStatus = await this.prisma.order.count({
-        //     where: {
-        //         table: createOrderDto.table,
-        //         status: {
-        //             not: "SERVED"
-        //         }
-        //     }
-        // });
-        // if (checkTableStatus == 0) {
-        //     const data = await this.prisma.order.create({
-        //         data: {
-        //             userId: userId,
-        //             customer: createOrderDto.customer,
-        //             items: createOrderDto.items,
-        //             table: createOrderDto.table,
-        //             orderType: createOrderDto.orderType,
-        //         }
-        //     });
-        //     return data;
-        // }
-
         //Check stock
         const currentStock = await this.prisma.stock.findUnique({
             where: {
@@ -40,38 +19,55 @@ export class OrderService {
             },
             select: {
                 qty: true,
+                item: true,
             }
         });
 
-        const newStock = (currentStock!.qty - createOrderDto.qty);
-        if (newStock >= 0) {
-            //Update Stock
-            await this.prisma.stock.update({
-                where: {
-                    id: createOrderDto.itemId,
-                },
-                data: {
-                    qty: newStock,
-                }
-            });
+        //Deduct for every stock item
+        const items = currentStock?.item.split("&");
 
-            //Create order
-            const data = await this.prisma.order.create({
-                data: {
-                    userId: userId,
-                    customer: createOrderDto.customer,
-                    itemId: createOrderDto.itemId,
-                    qty: createOrderDto.qty,
-                    table: createOrderDto.table,
-                    orderType: createOrderDto.orderType,
+        if (items) {
+            for (let i = 0; i < items!.length; i++) {
+                const item = await this.prisma.stock.findUnique({
+                    where: {
+                        item: items[i].trim(),
+                    },
+                    select: {
+                        qty: true,
+                        item: true,
+                        id: true,
+                    }
+                });
+                const newStock = (item!.qty - createOrderDto.qty);
+                if (newStock >= 0) {
+                    //Update Stock
+                    await this.prisma.stock.update({
+                        where: {
+                            id: item!.id,
+                        },
+                        data: {
+                            qty: newStock,
+                        }
+                    });
                 }
-            });
-
-            //Send notification
-            this.notifications.sendNotification("You have an order");
-            return data;
+            }
         }
-        return false;
+
+        //Create order
+        const data = await this.prisma.order.create({
+            data: {
+                userId: userId,
+                customer: createOrderDto.customer,
+                itemId: createOrderDto.itemId,
+                qty: createOrderDto.qty,
+                table: createOrderDto.table,
+                orderType: createOrderDto.orderType,
+            }
+        });
+
+        //Send notification
+        this.notifications.sendNotification("You have an order");
+        return data;
     }
 
     async findAll(page: number, limit: number, date: string, filter?: OrderType, status?: OrderStatus) {
