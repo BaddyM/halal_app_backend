@@ -16,6 +16,7 @@ export class StockService {
                 qty: createStockDto.qty,
                 category: createStockDto.category,
                 UnitPrice: createStockDto.unit_price,
+                memo: createStockDto.memo,
             }
         })
         return data;
@@ -46,7 +47,7 @@ export class StockService {
             //Add to History
             const data = await this.prisma.stockHistory.create({
                 data: {
-                    itemId:itemId,
+                    itemId: itemId,
                     qty: qty,
                 }
             });
@@ -55,19 +56,19 @@ export class StockService {
         return false;
     }
 
-    async topupHistory (page: number, limit: number){
+    async topupHistory(page: number, limit: number) {
         const data = await this.prisma.stockHistory.findMany({
-            include:{
-                item:{
-                select:{
-                    item:true,
-                    UnitPrice:true,
-                    qty:true,
-                }
+            include: {
+                item: {
+                    select: {
+                        item: true,
+                        UnitPrice: true,
+                        qty: true,
+                    }
                 }
             },
-            skip:(page - 1) * limit,
-            take:limit,
+            skip: (page - 1) * limit,
+            take: limit,
         });
         return data;
     }

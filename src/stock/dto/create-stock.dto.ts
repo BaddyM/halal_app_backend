@@ -24,7 +24,12 @@ export class CreateStockDto {
     unit_price: number;
 
     @ApiProperty({ name: "status", example: "AVAILABLE", type: "string" })
-    @IsEnum(StockStatus,{message:"Please select the right status"})
+    @IsEnum(StockStatus, { message: "Please select the right status" })
     @IsOptional()
     status: StockStatus;
+
+    @ApiProperty({ name: "memo" })
+    @IsString()
+    @IsOptional()
+    memo?: string;
 }

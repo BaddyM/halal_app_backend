@@ -162,6 +162,7 @@ model Stock {
     Order        Order[]
     StockHistory StockHistory[]
     show         Boolean        @default(false)
+    memo         String?        @db.LongText
     createdAt    DateTime       @default(now())
     updatedAt    DateTime       @updatedAt
 }
