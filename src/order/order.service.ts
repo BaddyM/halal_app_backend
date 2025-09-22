@@ -28,6 +28,7 @@ export class OrderService {
 
         if (items) {
             for (let i = 0; i < items!.length; i++) {
+                //Check subitem stock then make deduction
                 const item = await this.prisma.stock.findUnique({
                     where: {
                         item: items[i].trim(),
@@ -36,19 +37,45 @@ export class OrderService {
                         qty: true,
                         item: true,
                         id: true,
+                        subItem: true,
                     }
                 });
-                const newStock = (item!.qty - createOrderDto.qty);
-                if (newStock >= 0) {
-                    //Update Stock
-                    await this.prisma.stock.update({
+                if (item!.subItem != "none") {
+                    const qtyOfSubItem = await this.prisma.stock.findUnique({
                         where: {
-                            id: item!.id,
+                            item: item!.subItem!.trim(),
                         },
-                        data: {
-                            qty: newStock,
+                        select: {
+                            qty: true,
+                            item: true,
+                            id: true,
                         }
                     });
+                    const newStock = (qtyOfSubItem!.qty - createOrderDto.qty);
+                    if (newStock >= 0) {
+                        //Update Stock
+                        await this.prisma.stock.update({
+                            where: {
+                                item: item!.subItem!,
+                            },
+                            data: {
+                                qty: newStock,
+                            }
+                        });
+                    }
+                } else {
+                    const newStock = (item!.qty - createOrderDto.qty);
+                    if (newStock >= 0) {
+                        //Update Stock
+                        await this.prisma.stock.update({
+                            where: {
+                                id: item!.id,
+                            },
+                            data: {
+                                qty: newStock,
+                            }
+                        });
+                    }
                 }
             }
         }

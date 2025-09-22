@@ -157,6 +157,7 @@ model Stock {
     category     StockCategory
     qty          Int            @default(1)
     UnitPrice    Int            @default(0)
+    subItem      String?        @default("none")
     image        String?
     status       StockStatus    @default(AVAILABLE)
     Order        Order[]

@@ -18,6 +18,25 @@ export class StockController {
         private prisma: PrismaService,
     ) { }
 
+    @Get('list')
+    async findStockList(
+        @Res() res: Response,
+    ) {
+        try {
+            const data = await this.stockService.stockList();
+            return res.status(200).json({
+                success: true,
+                data: data,
+            });
+        } catch (err) {
+            console.log(err);
+            throw new BadRequestException({
+                success: false,
+                error: `Error = ${err}`
+            });
+        }
+    }
+
     @Post("create")
     async create(
         @Body() createStockDto: CreateStockDto,

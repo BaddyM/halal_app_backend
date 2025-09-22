@@ -3,7 +3,6 @@ import { CreateStockDto } from './dto/create-stock.dto';
 import { UpdateStockDto } from './dto/update-stock.dto';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { StockCategory } from '@prisma/client';
-
 @Injectable()
 export class StockService {
     constructor(private prisma: PrismaService) { }
@@ -17,6 +16,7 @@ export class StockService {
                 category: createStockDto.category,
                 UnitPrice: createStockDto.unit_price,
                 memo: createStockDto.memo,
+                subItem: createStockDto.subItem,
             }
         })
         return data;
@@ -110,6 +110,15 @@ export class StockService {
                     }
                 },
             },
+            orderBy: {
+                createdAt: "desc"
+            }
+        });
+        return data;
+    }
+
+    async stockList() {
+        const data = await this.prisma.stock.findMany({
             orderBy: {
                 createdAt: "desc"
             }

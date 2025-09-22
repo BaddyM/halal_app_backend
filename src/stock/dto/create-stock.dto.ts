@@ -18,6 +18,11 @@ export class CreateStockDto {
     @IsNotEmpty()
     qty: number;
 
+    @ApiProperty({ name: "subItem" })
+    @IsString()
+    @IsOptional()
+    subItem?: string;
+
     @ApiProperty({ name: "UnitPrice", example: "1", type: "number" })
     @IsNumber()
     @IsOptional()
