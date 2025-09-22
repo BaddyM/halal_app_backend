@@ -156,9 +156,17 @@ export class StockService {
     }
 
     async remove(id: string) {
-        const data = await this.prisma.stock.delete({
+        // const data = await this.prisma.stock.delete({
+        //     where: {
+        //         id: id,
+        //     }
+        // })
+        const data = await this.prisma.stock.update({
             where: {
                 id: id,
+            },
+            data: {
+                isDeleted: true,
             }
         })
         return data;
