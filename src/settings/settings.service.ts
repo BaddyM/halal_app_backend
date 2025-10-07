@@ -24,7 +24,11 @@ export class SettingsService {
             } else {
                 //Create
                 const data = await this.prisma.permission.create({
-                    data: togglePermission,
+                    data: {
+                        email: togglePermission.email,
+                        page: togglePermission.page,
+                        isActive: togglePermission.isActive,
+                    },
                 });
                 return data;
             }
