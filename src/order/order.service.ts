@@ -32,7 +32,7 @@ export class OrderService {
                 const activeItem = items[i].trim();
                 const item = await this.prisma.stock.findUnique({
                     where: {
-                        item: activeItem,
+                        item: items[0].length > 1 ? activeItem : currentStock?.item,
                     },
                     select: {
                         qty: true,
