@@ -23,13 +23,18 @@ export class OrderService {
             }
         });
 
+        console.log("Current stock",currentStock?.item);
+
         //Deduct for every stock item
         const items = currentStock?.item.split("&");
+
+        console.log("Current stock after split", items);
 
         if (items) {
             for (let i = 0; i < items!.length; i++) {
                 //Check subitem stock then make deduction
-                const activeItem = items[i].replace(/\s+/g, '');
+                const activeItem = items[i].trim();
+                console.log("Current stock after split", activeItem);
                 const item = await this.prisma.stock.findUnique({
                     where: {
                         item: items[0].length > 1 ? activeItem : currentStock?.item,
@@ -41,7 +46,7 @@ export class OrderService {
                         subItem: true,
                     }
                 });
-                console.log(`ServiceLog (Item Order): ${item}`)
+                console.log(`ServiceLog (Item Order) From DB`, item)
                 if (item!.subItem != "none") {
                     const qtyOfSubItem = await this.prisma.stock.findUnique({
                         where: {
