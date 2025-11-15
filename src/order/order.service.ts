@@ -29,7 +29,7 @@ export class OrderService {
         if (items) {
             for (let i = 0; i < items!.length; i++) {
                 //Check subitem stock then make deduction
-                const activeItem = items[i].trim();
+                const activeItem = items[i].replace(/\s+/g, '');
                 const item = await this.prisma.stock.findUnique({
                     where: {
                         item: items[0].length > 1 ? activeItem : currentStock?.item,
