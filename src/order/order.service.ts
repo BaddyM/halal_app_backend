@@ -41,6 +41,7 @@ export class OrderService {
                         subItem: true,
                     }
                 });
+                console.log(`ServiceLog (Item Order): ${item}`)
                 if (item!.subItem != "none") {
                     const qtyOfSubItem = await this.prisma.stock.findUnique({
                         where: {
