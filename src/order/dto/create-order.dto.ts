@@ -1,8 +1,13 @@
 import { ApiProperty } from "@nestjs/swagger";
 import { OrderStatus, OrderType } from "@prisma/client";
 import { IsEnum, IsNotEmpty, IsNumber, IsOptional, IsString } from "class-validator";
+import { Transform } from 'class-transformer';
+import dayjs = require('dayjs'); // ✅ Explicitly tells TS to use the CommonJS export
 
 export class CreateOrderDto {
+    @Transform(({ value }) => dayjs(value, "DD-MM-YYYY").toDate())
+    date: Date;
+
     @ApiProperty({ name: "customer", type: "string" })
     @IsString()
     @IsOptional()

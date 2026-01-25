@@ -1,0 +1,10 @@
+services:
+  api:
+    build: .
+    container_name: zimbena_app
+    ports:
+      - "3004:3004"
+    env_file:
+      - .env
+    extra_hosts:
+      - "host.docker.internal:host-gateway"

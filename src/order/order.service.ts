@@ -12,6 +12,7 @@ export class OrderService {
     ) { }
 
     async create(createOrderDto: CreateOrderDto, userId: string) {
+        const order_date = createOrderDto.date != null ? new Date(createOrderDto.date) : new Date();
         //Check stock
         const currentStock = await this.prisma.stock.findUnique({
             where: {
@@ -23,12 +24,8 @@ export class OrderService {
             }
         });
 
-        console.log("Current stock",currentStock?.item);
-
         //Deduct for every stock item
         const items = currentStock?.item.split("&");
-
-        console.log("Current stock after split", items);
 
         if (items) {
             for (let i = 0; i < items!.length; i++) {
@@ -46,7 +43,7 @@ export class OrderService {
                         subItem: true,
                     }
                 });
-                console.log(`ServiceLog (Item Order) From DB`, item)
+                // console.log(`ServiceLog (Item Order) From DB`, item)
                 if (item!.subItem != "none") {
                     const qtyOfSubItem = await this.prisma.stock.findUnique({
                         where: {
@@ -91,6 +88,8 @@ export class OrderService {
         const data = await this.prisma.order.create({
             data: {
                 userId: userId,
+                createdAt: order_date.toISOString(),
+                updatedAt: order_date.toISOString(),
                 customer: createOrderDto.customer,
                 itemId: createOrderDto.itemId,
                 qty: createOrderDto.qty,
