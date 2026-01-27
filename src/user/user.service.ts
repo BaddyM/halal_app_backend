@@ -12,11 +12,29 @@ export class UserService {
         const password = await bcrypt.hash(`${createUserDto.password}`, 10);
         const data = await this.prisma.user.create({
             data: {
-                name: createUserDto.name,
-                email: createUserDto.email,
+                ...createUserDto,
                 password: password,
-                role: createUserDto.role
             },
+            select: {
+                id: true,
+                firstName: true,
+                lastName: true,
+                occupation: true,
+                maritalStatus: true,
+                nationalId: true,
+                city: true,
+                streetAddress: true,
+                district: true,
+                phoneNumber: true,
+                secondaryPhoneNumber: true,
+                gender: true,
+                email: true,
+                profilePicture: true,
+                isActive: true,
+                role: true,
+                createdAt: true,
+                updatedAt: true,
+            }
         })
         return data;
     }
@@ -31,7 +49,7 @@ export class UserService {
         return checkPassword;
     }
 
-    async findAll() {
+    async findAll(page: number, limit: number) {
         const data = await this.prisma.user.findMany({
             where: {
                 email: {
@@ -40,27 +58,51 @@ export class UserService {
             },
             select: {
                 id: true,
-                name: true,
+                firstName: true,
+                lastName: true,
+                occupation: true,
+                maritalStatus: true,
+                nationalId: true,
+                city: true,
+                streetAddress: true,
+                district: true,
+                phoneNumber: true,
+                secondaryPhoneNumber: true,
+                gender: true,
                 email: true,
                 profilePicture: true,
                 isActive: true,
                 role: true,
                 createdAt: true,
+                updatedAt: true,
             },
             orderBy: {
                 createdAt: "desc"
-            }
+            },
+            skip: (page - 1) * limit,
+            take: limit,
         });
         return data;
     }
 
     async findOne(userId: string) {
-        const data = await this.prisma.user.findUnique({
+        const data = await this.prisma.user.findFirst({
             where: {
                 id: userId,
             },
             select: {
-                name: true,
+                id: true,
+                firstName: true,
+                lastName: true,
+                occupation: true,
+                maritalStatus: true,
+                nationalId: true,
+                city: true,
+                streetAddress: true,
+                district: true,
+                phoneNumber: true,
+                secondaryPhoneNumber: true,
+                gender: true,
                 email: true,
                 profilePicture: true,
                 isActive: true,
@@ -73,58 +115,34 @@ export class UserService {
     }
 
     async update(userId: string, updateUserDto: UpdateUserDto) {
-        if (updateUserDto.password != null) {
-            const password = await bcrypt.hash(`${updateUserDto.password}`, 10);
-            const data = await this.prisma.user.update({
-                where: {
-                    id: userId,
-                },
-                data: {
-                    password: password,
-                    // ...updateUserDto,
-                },
-                select: {
-                    name: true,
-                    email: true,
-                    profilePicture: true,
-                    isActive: true,
-                    role: true,
-                    createdAt: true,
-                    updatedAt: true,
-                }
-            });
-            return data;
-        }
-        const data = await this.prisma.user.update({
-            where: {
-                id: userId,
-            },
-            data: {
-                ...updateUserDto,
-            },
-            select: {
-                name: true,
-                email: true,
-                profilePicture: true,
-                isActive: true,
-                role: true,
-                createdAt: true,
-                updatedAt: true,
-            }
-        });
-        return data;
-    }
+        // 1. Destructure the password out of the DTO
+        const { password, ...otherData } = updateUserDto;
 
-    async updatePassword(userId: string, updateUserDto: UpdateUserDto) {
-        const data = await this.prisma.user.update({
-            where: {
-                id: userId,
-            },
-            data: {
-                password: bcrypt.hash(updateUserDto.password, 10),
-            },
+        // 2. Prepare the update data object
+        const updateData: any = { ...otherData };
+
+        // 3. Conditionally hash and add the password if it exists
+        if (password) {
+            updateData.password = await bcrypt.hash(`${password}`, 10);
+        }
+
+        // 4. Perform a single Prisma call
+        return await this.prisma.user.update({
+            where: { id: userId },
+            data: updateData,
             select: {
-                name: true,
+                id: true,
+                firstName: true,
+                lastName: true,
+                occupation: true,
+                maritalStatus: true,
+                nationalId: true,
+                city: true,
+                streetAddress: true,
+                district: true,
+                phoneNumber: true,
+                secondaryPhoneNumber: true,
+                gender: true,
                 email: true,
                 profilePicture: true,
                 isActive: true,
@@ -133,7 +151,6 @@ export class UserService {
                 updatedAt: true,
             }
         });
-        return data;
     }
 
     async remove(userId: string) {
@@ -142,28 +159,18 @@ export class UserService {
                 id: userId,
             },
             select: {
-                name: true,
-                email: true,
-                profilePicture: true,
-                isActive: true,
-                role: true,
-                createdAt: true,
-                updatedAt: true,
-            }
-        });
-        return data;
-    }
-
-    async deactivate(userId: string) {
-        const data = await this.prisma.user.update({
-            where: {
-                id: userId,
-            },
-            data: {
-                accessToken: null,
-            },
-            select: {
-                name: true,
+                id: true,
+                firstName: true,
+                lastName: true,
+                occupation: true,
+                maritalStatus: true,
+                nationalId: true,
+                city: true,
+                streetAddress: true,
+                district: true,
+                phoneNumber: true,
+                secondaryPhoneNumber: true,
+                gender: true,
                 email: true,
                 profilePicture: true,
                 isActive: true,

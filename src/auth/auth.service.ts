@@ -45,8 +45,7 @@ export class AuthService {
                 role: user.role,
                 userId: user.id,
                 isActive: user.isActive,
-                email: user.email,
-                username: user.name,
+                email: user.email
             };
         }
         throw new UnauthorizedException({

@@ -9,288 +9,57 @@ datasource db {
 }
 
 model User {
-    id             String          @id @default(uuid())
-    name           String
-    email          String          @unique
-    password       String
-    role           Role
-    profilePicture String?
-    isActive       Boolean         @default(false)
-    accessToken    String?
-    fcmToken       String?
-    Stock          Stock[]
-    Order          Order[]
-    Service        Service[]
-    Payment        Payment[]
-    Expense        Expense[]
-    Staff          Staff[]
-    Notifications  Notifications[]
-    createdAt      DateTime        @default(now())
-    updatedAt      DateTime        @updatedAt
-    Attendance     Attendance[]
-    Banking        Banking[]
-    Reports        Reports[]
-}
-
-model Attendance {
-    id        String           @id @default(uuid())
-    userId    String
-    user      User             @relation(fields: [userId], references: [id])
-    status    AttendanceStatus @default(PRESENT)
-    memo      String?          @db.LongText
-    createdAt DateTime         @default(now())
-    updatedAt DateTime         @updatedAt
-}
-
-enum AttendanceStatus {
-    PRESENT
-    ABSENT
+    id                    String          @id @default(uuid())
+    firstName             String
+    lastName              String
+    phoneNumber           String
+    gender                String
+    nationalId            String?
+    maritalStatus         String?
+    streetAddress         String?
+    city                  String
+    district              String
+    occupation            String?
+    secondaryPhoneNumber  String?
+    email                 String?         @unique
+    password              String
+    role                  Role
+    profilePicture        String?
+    isActive              Boolean         @default(false)
+    accessToken           String?
+    fcmToken              String?
+    createdAt             DateTime        @default(now())
+    updatedAt             DateTime        @updatedAt
+    notificationsFromUser Notifications[] @relation("fromUser")
+    notificationsToUser   Notifications[] @relation("toUser")
+    loginAccesses         LoginAccess[]
 }
 
 enum Role {
     ADMIN
-    BAR
-    BAR2
-    SAUNA
-    PARKING
-    KITCHEN
+    SUPER_ADMIN
+    MOBILE_APP
 }
 
-model Table {
-    id        String      @id @default(uuid())
-    name      String
-    status    TableStatus @default(FREE)
-    createdAt DateTime    @default(now())
-    updatedAt DateTime    @updatedAt
-}
-
-enum TableStatus {
-    TAKEN
-    FREE
-}
-
-model Order {
-    id            String      @id @default(uuid())
-    customer      String?
-    table         String
-    itemId        String
-    item          Stock       @relation(fields: [itemId], references: [id])
-    qty           Int         @default(1)
-    status        OrderStatus @default(PENDING)
-    kitchenStatus OrderStatus @default(PENDING)
-    orderType     OrderType   @default(BAR)
-    Payment       Payment[]
-    userId        String
-    user          User        @relation(fields: [userId], references: [id])
-    createdAt     DateTime    @default(now())
-    updatedAt     DateTime    @updatedAt
-}
-
-enum OrderType {
-    KITCHEN
-    BAR
-}
-
-enum OrderStatus {
-    PENDING
-    SERVED
-    PREPARING
-    READY
-    CANCELLED
-}
-
-model Service {
-    id          String        @id @default(uuid())
-    userId      String
-    user        User          @relation(fields: [userId], references: [id])
-    customer    String?
-    phoneNumber String?
-    service     ServiceList
-    Payment     Payment[]
-    amount      Int           @default(0)
-    status      ServiceStatus @default(PENDING)
-    duration    String
-    memo        String?       @db.LongText
-    createdAt   DateTime      @default(now())
-    updatedAt   DateTime      @updatedAt
-}
-
-enum ServiceList {
-    SAUNA
-    PARKING
-    GARDENS
-    ACCOMODATION
-    OTHER
-}
-
-enum ServiceStatus {
-    PAID
-    PENDING
-    CANCELLED
-}
-
-model Payment {
-    id        String        @id @default(uuid())
-    userId    String
-    user      User          @relation(fields: [userId], references: [id])
-    orderId   String?
-    order     Order?        @relation(fields: [orderId], references: [id])
-    serviceId String?
-    service   Service?      @relation(fields: [serviceId], references: [id])
-    paid      Int           @default(0)
-    status    PaymentStatus @default(PENDING)
-    createdAt DateTime      @default(now())
-    updatedAt DateTime      @updatedAt
-}
-
-enum PaymentStatus {
-    PENDING
-    CANCELLED
-    PAID
-}
-
-model Stock {
-    id           String         @id @default(uuid())
-    userId       String
-    user         User           @relation(fields: [userId], references: [id])
-    item         String         @unique
-    category     StockCategory
-    qty          Int            @default(1)
-    UnitPrice    Int            @default(0)
-    subItem      String?        @default("none")
-    image        String?
-    status       StockStatus    @default(AVAILABLE)
-    Order        Order[]
-    StockHistory StockHistory[]
-    show         Boolean        @default(false)
-    isDeleted    Boolean        @default(false)
-    memo         String?        @db.LongText
-    createdAt    DateTime       @default(now())
-    updatedAt    DateTime       @updatedAt
-}
-
-model StockHistory {
+model LoginAccess {
     id        String   @id @default(uuid())
-    itemId    String
-    item      Stock    @relation(fields: [itemId], references: [id])
-    qty       Int
-    createdAt DateTime @default(now())
-    updatedAt DateTime @updatedAt
-}
-
-enum StockCategory {
-    PRODUCE
-    DRINKS
-    FOOD
-    MEAT
-    DRY_GOODS
-    OTHERS
-}
-
-enum StockStatus {
-    AVAILABLE
-    OUT_OF_STOCK
-    LOW_STOCK
-}
-
-model Expense {
-    id        String   @id @default(uuid())
-    item      String
-    amount    Int      @default(0)
     userId    String
     user      User     @relation(fields: [userId], references: [id])
     createdAt DateTime @default(now())
     updatedAt DateTime @updatedAt
-}
-
-model Banking {
-    id        String      @id @default(uuid())
-    amount    Int         @default(0)
-    userId    String
-    user      User        @relation(fields: [userId], references: [id])
-    type      BankingType @default(DEPOSIT)
-    memo      String?     @db.LongText
-    createdAt DateTime    @default(now())
-    updatedAt DateTime    @updatedAt
-}
-
-enum BankingType {
-    WITHDRAW
-    DEPOSIT
-}
-
-model Staff {
-    id         String          @id @default(uuid())
-    name       String
-    baseSalary Int             @default(0)
-    role       String
-    payPeriod  DateTime?
-    userId     String
-    user       User            @relation(fields: [userId], references: [id])
-    salary     SalaryPayment[]
-    createdAt  DateTime        @default(now())
-    updatedAt  DateTime        @updatedAt
-}
-
-model SalaryPayment {
-    id         String   @id @default(uuid())
-    staffId    String
-    staff      Staff    @relation(fields: [staffId], references: [id])
-    amountPaid Int      @default(0)
-    period     String
-    createdAt  DateTime @default(now())
-    updatedAt  DateTime @updatedAt
-}
-
-enum StaffPaymentStatus {
-    PENDING
-    PAID
-    FAILED
 }
 
 model Notifications {
-    id        String   @id @default(uuid())
-    title     String
-    message   String
-    to        String
-    userId    String
-    user      User     @relation(fields: [userId], references: [id])
-    read      Boolean  @default(false)
-    createdAt DateTime @default(now())
-    updatedAt DateTime @updatedAt
-}
-
-model Reports {
-    id        String   @id @default(uuid())
-    userId    String
-    user      User     @relation(fields: [userId], references: [id])
-    title     String
-    report    String   @db.LongText
-    createdAt DateTime @default(now())
-    updatedAt DateTime @updatedAt
-}
-
-//Website
-model WebsiteGallery {
-    id          String   @id @default(uuid())
-    title       String
-    description String?
-    image       String   @db.LongText
-    section     String?
-    isActive    Boolean  @default(false)
-    createdAt   DateTime @default(now())
-    updatedAt   DateTime @updatedAt
-}
-
-model WebsiteBlog {
-    id          String   @id @default(uuid())
-    title       String
-    description String?  @db.LongText
-    image       String   @db.LongText
-    section     String?
-    isActive    Boolean  @default(false)
-    createdAt   DateTime @default(now())
-    updatedAt   DateTime @updatedAt
+    id         String   @id @default(uuid())
+    title      String
+    message    String
+    fromUserId String
+    fromUser   User     @relation("fromUser", fields: [fromUserId], references: [id])
+    toUserId   String
+    toUser     User     @relation("toUser", fields: [toUserId], references: [id])
+    read       Boolean  @default(false)
+    createdAt  DateTime @default(now())
+    updatedAt  DateTime @updatedAt
 }
 
 model WebsiteContact {
@@ -306,24 +75,4 @@ model WebsiteContact {
     isRead         Boolean  @default(false)
     createdAt      DateTime @default(now())
     updatedAt      DateTime @updatedAt
-}
-
-model WebsiteTestimonies {
-    id        String   @id @default(uuid())
-    name      String
-    title     String
-    stars     Int
-    message   String   @db.LongText
-    isActive  Boolean  @default(false)
-    createdAt DateTime @default(now())
-    updatedAt DateTime @updatedAt
-}
-
-model Permission {
-    id        String   @id @default(uuid())
-    page      String
-    email     String
-    isActive  Boolean  @default(false)
-    createdAt DateTime @default(now())
-    updatedAt DateTime @updatedAt
 }

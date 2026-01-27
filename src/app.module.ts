@@ -2,60 +2,44 @@ import { Module } from '@nestjs/common';
 import { UserModule } from './user/user.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { AuthModule } from './auth/auth.module';
-import { ConfigModule } from '@nestjs/config';
+import { ConfigModule, ConfigService } from '@nestjs/config';
 import { JwtModule } from '@nestjs/jwt';
 import { DashboardModule } from './dashboard/dashboard.module';
-import { OrderModule } from './order/order.module';
-import { StockModule } from './stock/stock.module';
-import { ServicesModule } from './services/services.module';
-import { AttendanceModule } from './attendance/attendance.module';
-import { SalaryModule } from './salary/salary.module';
-import { StaffModule } from './staff/staff.module';
-import { ExpenseModule } from './expense/expense.module';
-import { PaymentModule } from './payment/payment.module';
-import { PrinterModule } from './printer/printer.module';
 import { FirebaseModule } from './firebase/firebase.module';
 import { NotificationsModule } from './notifications/notifications.module';
-import { BankingModule } from './banking/banking.module';
-import { WebsiteGalleryModule } from './website_gallery/website_gallery.module';
-import { WebsiteBlogModule } from './website_blog/website_blog.module';
-import { WebsiteContactModule } from './website_contact/website_contact.module';
-import { WebsiteTestimonyModule } from './website_testimony/website_testimony.module';
-import { ReportsModule } from './reports/reports.module';
-import { SettingsModule } from './settings/settings.module';
+import { CacheModule } from '@nestjs/cache-manager';
+import { createKeyv } from '@keyv/redis';
 
 @Module({
-  imports: [
-    ConfigModule.forRoot({
-      isGlobal: true,
-    }),
-    JwtModule.register({
-      secret: process.env.SYSTEM_SECRET,
-      signOptions: { expiresIn: '30d' },
-    }),
-    UserModule, 
-    PrismaModule, 
-    AuthModule, 
-    DashboardModule, 
-    OrderModule, StockModule, 
-    ServicesModule, 
-    AttendanceModule, 
-    SalaryModule, 
-    StaffModule, 
-    ExpenseModule, 
-    PaymentModule, 
-    PrinterModule,
-    FirebaseModule,
-    NotificationsModule,
-    BankingModule,
-    WebsiteGalleryModule,
-    WebsiteBlogModule,
-    WebsiteContactModule,
-    WebsiteTestimonyModule,
-    ReportsModule,
-    SettingsModule,
-],
-  controllers: [],
-  providers: [],
+    imports: [
+        ConfigModule.forRoot({
+            isGlobal: true,
+        }),
+        CacheModule.registerAsync({
+            isGlobal: true,
+            imports: [ConfigModule],
+            useFactory: async (configService: ConfigService) => {
+                const redisUrl = configService.get('REDIS_URL') || 'redis://localhost:6379';
+
+                return {
+                    stores: [createKeyv(redisUrl)],
+                    ttl: 60000,
+                };
+            },
+            inject: [ConfigService],
+        }),
+        JwtModule.register({
+            secret: process.env.SYSTEM_SECRET,
+            signOptions: { expiresIn: '30d' },
+        }),
+        UserModule,
+        PrismaModule,
+        AuthModule,
+        DashboardModule,
+        FirebaseModule,
+        NotificationsModule,
+    ],
+    controllers: [],
+    providers: [],
 })
-export class AppModule {}
+export class AppModule { }
