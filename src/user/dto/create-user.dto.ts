@@ -92,4 +92,9 @@ export class CreateUserDto {
     @IsBoolean()
     @IsOptional()
     isActive: boolean;
+
+    @ApiProperty({ name: "Web" })
+    @IsString()
+    @IsOptional()
+    devices?: string;
 }

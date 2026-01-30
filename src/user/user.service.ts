@@ -1,7 +1,8 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, InternalServerErrorException } from '@nestjs/common';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { PrismaService } from 'src/prisma/prisma.service';
+import { DocumentType } from '@prisma/client';
 const bcrypt = require("bcryptjs");
 
 @Injectable()
@@ -35,7 +36,12 @@ export class UserService {
                 createdAt: true,
                 updatedAt: true,
             }
-        })
+        });
+
+        //Add to settings
+        await this.prisma.settings.create({
+            data: { userId: data.id },
+        });
         return data;
     }
 
@@ -49,13 +55,32 @@ export class UserService {
         return checkPassword;
     }
 
+    async loginAccess(page: number, limit: number) {
+        const data = await this.prisma.loginAccess.findMany({
+            select: {
+                user: {
+                    select: {
+                        firstName: true,
+                        lastName: true,
+                        phoneNumber: true,
+                        occupation: true,
+                        nationalId: true,
+                    }
+                },
+                createdAt: true,
+                updatedAt: true,
+            },
+            orderBy: {
+                createdAt: "desc"
+            },
+            skip: (page - 1) * limit,
+            take: limit,
+        });
+        return data;
+    }
+
     async findAll(page: number, limit: number) {
         const data = await this.prisma.user.findMany({
-            where: {
-                email: {
-                    not: "arnoldhenry958@gmail.com",
-                }
-            },
             select: {
                 id: true,
                 firstName: true,
@@ -73,6 +98,7 @@ export class UserService {
                 profilePicture: true,
                 isActive: true,
                 role: true,
+                settings: true,
                 createdAt: true,
                 updatedAt: true,
             },
@@ -107,8 +133,10 @@ export class UserService {
                 profilePicture: true,
                 isActive: true,
                 role: true,
+                settings: true,
                 createdAt: true,
                 updatedAt: true,
+                documents: true,
             }
         });
         return data;
@@ -151,6 +179,56 @@ export class UserService {
                 updatedAt: true,
             }
         });
+    }
+
+    async updateProfilePicture(userId: string, profilePicture: string) {
+        return await this.prisma.user.update({
+            where: { id: userId },
+            data: {
+                profilePicture
+            },
+            select: {
+                id: true,
+                firstName: true,
+                lastName: true,
+                occupation: true,
+                maritalStatus: true,
+                nationalId: true,
+                city: true,
+                streetAddress: true,
+                district: true,
+                phoneNumber: true,
+                secondaryPhoneNumber: true,
+                gender: true,
+                email: true,
+                profilePicture: true,
+                isActive: true,
+                role: true,
+                createdAt: true,
+                updatedAt: true,
+            }
+        });
+    }
+
+    async uploadDocument(userId: string, docType: DocumentType, docName: string) {
+        try {
+            const data = await this.prisma.document.create({
+                data: {
+                    userId,
+                    documentType: docType,
+                    name: docName
+                }
+            });
+            return data;
+        } catch (e) {
+            if (process.env.MODE == "Dev") {
+                console.log("Error", e);
+            }
+            throw new InternalServerErrorException({
+                success: false,
+                error: e,
+            });
+        }
     }
 
     async remove(userId: string) {

@@ -33,6 +33,10 @@ model User {
     notificationsFromUser Notifications[] @relation("fromUser")
     notificationsToUser   Notifications[] @relation("toUser")
     loginAccesses         LoginAccess[]
+    targets               Target[]
+    documents             Document[]
+    news                  News[]
+    settings              Settings[]
 }
 
 enum Role {
@@ -41,10 +45,106 @@ enum Role {
     MOBILE_APP
 }
 
+model Document {
+    id           String         @id @default(uuid())
+    userId       String
+    user         User           @relation(fields: [userId], references: [id])
+    documentType DocumentType
+    name         String
+    status       DocumentStatus @default(PENDING)
+    createdAt    DateTime       @default(now())
+    updatedAt    DateTime       @updatedAt
+}
+
+enum DocumentType {
+    NATIONAL_ID
+    PASSPORT_PHOTO
+}
+
+enum DocumentStatus {
+    PENDING
+    APPROVED
+    REJECTED
+}
+
 model LoginAccess {
     id        String   @id @default(uuid())
     userId    String
     user      User     @relation(fields: [userId], references: [id])
+    device    String?  @db.LongText
+    createdAt DateTime @default(now())
+    updatedAt DateTime @updatedAt
+}
+
+model Target {
+    id           String              @id @default(uuid())
+    userId       String
+    user         User                @relation(fields: [userId], references: [id])
+    targetLabel  String?
+    amount       Float               @default(0.0)
+    status       TargetStatus        @default(PENDING)
+    isDeleted    Boolean             @default(false)
+    createdAt    DateTime            @default(now())
+    updatedAt    DateTime            @updatedAt
+    transactions TargetTransaction[]
+}
+
+enum TargetStatus {
+    PENDING
+    ACTIVE
+    INACTIVE
+}
+
+enum TargetTransactionStatus {
+    PENDING
+    APPROVED
+    REJECTED
+}
+
+model TargetTransaction {
+    id        String                  @id @default(uuid())
+    targetId  String
+    target    Target                  @relation(fields: [targetId], references: [id])
+    amount    Float                   @default(0.0)
+    reason    TransactionReason
+    status    TargetTransactionStatus @default(PENDING)
+    balance   Float                   @default(0.0)
+    isDeleted Boolean                 @default(false)
+    createdAt DateTime                @default(now())
+    updatedAt DateTime                @updatedAt
+}
+
+enum TransactionReason {
+    DEBIT
+    CREDIT
+}
+
+model NewsLetter {
+    id        String   @id @default(uuid())
+    title     String
+    message   String   @db.LongText
+    emails    String   @db.LongText
+    createdAt DateTime @default(now())
+    updatedAt DateTime @updatedAt
+}
+
+model News {
+    id         String   @id @default(uuid())
+    title      String
+    message    String   @db.LongText
+    tag        String?
+    isFeatured Boolean  @default(false)
+    userId     String
+    user       User     @relation(fields: [userId], references: [id])
+    createdAt  DateTime @default(now())
+    updatedAt  DateTime @updatedAt
+}
+
+model Socials {
+    id        String   @id @default(uuid())
+    title     String
+    url       String   @db.LongText
+    icon      String
     createdAt DateTime @default(now())
     updatedAt DateTime @updatedAt
 }
@@ -60,6 +160,20 @@ model Notifications {
     read       Boolean  @default(false)
     createdAt  DateTime @default(now())
     updatedAt  DateTime @updatedAt
+}
+
+model Settings {
+    id                 String   @id @default(uuid())
+    userId             String
+    user               User     @relation(fields: [userId], references: [id])
+    emailNotifications Boolean  @default(false)
+    smsNotifications   Boolean  @default(false)
+    pushNotifications  Boolean  @default(false)
+    newsLetter         Boolean  @default(false)
+    twoFa              Boolean  @default(false)
+    loginAlerts        Boolean  @default(false)
+    createdAt          DateTime @default(now())
+    updatedAt          DateTime @updatedAt
 }
 
 model WebsiteContact {

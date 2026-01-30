@@ -10,7 +10,7 @@ import { UserService } from 'src/user/user.service';
         JwtModule.register({
             global: true,
             secret: process.env.SYSTEM_SECRET,
-            signOptions: { expiresIn: '7days' },
+            signOptions: { expiresIn: '30s' },
         }),
     ],
     controllers: [AuthController],

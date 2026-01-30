@@ -9,6 +9,12 @@ import { FirebaseModule } from './firebase/firebase.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { CacheModule } from '@nestjs/cache-manager';
 import { createKeyv } from '@keyv/redis';
+import { TargetModule } from './target/target.module';
+import { SettingsModule } from './settings/settings.module';
+import { PaymentsModule } from './payments/payments.module';
+import { MailerModule } from '@nestjs-modules/mailer';
+import { HandlebarsAdapter } from '@nestjs-modules/mailer/dist/adapters/handlebars.adapter';
+import { join } from 'path';
 
 @Module({
     imports: [
@@ -30,7 +36,7 @@ import { createKeyv } from '@keyv/redis';
         }),
         JwtModule.register({
             secret: process.env.SYSTEM_SECRET,
-            signOptions: { expiresIn: '30d' },
+            signOptions: { expiresIn: '30s' },
         }),
         UserModule,
         PrismaModule,
@@ -38,6 +44,25 @@ import { createKeyv } from '@keyv/redis';
         DashboardModule,
         FirebaseModule,
         NotificationsModule,
+        TargetModule,
+        SettingsModule,
+        PaymentsModule,
+        MailerModule.forRoot({
+            transport: {
+                host: 'smtp.gmail.com',
+                auth: {
+                    user: process.env.EMAIL_USER,
+                    pass: process.env.EMAIL_PASS,
+                },
+            },
+            template: {
+                dir: join(__dirname, 'templates'), // Where your .hbs files live
+                adapter: new HandlebarsAdapter(),
+                options: {
+                    strict: true,
+                },
+            },
+        }),
     ],
     controllers: [],
     providers: [],

@@ -13,7 +13,7 @@ import { FirebaseService } from './firebase.service';
       useFactory: () => {
         // Construct the path to your service account key file
         // Make sure this path is correct relative to your NestJS app's root.
-        const serviceAccountPath = path.resolve(process.cwd(), 'config', 'zimbena-gardens-firebase-adminsdk-fbsvc-0a71156385.json');
+        const serviceAccountPath = path.resolve(process.cwd(), 'src/config', 'zimbena-gardens-firebase-adminsdk-fbsvc-0a71156385.json');
 
         // Check if the file exists (optional, but good for debugging)
         try {
