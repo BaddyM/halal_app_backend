@@ -11,7 +11,6 @@ import { CacheModule } from '@nestjs/cache-manager';
 import { createKeyv } from '@keyv/redis';
 import { TargetModule } from './target/target.module';
 import { SettingsModule } from './settings/settings.module';
-import { PaymentsModule } from './payments/payments.module';
 import { MailerModule } from '@nestjs-modules/mailer';
 import { HandlebarsAdapter } from '@nestjs-modules/mailer/dist/adapters/handlebars.adapter';
 import { join } from 'path';
@@ -46,7 +45,6 @@ import { join } from 'path';
         NotificationsModule,
         TargetModule,
         SettingsModule,
-        PaymentsModule,
         MailerModule.forRoot({
             transport: {
                 host: 'smtp.gmail.com',

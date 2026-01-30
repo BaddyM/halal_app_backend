@@ -58,6 +58,16 @@ export class TargetController {
     }
 
     @UseGuards(AuthGuard)
+    @Get('transactions/fetch/all')
+    @UseInterceptors(CacheInterceptor)
+    @CacheTTL(300_000)
+    @ApiQuery({ name: "page" })
+    @ApiQuery({ name: "limit" })
+    findAllTransactions(@Query("page") page: string, @Query("limit") limit: string) {
+        return this.targetService.all_transactions(parseInt(page), parseInt(limit));
+    }
+
+    @UseGuards(AuthGuard)
     @Patch(':userId')
     update(@Param('userId') userId: string, @Body() updateTargetDto: UpdateTargetDto) {
         return this.targetService.update(userId, updateTargetDto);

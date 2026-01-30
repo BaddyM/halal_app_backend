@@ -9,7 +9,7 @@ datasource db {
 }
 
 model User {
-    id                    String          @id @default(uuid())
+    id                    String            @id @default(uuid())
     firstName             String
     lastName              String
     phoneNumber           String
@@ -21,28 +21,39 @@ model User {
     district              String
     occupation            String?
     secondaryPhoneNumber  String?
-    email                 String?         @unique
+    email                 String?           @unique
     password              String
     role                  Role
     profilePicture        String?
-    isActive              Boolean         @default(false)
+    isActive              Boolean           @default(false)
     accessToken           String?
     fcmToken              String?
-    createdAt             DateTime        @default(now())
-    updatedAt             DateTime        @updatedAt
-    notificationsFromUser Notifications[] @relation("fromUser")
-    notificationsToUser   Notifications[] @relation("toUser")
+    createdAt             DateTime          @default(now())
+    updatedAt             DateTime          @updatedAt
+    notificationsFromUser Notifications[]   @relation("fromUser")
+    notificationsToUser   Notifications[]   @relation("toUser")
     loginAccesses         LoginAccess[]
     targets               Target[]
     documents             Document[]
     news                  News[]
     settings              Settings[]
+    otpVerifications      OtpVerification[]
 }
 
 enum Role {
     ADMIN
     SUPER_ADMIN
     MOBILE_APP
+}
+
+model OtpVerification {
+    id        String   @id @default(uuid())
+    userId    String
+    user      User     @relation(fields: [userId], references: [id])
+    otp       Int
+    expiresAt DateTime
+    createdAt DateTime @default(now())
+    updatedAt DateTime @updatedAt
 }
 
 model Document {

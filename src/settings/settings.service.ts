@@ -1,5 +1,5 @@
 import { BadRequestException, Injectable, InternalServerErrorException } from '@nestjs/common';
-import { CreateSettingDto, SendWelcomeMailDto } from './dto/create-setting.dto';
+import { CreateSettingDto, SendLoginMailDto, SendWelcomeMailDto } from './dto/create-setting.dto';
 import { UpdateSettingDto } from './dto/update-setting.dto';
 import { MailerService } from '@nestjs-modules/mailer';
 import { join } from 'path';
@@ -20,6 +20,74 @@ export class SettingsService {
                 context: {            // Data to be passed to the template
                     name: sendWelcomeMailDto.username,
                     url: 'https://myapp.com/dashboard',
+                    company: "Anchor Within",
+                    year: new Date().getFullYear()
+                },
+                attachments: [
+                    {
+                        filename: 'logo.png',
+                        // Point to the template directory specifically
+                        path: join(__dirname, '..', 'templates', 'logo.png'),
+                        cid: 'logo',
+                    },
+                ],
+            });
+        } catch (e) {
+            if (process.env.MODE == "Dev") {
+                console.log("error", e);
+            }
+            throw new InternalServerErrorException({
+                success: false,
+                message: "Failed to send email",
+                error: e
+            })
+        }
+    }
+
+    async sendLoginMail(email: string, username: string, device?: string, ipAddress?: string, timestamp?: string) {
+        try {
+            await this.mailerService.sendMail({
+                to: email,
+                subject: 'Login Alert!',
+                template: './login-notification', // The name of the .hbs file (without extension)
+                context: {            // Data to be passed to the template
+                    name: username,
+                    secureUrl: "https://auth/reset-password",
+                    device: device ?? "",
+                    ipAddress: ipAddress ?? "",
+                    timestamp: timestamp ?? "",
+                    company: "Anchor Within",
+                    year: new Date().getFullYear()
+                },
+                attachments: [
+                    {
+                        filename: 'logo.png',
+                        // Point to the template directory specifically
+                        path: join(__dirname, '..', 'templates', 'logo.png'),
+                        cid: 'logo',
+                    },
+                ],
+            });
+        } catch (e) {
+            if (process.env.MODE == "Dev") {
+                console.log("error", e);
+            }
+            throw new InternalServerErrorException({
+                success: false,
+                message: "Failed to send email",
+                error: e
+            })
+        }
+    }
+
+    async sendOtpMail(email: string, otp: number) {
+        try {
+            await this.mailerService.sendMail({
+                to: email,
+                subject: 'OTP Verification!',
+                template: './otp-verification', // The name of the .hbs file (without extension)
+                context: {            // Data to be passed to the template
+                    otp: otp,
                     company: "Anchor Within",
                     year: new Date().getFullYear()
                 },

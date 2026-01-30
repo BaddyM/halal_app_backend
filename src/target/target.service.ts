@@ -140,6 +140,42 @@ export class TargetService {
             });
         }
     }
+    
+    async all_transactions(page: number, limit: number) {
+        try {
+            const data = await this.prisma.targetTransaction.findMany({
+                include: {
+                    target: {
+                        select: {
+                            targetLabel: true,
+                            amount: true,
+                            user: {
+                                select: {
+                                    firstName: true,
+                                    lastName: true,
+                                }
+                            }
+                        }
+                    }
+                },
+                skip: (page - 1) * limit,
+                take: limit,
+                orderBy: {
+                    createdAt: "desc"
+                }
+            });
+            console.log("data",data)
+            return data;
+        } catch (e) {
+            if (process.env.MODE == "Dev") {
+                console.log("error", e);
+            }
+            throw new InternalServerErrorException({
+                success: false,
+                error: e,
+            });
+        }
+    }
 
     async update(id: string, updateTargetDto: UpdateTargetDto) {
         try {

@@ -14,3 +14,25 @@ export class SendWelcomeMailDto {
     @IsNotEmpty()
     email: string;
 }
+
+export class SendLoginMailDto {
+    @ApiProperty()
+    @IsString()
+    @IsNotEmpty()
+    email: string;
+
+    @ApiProperty()
+    @IsString()
+    @IsNotEmpty()
+    device: string;
+
+    @ApiProperty()
+    @IsString()
+    @IsNotEmpty()
+    ipAddress: string;
+
+    @ApiProperty()
+    @IsString()
+    @IsNotEmpty()
+    timestamp: string;
+}
