@@ -1,7 +1,7 @@
-import { Controller, Get, Post, Body, Patch, Param, Delete, BadRequestException, Res, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Body, Patch, Param, Delete, BadRequestException, Res, UseGuards, Query } from '@nestjs/common';
 import { DashboardService } from './dashboard.service';
 import { Response } from 'express';
-import { ApiBearerAuth } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiParam } from '@nestjs/swagger';
 import { AuthGuard } from 'src/auth/auth.guard';
 
 @ApiBearerAuth()
@@ -21,6 +21,20 @@ export class DashboardController {
                 success: true,
                 data: data,
             });
+        } catch (err) {
+            console.log(err);
+            throw new BadRequestException({
+                success: false,
+                message: "Failed to fetch summary",
+            });
+        }
+    }
+
+    @Get("mobile/:userId")
+    @ApiParam({ name: "userId" })
+    async mobile_summary(@Query("userId") userId: string) {
+        try {
+            return await this.dashboardService.mobile_summary(userId);
         } catch (err) {
             console.log(err);
             throw new BadRequestException({

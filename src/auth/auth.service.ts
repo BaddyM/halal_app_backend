@@ -88,11 +88,11 @@ export class AuthService {
                 })
 
                 await this.settingService.sendLoginMail(user.email!, user.firstName, device, ipAddress, `${new Date().toDateString()} at ${new Date().toLocaleTimeString()}`);
-
                 return {
                     accessToken,
                     role: user.role,
                     userId: user.id,
+                    name: `${user.lastName} ${user.firstName}`,
                     isActive: user.isActive,
                     email: user.email
                 };

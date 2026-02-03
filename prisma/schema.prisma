@@ -15,6 +15,7 @@ model User {
     phoneNumber           String
     gender                String
     nationalId            String?
+    dob                   String?
     maritalStatus         String?
     streetAddress         String?
     city                  String

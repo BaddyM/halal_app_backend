@@ -23,6 +23,11 @@ export class CreateUserDto {
     @IsNotEmpty()
     gender: string;
 
+    @ApiProperty({ name: "dob" })
+    @IsString()
+    @IsOptional()
+    dob?: string;
+
     @ApiProperty({ name: "nationalId" })
     @IsString()
     @IsOptional()

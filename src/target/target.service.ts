@@ -164,7 +164,6 @@ export class TargetService {
                     createdAt: "desc"
                 }
             });
-            console.log("data",data)
             return data;
         } catch (e) {
             if (process.env.MODE == "Dev") {
