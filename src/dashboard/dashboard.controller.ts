@@ -32,7 +32,7 @@ export class DashboardController {
 
     @Get("mobile/:userId")
     @ApiParam({ name: "userId" })
-    async mobile_summary(@Query("userId") userId: string) {
+    async mobile_summary(@Param("userId") userId: string) {
         try {
             return await this.dashboardService.mobile_summary(userId);
         } catch (err) {
