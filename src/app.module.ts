@@ -14,6 +14,7 @@ import { SettingsModule } from './settings/settings.module';
 import { MailerModule } from '@nestjs-modules/mailer';
 import { HandlebarsAdapter } from '@nestjs-modules/mailer/dist/adapters/handlebars.adapter';
 import { join } from 'path';
+import { ServeStaticModule } from '@nestjs/serve-static';
 
 @Module({
     imports: [
@@ -36,6 +37,10 @@ import { join } from 'path';
         JwtModule.register({
             secret: process.env.SYSTEM_SECRET,
             signOptions: { expiresIn: '30s' },
+        }),
+        ServeStaticModule.forRoot({
+            rootPath: join(process.cwd(), 'uploads'),
+            serveRoot: '/uploads/',
         }),
         UserModule,
         PrismaModule,

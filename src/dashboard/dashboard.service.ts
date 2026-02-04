@@ -18,13 +18,14 @@ export class DashboardService {
         const targets = await this.prisma.target.findMany({
             where: { userId },
             orderBy: { createdAt: "desc" },
-            include:{
-                transactions:true,
+            include: {
+                transactions: true,
             }
         });
 
         for (let i = 0; i < targets.length; i++) {
             balances.push({
+                target_id: targets[i].id,
                 target_label: targets[i].targetLabel,
                 amount: targets[i].amount,
                 balance: targets[i].transactions.reduce((sum, item) => item.status == "APPROVED" ? sum + item.amount : 0, 0),

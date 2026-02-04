@@ -145,8 +145,8 @@ export class UserController {
 
     @ApiBearerAuth()
     @UseGuards(AuthGuard)
-    @UseInterceptors(CacheInterceptor)
-    @CacheTTL(300_000)
+    // @UseInterceptors(CacheInterceptor)
+    // @CacheTTL(300_000)
     @Get("all")
     @ApiQuery({ name: "page" })
     @ApiQuery({ name: "limit" })
@@ -156,8 +156,8 @@ export class UserController {
 
     @ApiBearerAuth()
     @UseGuards(AuthGuard)
-    @UseInterceptors(CacheInterceptor)
-    @CacheTTL(300_000)
+    // @UseInterceptors(CacheInterceptor)
+    // @CacheTTL(300_000)
     @Get("loginAccess")
     @ApiQuery({ name: "page" })
     @ApiQuery({ name: "limit" })
@@ -167,8 +167,8 @@ export class UserController {
 
     @ApiBearerAuth()
     @UseGuards(AuthGuard)
-    @UseInterceptors(CacheInterceptor)
-    @CacheTTL(300_000)
+    // @UseInterceptors(CacheInterceptor)
+    // @CacheTTL(300_000)
     @ApiParam({ name: "userId" })
     @Get(':userId')
     findOne(@Param('userId') userId: string) {

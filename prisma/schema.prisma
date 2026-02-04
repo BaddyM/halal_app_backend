@@ -9,36 +9,35 @@ datasource db {
 }
 
 model User {
-    id                    String            @id @default(uuid())
-    firstName             String
-    lastName              String
-    phoneNumber           String
-    gender                String
-    nationalId            String?
-    dob                   String?
-    maritalStatus         String?
-    streetAddress         String?
-    city                  String
-    district              String
-    occupation            String?
-    secondaryPhoneNumber  String?
-    email                 String?           @unique
-    password              String
-    role                  Role
-    profilePicture        String?
-    isActive              Boolean           @default(false)
-    accessToken           String?
-    fcmToken              String?
-    createdAt             DateTime          @default(now())
-    updatedAt             DateTime          @updatedAt
-    notificationsFromUser Notifications[]   @relation("fromUser")
-    notificationsToUser   Notifications[]   @relation("toUser")
-    loginAccesses         LoginAccess[]
-    targets               Target[]
-    documents             Document[]
-    news                  News[]
-    settings              Settings[]
-    otpVerifications      OtpVerification[]
+    id                   String            @id @default(uuid())
+    firstName            String
+    lastName             String
+    phoneNumber          String
+    gender               String
+    nationalId           String?
+    dob                  String?
+    maritalStatus        String?
+    streetAddress        String?
+    city                 String
+    district             String
+    occupation           String?
+    secondaryPhoneNumber String?
+    email                String?           @unique
+    password             String
+    role                 Role
+    profilePicture       String?
+    isActive             Boolean           @default(false)
+    accessToken          String?
+    fcmToken             String?
+    createdAt            DateTime          @default(now())
+    updatedAt            DateTime          @updatedAt
+    loginAccesses        LoginAccess[]
+    targets              Target[]
+    documents            Document[]
+    news                 News[]
+    settings             Settings[]
+    otpVerifications     OtpVerification[]
+    notifications        Notifications[]
 }
 
 enum Role {
@@ -114,16 +113,17 @@ enum TargetTransactionStatus {
 }
 
 model TargetTransaction {
-    id        String                  @id @default(uuid())
-    targetId  String
-    target    Target                  @relation(fields: [targetId], references: [id])
-    amount    Float                   @default(0.0)
-    reason    TransactionReason
-    status    TargetTransactionStatus @default(PENDING)
-    balance   Float                   @default(0.0)
-    isDeleted Boolean                 @default(false)
-    createdAt DateTime                @default(now())
-    updatedAt DateTime                @updatedAt
+    id            String                  @id @default(uuid())
+    targetId      String
+    target        Target                  @relation(fields: [targetId], references: [id])
+    amount        Float                   @default(0.0)
+    reason        TransactionReason
+    status        TargetTransactionStatus @default(PENDING)
+    paymentMethod String?
+    balance       Float                   @default(0.0)
+    isDeleted     Boolean                 @default(false)
+    createdAt     DateTime                @default(now())
+    updatedAt     DateTime                @updatedAt
 }
 
 enum TransactionReason {
@@ -162,16 +162,14 @@ model Socials {
 }
 
 model Notifications {
-    id         String   @id @default(uuid())
-    title      String
-    message    String
-    fromUserId String
-    fromUser   User     @relation("fromUser", fields: [fromUserId], references: [id])
-    toUserId   String
-    toUser     User     @relation("toUser", fields: [toUserId], references: [id])
-    read       Boolean  @default(false)
-    createdAt  DateTime @default(now())
-    updatedAt  DateTime @updatedAt
+    id        String   @id @default(uuid())
+    title     String
+    message   String
+    userId    String
+    user      User     @relation(fields: [userId], references: [id])
+    read      Boolean  @default(false)
+    createdAt DateTime @default(now())
+    updatedAt DateTime @updatedAt
 }
 
 model Settings {
