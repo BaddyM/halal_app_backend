@@ -9,17 +9,17 @@
 #     env_file:
 #       - backend.env
 #     depends_on:
-#       db:
+#       mysql:
 #         condition: service_healthy
 #     # This command ensures Prisma generates the client and pushes migrations
 #     # before starting the NestJS app
 #     command: >
-#       sh -c "npx prisma generate && npx prisma db push && npm run start:dev"
+#       sh -c "npx prisma generate && npx prisma mysql push && npm run start:dev"
 #     networks:
-#       - sacco-network
+#       - mysql-redis-network
 
 #   # --- MYSQL DATABASE ---
-#   db:
+#   mysql:
 #     image: mysql:8.0
 #     container_name: mysql_v8
 #     restart: always
@@ -36,10 +36,10 @@
 #       timeout: 5s
 #       retries: 10
 #     networks:
-#       - sacco-network
+#       - mysql-redis-network
 
 # networks:
-#   sacco-network:
+#   mysql-redis-network:
 #     driver: bridge
 
 # volumes:
@@ -50,24 +50,26 @@
 
 services:
   api:
-    image: ghcr.io/baddym/sacco-backend:latest
+    build: 
+      context: .
+      dockerfile: Dockerfile
     container_name: sacco-backend
     restart: always
     ports:
       - "3001:3000"
     environment:
-      - DATABASE_URL=mysql://root:@Bekhan12@db:3306/sacco_db
+      - DATABASE_URL=mysql://root:@Bekhan12@mysql:3306/sacco_db
       - PORT=3000
       - SYSTEM_SECRET=MYAUTHSECRETISVERYSTRONG
       - MODE=Prod
       - REDIS_URL=redis://redis:6379
     depends_on:
-      db:
+      mysql:
         condition: service_healthy
       redis:
         condition: service_started
     networks:
-      - sacco-network
+      - mysql-redis-network
 
   redis:
     image: redis:alpine
@@ -76,9 +78,9 @@ services:
     ports:
       - "127.0.0.1:6379:6379"
     networks:
-      - sacco-network
+      - mysql-redis-network
 
-  db:
+  mysql:
     image: mysql:8.0
     container_name: mysql
     restart: always
@@ -90,10 +92,11 @@ services:
     healthcheck:
       test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-p@Bekhan12"]
     networks:
-      - sacco-network
+      - mysql-redis-network
 
 networks:
-  sacco-network:
+  mysql-redis-network:
+    name: "mysql-redis-network"
     driver: bridge
 
 volumes:
