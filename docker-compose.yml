@@ -5,10 +5,7 @@ services:
     build: 
       context: .
       dockerfile: Dockerfile
-    command: sh -c "mkdir -p /app/uploads/users /app/uploads/documents && 
-             chmod -R 777 /app/uploads &&
-             npx prisma db push && 
-             npm run start:prod"
+    command: sh -c "npx prisma db push && npm run start:prod"
     container_name: sacco-backend
     restart: always
     ports:
@@ -23,6 +20,7 @@ services:
       - EMAIL_PASS=dvna yfox yvsd lxjg
     volumes:
       - /root/sacco/sacco-assets:/app/uploads
+      - /root/sacco/assets:/app/src/assets
     depends_on:
       mysql:
         condition: service_healthy
