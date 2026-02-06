@@ -9,7 +9,22 @@ export class DashboardService {
         const now = new Date();
         const startOfDay = new Date(now.setHours(0, 0, 0, 0));
         const endOfDay = new Date(now.setHours(24, 0, 0, 0));
-        return "dashboard"
+        const users = await this.prisma.user.count();
+        const targets = await this.prisma.target.count();
+        const total_amount = await this.prisma.targetTransaction.aggregate({
+            _sum: {
+                amount: true,
+            },
+            where: {
+                status: "APPROVED"
+            }
+        });
+        const recent_transactions = await this.prisma.targetTransaction.findMany({
+            orderBy: { createdAt: "desc" },
+            include: { target: true },
+            take: 5,
+        });
+        return { users, targets, total_amount: total_amount._sum.amount, recent_transactions }
     }
 
     async mobile_summary(userId: string) {

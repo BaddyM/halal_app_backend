@@ -3,3 +3,7 @@ dist
 npm-debug.log
 .git
 .env
+.prettierrc
+.gitignore
+Dockerfile
+README.md

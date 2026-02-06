@@ -1,10 +1,85 @@
+# services:
+#   # --- NESTJS BACKEND ---
+#   api:
+#     build: .
+#     container_name: sacco-backend
+#     restart: always
+#     ports:
+#       - "3000:3000"
+#     env_file:
+#       - backend.env
+#     depends_on:
+#       db:
+#         condition: service_healthy
+#     # This command ensures Prisma generates the client and pushes migrations
+#     # before starting the NestJS app
+#     command: >
+#       sh -c "npx prisma generate && npx prisma db push && npm run start:dev"
+#     networks:
+#       - sacco-network
+
+#   # --- MYSQL DATABASE ---
+#   db:
+#     image: mysql:8.0
+#     container_name: mysql_v8
+#     restart: always
+#     environment:
+#       MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+#       MYSQL_DATABASE: ${MYSQL_DATABASE}
+#     ports:
+#       - "3307:3306"
+#     volumes:
+#       - mysql_data:/var/lib/mysql
+#     healthcheck:
+#       test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-p${MYSQL_ROOT_PASSWORD}"]
+#       interval: 5s
+#       timeout: 5s
+#       retries: 10
+#     networks:
+#       - sacco-network
+
+# networks:
+#   sacco-network:
+#     driver: bridge
+
+# volumes:
+#   mysql_data:
+
 services:
   api:
-    build: .
-    container_name: zimbena_app
+    image: ghcr.io/baddym/sacco-backend:latest
+    container_name: sacco-backend
+    restart: always
     ports:
-      - "3004:3004"
-    env_file:
-      - .env
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
+      - "3001:3000"
+    environment:
+      - DATABASE_URL=mysql://root:%40Bekhan12@db:3306/sacco_db
+      - PORT=3000
+      - SYSTEM_SECRET=MYAUTHSECRETISVERYSTRONG
+      - MODE=Prod
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - sacco-network
+
+  db:
+    image: mysql:8.0
+    container_name: sacco-mysql
+    restart: always
+    environment:
+      - MYSQL_ROOT_PASSWORD=@Bekhan12
+      - MYSQL_DATABASE=sacco_db
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-p@Bekhan12"]
+    networks:
+      - sacco-network
+
+networks:
+  sacco-network:
+    driver: bridge
+
+volumes:
+  mysql_data:

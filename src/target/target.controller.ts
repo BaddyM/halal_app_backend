@@ -89,6 +89,12 @@ export class TargetController {
     }
 
     @UseGuards(AuthGuard)
+    @Get('savings/summary')
+    target_summary() {
+        return this.targetService.target_summary();
+    }
+
+    @UseGuards(AuthGuard)
     @Get("download/statement/:userId")
     @ApiParam({ name: "userId" })
     @ApiQuery({ name: "period", required: false })

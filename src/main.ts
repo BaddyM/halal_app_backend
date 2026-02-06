@@ -6,16 +6,19 @@ import { ValidationPipe } from '@nestjs/common';
 async function bootstrap() {
     const app = await NestFactory.create(AppModule);
 
-    // Set up Swagger
-    const config = new DocumentBuilder()
-        .setTitle('Zimbena Gardens API')
-        .setDescription('API documentation for Zimbena Gardens')
-        .setVersion('1.0')
-        .addBearerAuth()
-        .build();
+    if (process.env.MODE == "Dev") {
+        // Set up Swagger
+        const config = new DocumentBuilder()
+            .setTitle('Anchor Within API')
+            .setDescription('API documentation for Anchor Within')
+            .setVersion('1.0')
+            .addBearerAuth()
+            .build();
 
-    const document = SwaggerModule.createDocument(app, config);
-    SwaggerModule.setup('api', app, document); // Swagger UI at /api
+        const document = SwaggerModule.createDocument(app, config);
+        SwaggerModule.setup('api', app, document); // Swagger UI at /api
+    }
+
     app.useGlobalPipes(new ValidationPipe);
     app.enableCors();
 

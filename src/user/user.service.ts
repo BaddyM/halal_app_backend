@@ -103,6 +103,7 @@ export class UserService {
                 settings: true,
                 createdAt: true,
                 updatedAt: true,
+                targets: true,
             },
             orderBy: {
                 createdAt: "desc"

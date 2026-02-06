@@ -12,17 +12,14 @@ export class DashboardController {
         private readonly dashboardService: DashboardService,) { }
 
     @Get("summary")
-    async summary(
-        @Res() res: Response,
-    ) {
+    async summary() {
         try {
             const data = await this.dashboardService.summary();
-            return res.status(200).json({
-                success: true,
-                data: data,
-            });
+            return data;
         } catch (err) {
-            console.log(err);
+            if (process.env.MODE == "Dev") {
+                console.log(err);
+            }
             throw new BadRequestException({
                 success: false,
                 message: "Failed to fetch summary",
@@ -36,7 +33,9 @@ export class DashboardController {
         try {
             return await this.dashboardService.mobile_summary(userId);
         } catch (err) {
-            console.log(err);
+            if (process.env.MODE == "Dev") {
+                console.log(err);
+            }
             throw new BadRequestException({
                 success: false,
                 message: "Failed to fetch summary",

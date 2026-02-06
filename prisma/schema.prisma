@@ -44,6 +44,7 @@ enum Role {
     ADMIN
     SUPER_ADMIN
     MOBILE_APP
+    NORMAL_USER
 }
 
 model OtpVerification {

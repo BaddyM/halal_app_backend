@@ -36,6 +36,21 @@ export class TargetService {
         return data;
     }
 
+    async target_summary() {
+        const total_saved = await this.prisma.targetTransaction.aggregate({
+            _sum: {
+                amount: true,
+            },
+            where:{
+                status:"APPROVED",
+            }
+        });
+
+        const total_accounts = await this.prisma.target.count();
+
+        return { total_saved: total_saved._sum.amount, total_accounts }
+    }
+
     async findAll(page: number, limit: number) {
         try {
             const data = await this.prisma.target.findMany({
@@ -310,7 +325,7 @@ export class TargetService {
             });
 
             data.push(...transactions);
-        }else {
+        } else {
             const transactions = await this.prisma.targetTransaction.findMany({
                 include: {
                     target: {
