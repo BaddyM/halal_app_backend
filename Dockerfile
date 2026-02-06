@@ -20,10 +20,7 @@ FROM node:20-alpine
 WORKDIR /app
 
 # Copy only what we need from the builder
-COPY --from=builder /app/package*.json ./
-COPY --from=builder /app/node_modules ./node_modules
-COPY --from=builder /app/dist ./dist
-COPY --from=builder /app/prisma ./prisma
+COPY --from=builder /app ./
 
 EXPOSE 3000
 
