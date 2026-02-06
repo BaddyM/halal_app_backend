@@ -5,7 +5,10 @@ services:
     build: 
       context: .
       dockerfile: Dockerfile
-    command: sh -c "mkdir -p /app/uploads/users && mkdir -p /app/uploads/documents && npx prisma db push && npm run start:prod"
+    command: sh -c "mkdir -p /app/uploads/users /app/uploads/documents && 
+             chmod -R 777 /app/uploads &&
+             npx prisma db push && 
+             npm run start:prod"
     container_name: sacco-backend
     restart: always
     ports:

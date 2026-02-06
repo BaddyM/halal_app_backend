@@ -41,8 +41,8 @@ export class TargetService {
             _sum: {
                 amount: true,
             },
-            where:{
-                status:"APPROVED",
+            where: {
+                status: "APPROVED",
             }
         });
 
@@ -285,8 +285,12 @@ export class TargetService {
     //Statements
     async download_statement(userId: string, daysBack?: number) {
         const browser = await puppeteer.launch({
-            headless: true,
-            args: ['--no-sandbox', '--disable-setuid-sandbox'],
+            executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || '/usr/bin/chromium',
+            args: [
+                '--no-sandbox',
+                '--disable-setuid-sandbox',
+                '--disable-dev-shm-usage', // Critical for small Docker containers
+            ],
         });
 
         let data: any[] = [];
