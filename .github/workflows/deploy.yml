@@ -15,6 +15,11 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      # THIS STEP CONVERTS YOUR USERNAME TO LOWERCASE
+      - name: lowercase repo name
+        run: |
+          echo "IMAGE_NAME=ghcr.io/${{ github.repository_owner }}/sacco-backend:latest" | tr '[:upper:]' '[:lower:]' >> $GITHUB_ENV
+
       - name: Log in to GitHub Container Registry
         uses: docker/login-action@v3
         with:
@@ -27,8 +32,8 @@ jobs:
         with:
           context: .
           push: true
-          # Lowercase your username here!
-          tags: ghcr.io/${{ github.repository_owner }}/sacco-backend:latest
+          # USE THE NEW LOWERCASED VARIABLE HERE
+          tags: ${{ env.IMAGE_NAME }}
 
   deploy:
     needs: build-and-push
