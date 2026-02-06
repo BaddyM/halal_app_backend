@@ -45,6 +45,9 @@
 # volumes:
 #   mysql_data:
 
+
+#This is the production workflow
+
 services:
   api:
     image: ghcr.io/baddym/sacco-backend:latest
@@ -53,19 +56,31 @@ services:
     ports:
       - "3001:3000"
     environment:
-      - DATABASE_URL=mysql://root:%40Bekhan12@db:3306/sacco_db
+      - DATABASE_URL=mysql://root:@Bekhan12@db:3306/sacco_db
       - PORT=3000
       - SYSTEM_SECRET=MYAUTHSECRETISVERYSTRONG
       - MODE=Prod
+      - REDIS_URL=redis://redis:6379
     depends_on:
       db:
         condition: service_healthy
+      redis:
+        condition: service_started
+    networks:
+      - sacco-network
+
+  redis:
+    image: redis:alpine
+    container_name: redis
+    restart: always
+    ports:
+      - "127.0.0.1:6379:6379"
     networks:
       - sacco-network
 
   db:
     image: mysql:8.0
-    container_name: sacco-mysql
+    container_name: mysql
     restart: always
     environment:
       - MYSQL_ROOT_PASSWORD=@Bekhan12
