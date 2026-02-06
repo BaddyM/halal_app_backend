@@ -12,6 +12,10 @@
       {
         "include": "config/**/*",
         "outDir": "dist/src"
+      },
+      {
+        "include": "assets/**/*",
+        "outDir": "dist/src"
       }
     ],
     "watchAssets": true
