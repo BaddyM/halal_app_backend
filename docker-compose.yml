@@ -65,7 +65,7 @@ services:
       - MODE=Prod
       - REDIS_URL=redis://redis:6379
       - EMAIL_USER=anchorwithin069@gmail.com
-      - EMAIL_PASS="dvna yfox yvsd lxjg"
+      - EMAIL_PASS=dvna yfox yvsd lxjg
     depends_on:
       mysql:
         condition: service_healthy
