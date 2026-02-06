@@ -37,9 +37,12 @@ export class AuthGuard implements CanActivate {
             });
 
             const now = Math.floor(Date.now() / 1000);
-            console.log(`Token expires at: ${payload.exp}`);
-            console.log(`Current time:      ${now}`);
-            console.log(`Seconds left:      ${payload.exp - now}`);
+
+            if (process.env.MODE == "Dev") {
+                console.log(`Token expires at: ${payload.exp}`);
+                console.log(`Current time:      ${now}`);
+                console.log(`Seconds left:      ${payload.exp - now}`);
+            }
 
             // 1. Check Redis first (The "Fast Path")
             const cacheKey = `auth_session:${token}`;
