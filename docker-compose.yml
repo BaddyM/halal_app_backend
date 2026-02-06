@@ -53,6 +53,7 @@ services:
     build: 
       context: .
       dockerfile: Dockerfile
+    command: sh -c "npx prisma db push && npm run start:prod"
     container_name: sacco-backend
     restart: always
     ports:
