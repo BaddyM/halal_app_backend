@@ -4,17 +4,14 @@ import { PrismaModule } from './prisma/prisma.module';
 import { AuthModule } from './auth/auth.module';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { JwtModule } from '@nestjs/jwt';
-import { DashboardModule } from './dashboard/dashboard.module';
-import { FirebaseModule } from './firebase/firebase.module';
-import { NotificationsModule } from './notifications/notifications.module';
 import { CacheModule } from '@nestjs/cache-manager';
 import { createKeyv } from '@keyv/redis';
-import { TargetModule } from './target/target.module';
-import { SettingsModule } from './settings/settings.module';
-import { MailerModule } from '@nestjs-modules/mailer';
-import { HandlebarsAdapter } from '@nestjs-modules/mailer/dist/adapters/handlebars.adapter';
 import { join } from 'path';
 import { ServeStaticModule } from '@nestjs/serve-static';
+import { BranchModule } from './branch/branch.module';
+import { DailyReportModule } from './daily_report/daily_report.module';
+import { ProductModule } from './product/product.module';
+import { SalesModule } from './sales/sales.module';
 
 @Module({
     imports: [
@@ -45,27 +42,10 @@ import { ServeStaticModule } from '@nestjs/serve-static';
         UserModule,
         PrismaModule,
         AuthModule,
-        DashboardModule,
-        FirebaseModule,
-        NotificationsModule,
-        TargetModule,
-        SettingsModule,
-        MailerModule.forRoot({
-            transport: {
-                host: 'smtp.gmail.com',
-                auth: {
-                    user: process.env.EMAIL_USER,
-                    pass: process.env.EMAIL_PASS,
-                },
-            },
-            template: {
-                dir: join(__dirname, 'templates'), // Where your .hbs files live
-                adapter: new HandlebarsAdapter(),
-                options: {
-                    strict: true,
-                },
-            },
-        }),
+        BranchModule,
+        DailyReportModule,
+        ProductModule,
+        SalesModule,
     ],
     controllers: [],
     providers: [],

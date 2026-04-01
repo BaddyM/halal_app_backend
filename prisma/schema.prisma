@@ -1,7 +1,5 @@
 generator client {
     provider = "prisma-client-js"
-    //   output   = "../generated/prisma"
-    binaryTargets = ["native", "debian-openssl-1.1.x", "debian-openssl-3.0.x"]
 }
 
 datasource db {
@@ -9,196 +7,280 @@ datasource db {
     url      = env("DATABASE_URL")
 }
 
+enum UserRole {
+    admin
+    office
+    sales_rep
+}
+
+enum ProductCategory {
+    exams
+    workbooks
+    holiday_packages
+}
+
+enum ExpenseCategory {
+    transport
+    meals
+    supplies
+    other
+}
+
+enum NotificationType {
+    info
+    warning
+    success
+    error
+}
+
+enum StockTakeStatus {
+    active
+    completed
+}
+
+model Branch {
+    id           String        @id @default(uuid())
+    name         String        @unique
+    address      String?
+    contact      String?
+    isActive     Boolean       @default(false)
+    createdAt    DateTime      @default(now())
+    updatedAt    DateTime      @default(now()) @updatedAt
+    users        User[]
+    stockTakes   StockTake[]
+    receipts     Receipt[]
+    expenses     Expense[]
+    customers    Customer[]
+    dailyReports DailyReport[]
+    staff        Staff[]
+}
+
 model User {
-    id                   String            @id @default(uuid())
-    firstName            String
-    lastName             String
-    phoneNumber          String
-    gender               String
-    nationalId           String?
-    dob                  String?
-    maritalStatus        String?
-    streetAddress        String?
-    city                 String
-    district             String
-    occupation           String?
-    secondaryPhoneNumber String?
-    email                String?           @unique
-    password             String
-    role                 Role
-    profilePicture       String?
-    isActive             Boolean           @default(false)
-    accessToken          String?
-    fcmToken             String?
-    createdAt            DateTime          @default(now())
-    updatedAt            DateTime          @updatedAt
-    loginAccesses        LoginAccess[]
-    targets              Target[]
-    documents            Document[]
-    news                 News[]
-    settings             Settings[]
-    otpVerifications     OtpVerification[]
-    notifications        Notifications[]
+    id                  String          @id @default(uuid())
+    name                String
+    email               String          @unique
+    accessToken         String?
+    password            String
+    role                UserRole
+    isActive            Boolean         @default(false)
+    branchId            String?
+    createdAt           DateTime        @default(now())
+    updatedAt           DateTime        @default(now()) @updatedAt
+    branch              Branch?         @relation(fields: [branchId], references: [id], onDelete: SetNull)
+    stockTakes          StockTake[]
+    sales               Sale[]
+    receipts            Receipt[]
+    expenses            Expense[]
+    targetNotifications Notification[]  @relation("TargetUser")
+    loginAccesses       LoginAccess[]
+    creditSales         CreditSale[]
+    creditPayments      CreditPayment[]
+    dailyReports        DailyReport[]
+    settings            Settings[]
 }
 
-enum Role {
-    ADMIN
-    SUPER_ADMIN
-    MOBILE_APP
-    NORMAL_USER
+model Customer {
+    id          String   @id @default(uuid())
+    name        String
+    email       String?
+    phoneNumber String
+    address     String?
+    branchId    String
+    isDeleted   Boolean  @default(false)
+    branch      Branch   @relation(fields: [branchId], references: [id])
+    createdAt   DateTime @default(now())
+    updatedAt   DateTime @default(now()) @updatedAt
+    sales       Sale[]
 }
 
-model OtpVerification {
+model DailyReport {
     id        String   @id @default(uuid())
+    branchId  String
+    branch    Branch   @relation(fields: [branchId], references: [id])
+    notes     String   @db.LongText
     userId    String
     user      User     @relation(fields: [userId], references: [id])
-    otp       Int
-    expiresAt DateTime
+    isDeleted Boolean  @default(false)
     createdAt DateTime @default(now())
-    updatedAt DateTime @updatedAt
-}
-
-model Document {
-    id           String         @id @default(uuid())
-    userId       String
-    user         User           @relation(fields: [userId], references: [id])
-    documentType DocumentType
-    name         String
-    status       DocumentStatus @default(PENDING)
-    createdAt    DateTime       @default(now())
-    updatedAt    DateTime       @updatedAt
-}
-
-enum DocumentType {
-    NATIONAL_ID
-    PASSPORT_PHOTO
-}
-
-enum DocumentStatus {
-    PENDING
-    APPROVED
-    REJECTED
+    updatedAt DateTime @default(now()) @updatedAt
 }
 
 model LoginAccess {
     id        String   @id @default(uuid())
     userId    String
     user      User     @relation(fields: [userId], references: [id])
-    device    String?  @db.LongText
     createdAt DateTime @default(now())
-    updatedAt DateTime @updatedAt
+    updatedAt DateTime @default(now()) @updatedAt
 }
 
-model Target {
-    id           String              @id @default(uuid())
+model Product {
+    id             String          @id @default(uuid())
+    category       ProductCategory
+    price          Float
+    totalStock     Int
+    classLevel     String?
+    subject        String?
+    createdAt      DateTime        @default(now())
+    updatedAt      DateTime        @default(now()) @updatedAt
+    stockTakeItems StockTakeItem[]
+    sales          Sale[]
+}
+
+model StockTake {
+    id        String          @id @default(uuid())
+    repId     String
+    branchId  String
+    status    StockTakeStatus @default(active)
+    createdAt DateTime        @default(now())
+    updatedAt DateTime        @default(now()) @updatedAt
+    rep       User            @relation(fields: [repId], references: [id], onDelete: Cascade)
+    branch    Branch          @relation(fields: [branchId], references: [id], onDelete: Cascade)
+    items     StockTakeItem[]
+    sales     Sale[]
+}
+
+model StockTakeItem {
+    id               String    @id @default(uuid())
+    stockTakeId      String
+    productId        String
+    quantityTaken    Int
+    quantitySold     Int       @default(0)
+    quantityReturned Int       @default(0)
+    revenue          Float     @default(0)
+    stockTake        StockTake @relation(fields: [stockTakeId], references: [id], onDelete: Cascade)
+    product          Product   @relation(fields: [productId], references: [id], onDelete: Cascade)
+    createdAt        DateTime  @default(now())
+    updatedAt        DateTime  @default(now()) @updatedAt
+
+    @@unique([stockTakeId, productId])
+}
+
+model Sale {
+    id          String     @id @default(uuid())
+    orderId     String //This is to group the sales recorded
+    repId       String
+    stockTakeId String?
+    productId   String
+    quantity    Int
+    customerId  String?
+    customer    Customer?  @relation(fields: [customerId], references: [id])
+    unitPrice   Float
+    memo        String?    @db.LongText
+    onCredit    Boolean    @default(false)
+    createdAt   DateTime   @default(now())
+    updatedAt   DateTime   @default(now()) @updatedAt
+    rep         User       @relation(fields: [repId], references: [id], onDelete: Cascade)
+    stockTake   StockTake? @relation(fields: [stockTakeId], references: [id], onDelete: Cascade)
+    product     Product    @relation(fields: [productId], references: [id], onDelete: Cascade)
+    receipts    Receipt[]
+}
+
+model CreditSale {
+    id             String           @id @default(uuid())
+    orderId        String
+    amount         Float
+    userId         String
+    user           User             @relation(fields: [userId], references: [id])
+    isDeleted      Boolean          @default(false)
+    status         CreditSaleStatus @default(PENDING)
+    createdAt      DateTime         @default(now())
+    updatedAt      DateTime         @default(now()) @updatedAt
+    creditPayments CreditPayment[]
+}
+
+enum CreditSaleStatus {
+    PENDING
+    COMPLETED
+    CANCELLED
+}
+
+model CreditPayment {
+    id           String     @id @default(uuid())
+    creditSaleId String
+    creditSale   CreditSale @relation(fields: [creditSaleId], references: [id])
+    paid         Float
     userId       String
-    user         User                @relation(fields: [userId], references: [id])
-    targetLabel  String?
-    amount       Float               @default(0.0)
-    status       TargetStatus        @default(PENDING)
-    isDeleted    Boolean             @default(false)
-    createdAt    DateTime            @default(now())
-    updatedAt    DateTime            @updatedAt
-    transactions TargetTransaction[]
+    user         User       @relation(fields: [userId], references: [id])
+    createdAt    DateTime   @default(now())
+    updatedAt    DateTime   @default(now()) @updatedAt
 }
 
-enum TargetStatus {
-    PENDING
-    ACTIVE
-    INACTIVE
-}
-
-enum TargetTransactionStatus {
-    PENDING
-    APPROVED
-    REJECTED
-}
-
-model TargetTransaction {
-    id            String                  @id @default(uuid())
-    targetId      String
-    target        Target                  @relation(fields: [targetId], references: [id])
-    amount        Float                   @default(0.0)
-    reason        TransactionReason
-    status        TargetTransactionStatus @default(PENDING)
-    paymentMethod String?
-    balance       Float                   @default(0.0)
-    isDeleted     Boolean                 @default(false)
-    createdAt     DateTime                @default(now())
-    updatedAt     DateTime                @updatedAt
-}
-
-enum TransactionReason {
-    DEBIT
-    CREDIT
-}
-
-model NewsLetter {
+model Receipt {
     id        String   @id @default(uuid())
-    title     String
-    message   String   @db.LongText
-    emails    String   @db.LongText
+    saleId    String
+    repId     String
+    branchId  String
+    image     String
     createdAt DateTime @default(now())
-    updatedAt DateTime @updatedAt
+    updatedAt DateTime @default(now()) @updatedAt
+    verified  Boolean  @default(false)
+    sale      Sale     @relation(fields: [saleId], references: [id], onDelete: Cascade)
+    rep       User     @relation(fields: [repId], references: [id], onDelete: Cascade)
+    branch    Branch   @relation(fields: [branchId], references: [id], onDelete: Cascade)
 }
 
-model News {
+model Expense {
+    id          String          @id @default(uuid())
+    branchId    String
+    repId       String
+    description String?
+    amount      Float
+    category    ExpenseCategory
+    createdAt   DateTime        @default(now())
+    updatedAt   DateTime        @default(now()) @updatedAt
+    branch      Branch          @relation(fields: [branchId], references: [id], onDelete: Cascade)
+    rep         User            @relation(fields: [repId], references: [id], onDelete: Cascade)
+}
+
+model Notification {
+    id           String           @id @default(uuid())
+    title        String
+    message      String
+    type         NotificationType @default(info)
+    targetUserId String?
+    read         Boolean          @default(false)
+    createdAt    DateTime         @default(now())
+    updatedAt    DateTime         @default(now()) @updatedAt
+    targetUser   User?            @relation("TargetUser", fields: [targetUserId], references: [id], onDelete: SetNull)
+}
+
+model Staff {
     id         String   @id @default(uuid())
-    title      String
-    message    String   @db.LongText
-    tag        String?
-    isFeatured Boolean  @default(false)
-    userId     String
-    user       User     @relation(fields: [userId], references: [id])
+    name       String
+    phone      String
+    email      String?
+    address    String?
+    role       String
+    baseSalary Float
+    branchId   String
+    branch     Branch   @relation(fields: [branchId], references: [id])
     createdAt  DateTime @default(now())
-    updatedAt  DateTime @updatedAt
+    updatedAt  DateTime @default(now()) @updatedAt
+    salaries   Salary[]
 }
 
-model Socials {
-    id        String   @id @default(uuid())
-    title     String
-    url       String   @db.LongText
-    icon      String
-    createdAt DateTime @default(now())
-    updatedAt DateTime @updatedAt
+model Salary {
+    id        String       @id @default(uuid())
+    staffId   String
+    staff     Staff        @relation(fields: [staffId], references: [id])
+    period    String
+    amount    Float
+    status    SalaryStatus @default(PENDING)
+    createdAt DateTime     @default(now())
+    updatedAt DateTime     @default(now()) @updatedAt
 }
 
-model Notifications {
-    id        String   @id @default(uuid())
-    title     String
-    message   String
-    userId    String
-    user      User     @relation(fields: [userId], references: [id])
-    read      Boolean  @default(false)
-    createdAt DateTime @default(now())
-    updatedAt DateTime @updatedAt
+enum SalaryStatus {
+    PENDING
+    COMPLETED
+    CANCELLED
 }
 
 model Settings {
     id                 String   @id @default(uuid())
+    emailNotifications Boolean  @default(false)
     userId             String
     user               User     @relation(fields: [userId], references: [id])
-    emailNotifications Boolean  @default(false)
-    smsNotifications   Boolean  @default(false)
-    pushNotifications  Boolean  @default(false)
-    newsLetter         Boolean  @default(false)
-    twoFa              Boolean  @default(false)
-    loginAlerts        Boolean  @default(false)
     createdAt          DateTime @default(now())
-    updatedAt          DateTime @updatedAt
-}
-
-model WebsiteContact {
-    id             String   @id @default(uuid())
-    fname          String
-    lname          String
-    email          String?
-    phone          String
-    serviceNeeded  String
-    eventDate      String?
-    message        String   @db.LongText
-    expectedGuests String
-    isRead         Boolean  @default(false)
-    createdAt      DateTime @default(now())
-    updatedAt      DateTime @updatedAt
+    updatedAt          DateTime @default(now()) @updatedAt
 }

@@ -11,19 +11,4 @@ export class LoginDto {
     @IsString()
     @IsNotEmpty()
     password: string;
-
-    @ApiProperty({ name: "fcmToken", type: "string", example: "xxxxxxxxxxxxxxxxxxxxxxxxx" })
-    @IsString()
-    @IsNotEmpty()
-    fcmToken: string;
-
-    @ApiProperty({ name: "device", type: "string", example: "Web" })
-    @IsString()
-    @IsOptional()
-    device?: string;
-
-    @ApiProperty({ name: "ipAddress", type: "string", example: "0.0.0.0" })
-    @IsString()
-    @IsOptional()
-    ipAddress?: string;
 }

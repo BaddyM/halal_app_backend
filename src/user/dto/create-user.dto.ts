@@ -1,105 +1,79 @@
-import { ApiProperty } from "@nestjs/swagger";
-import { Role } from "@prisma/client";
+import { ApiProperty, PartialType } from "@nestjs/swagger";
 import { IsBoolean, IsEmail, IsEnum, IsNotEmpty, IsOptional, IsString } from "class-validator";
 
+export enum UserRole {
+    admin = "admin",
+    office = "office",
+    sales_rep = "sales_rep"
+}
+
 export class CreateUserDto {
-    @ApiProperty({ name: "firstName", type: "string", example: "john" })
+    @ApiProperty({ name: "name", type: "string", example: "john" })
     @IsString()
     @IsNotEmpty()
-    firstName: string;
-
-    @ApiProperty({ name: "lastName", type: "string", example: "doe" })
-    @IsString()
-    @IsNotEmpty()
-    lastName: string;
-
-    @ApiProperty({ name: "phoneNumber", type: "string", example: "+256781181958" })
-    @IsString()
-    @IsNotEmpty()
-    phoneNumber: string;
-
-    @ApiProperty({ name: "gender" })
-    @IsString()
-    @IsNotEmpty()
-    gender: string;
-
-    @ApiProperty({ name: "dob" })
-    @IsString()
-    @IsOptional()
-    dob?: string;
-
-    @ApiProperty({ name: "nationalId" })
-    @IsString()
-    @IsOptional()
-    nationalId?: string;
-
-    @ApiProperty({ name: "maritalStatus" })
-    @IsString()
-    @IsOptional()
-    maritalStatus?: string;
-
-    @ApiProperty({ name: "streetAddress" })
-    @IsString()
-    @IsOptional()
-    streetAddress?: string;
-
-    @ApiProperty({ name: "city" })
-    @IsString()
-    @IsNotEmpty()
-    city: string;
-
-    @ApiProperty({ name: "district" })
-    @IsString()
-    @IsNotEmpty()
-    district: string;
-
-    @ApiProperty({ name: "occupation" })
-    @IsString()
-    @IsOptional()
-    occupation?: string;
-
-    @ApiProperty({ name: "secondaryPhoneNumber" })
-    @IsString()
-    @IsOptional()
-    secondaryPhoneNumber?: string;
-
-    @ApiProperty({ name: "profilePicture" })
-    @IsString()
-    @IsOptional()
-    profilePicture?: string;
+    name!: string;
 
     @ApiProperty({ name: "accessToken" })
     @IsString()
     @IsOptional()
     accessToken?: string;
 
-    @ApiProperty({ name: "fcmToken" })
-    @IsString()
-    @IsOptional()
-    fcmToken?: string;
-
     @ApiProperty({ name: "email", type: "string", example: "demo@gmail.com" })
     @IsEmail()
     @IsNotEmpty()
-    email: string;
+    email!: string;
 
     @ApiProperty({ name: "password", type: "string", example: "xxxxxxxxxxxxxx" })
     @IsString()
     @IsNotEmpty()
-    password: string;
+    password!: string;
 
-    @ApiProperty({ name: "role", enum: ['ADMIN', 'SUPER_ADMIN', 'MOBILE_APP'] })
-    @IsEnum(Role, { message: "Please add a valid role." })
+    @ApiProperty({ name: "branchId", type: "string" })
+    @IsString()
     @IsNotEmpty()
-    role: Role;
+    branchId!: string;
+
+    @ApiProperty({ name: "role" })
+    @IsEnum(UserRole, { message: "Please add a valid role." })
+    @IsNotEmpty()
+    role!: UserRole;
 
     @ApiProperty({ name: "isActive", type: "boolean" })
     @IsBoolean()
     @IsOptional()
-    isActive: boolean;
+    isActive?: boolean;
+}
 
-    @ApiProperty({ name: "Web" })
+export class CustomerDto {
+    @ApiProperty({ name: "name", type: "string", example: "john" })
+    @IsString()
+    @IsNotEmpty()
+    name!: string;
+
+    @ApiProperty({ name: "email", type: "string" })
+    @IsEmail()
+    @IsOptional()
+    email?: string;
+
+    @ApiProperty({ name: "phoneNumber", type: "string" })
+    @IsString()
+    @IsNotEmpty()
+    phoneNumber!: string;
+
+    @ApiProperty({ name: "address", type: "string", example: "kampala" })
     @IsString()
     @IsOptional()
-    devices?: string;
+    address?: string;
+
+    @ApiProperty({ name: "branchId", type: "string" })
+    @IsString()
+    @IsNotEmpty()
+    branchId!: string;
+
+    @ApiProperty({ name: "isDeleted", type: "boolean" })
+    @IsBoolean()
+    @IsOptional()
+    isDeleted?: boolean;
 }
+
+export class UpdateCustomerDto extends PartialType(CustomerDto) { }

@@ -1,8 +1,7 @@
 import { Injectable, InternalServerErrorException } from '@nestjs/common';
-import { CreateUserDto } from './dto/create-user.dto';
+import { CreateUserDto, CustomerDto, UpdateCustomerDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { PrismaService } from 'src/prisma/prisma.service';
-import { DocumentType } from '@prisma/client';
 const bcrypt = require("bcryptjs");
 
 @Injectable()
@@ -18,29 +17,20 @@ export class UserService {
             },
             select: {
                 id: true,
-                firstName: true,
-                lastName: true,
-                occupation: true,
-                maritalStatus: true,
-                nationalId: true,
-                city: true,
-                streetAddress: true,
-                district: true,
-                phoneNumber: true,
-                secondaryPhoneNumber: true,
-                gender: true,
+                name: true,
+                branch: {
+                    select: {
+                        name: true,
+                        address: true,
+                        contact: true,
+                    }
+                },
                 email: true,
-                profilePicture: true,
                 isActive: true,
                 role: true,
                 createdAt: true,
                 updatedAt: true,
             }
-        });
-
-        //Add to settings
-        await this.prisma.settings.create({
-            data: { userId: data.id },
         });
         return data;
     }
@@ -60,11 +50,15 @@ export class UserService {
             select: {
                 user: {
                     select: {
-                        firstName: true,
-                        lastName: true,
-                        phoneNumber: true,
-                        occupation: true,
-                        nationalId: true,
+                        name: true,
+                        email: true,
+                        branch: {
+                            select: {
+                                name: true,
+                                address: true,
+                                contact: true,
+                            }
+                        },
                     }
                 },
                 createdAt: true,
@@ -83,27 +77,19 @@ export class UserService {
         const data = await this.prisma.user.findMany({
             select: {
                 id: true,
-                firstName: true,
-                lastName: true,
-                occupation: true,
-                maritalStatus: true,
-                nationalId: true,
-                city: true,
-                streetAddress: true,
-                district: true,
-                phoneNumber: true,
-                secondaryPhoneNumber: true,
-                gender: true,
+                name: true,
+                branch: {
+                    select: {
+                        name: true,
+                        address: true,
+                        contact: true,
+                    }
+                },
                 email: true,
-                profilePicture: true,
                 isActive: true,
                 role: true,
-                dob: true,
-                documents: true,
-                settings: true,
                 createdAt: true,
                 updatedAt: true,
-                targets: true,
             },
             orderBy: {
                 createdAt: "desc"
@@ -121,26 +107,19 @@ export class UserService {
             },
             select: {
                 id: true,
-                firstName: true,
-                lastName: true,
-                occupation: true,
-                maritalStatus: true,
-                nationalId: true,
-                city: true,
-                streetAddress: true,
-                district: true,
-                phoneNumber: true,
-                secondaryPhoneNumber: true,
-                gender: true,
+                name: true,
+                branch: {
+                    select: {
+                        name: true,
+                        address: true,
+                        contact: true,
+                    }
+                },
                 email: true,
-                profilePicture: true,
                 isActive: true,
                 role: true,
-                dob: true,
-                settings: true,
                 createdAt: true,
                 updatedAt: true,
-                documents: true,
             }
         });
         return data;
@@ -164,75 +143,21 @@ export class UserService {
             data: updateData,
             select: {
                 id: true,
-                firstName: true,
-                lastName: true,
-                occupation: true,
-                maritalStatus: true,
-                nationalId: true,
-                city: true,
-                streetAddress: true,
-                district: true,
-                phoneNumber: true,
-                secondaryPhoneNumber: true,
-                gender: true,
+                name: true,
+                branch: {
+                    select: {
+                        name: true,
+                        address: true,
+                        contact: true,
+                    }
+                },
                 email: true,
-                profilePicture: true,
                 isActive: true,
                 role: true,
                 createdAt: true,
                 updatedAt: true,
             }
         });
-    }
-
-    async updateProfilePicture(userId: string, profilePicture: string) {
-        return await this.prisma.user.update({
-            where: { id: userId },
-            data: {
-                profilePicture
-            },
-            select: {
-                id: true,
-                firstName: true,
-                lastName: true,
-                occupation: true,
-                maritalStatus: true,
-                nationalId: true,
-                city: true,
-                streetAddress: true,
-                district: true,
-                phoneNumber: true,
-                secondaryPhoneNumber: true,
-                gender: true,
-                email: true,
-                profilePicture: true,
-                isActive: true,
-                role: true,
-                createdAt: true,
-                updatedAt: true,
-            }
-        });
-    }
-
-    async uploadDocument(userId: string, docType: DocumentType, docName: string) {
-        try {
-            const data = await this.prisma.document.create({
-                data: {
-                    userId,
-                    documentType: docType,
-                    name: docName
-                }
-            });
-            return data;
-        } catch (e) {
-            if (process.env.MODE == "Dev") {
-                console.log("Error", e);
-            }
-            throw new InternalServerErrorException({
-                success: false,
-                error: e,
-            });
-        }
     }
 
     async remove(userId: string) {
@@ -242,24 +167,45 @@ export class UserService {
             },
             select: {
                 id: true,
-                firstName: true,
-                lastName: true,
-                occupation: true,
-                maritalStatus: true,
-                nationalId: true,
-                city: true,
-                streetAddress: true,
-                district: true,
-                phoneNumber: true,
-                secondaryPhoneNumber: true,
-                gender: true,
+                name: true,
+                branch: {
+                    select: {
+                        name: true,
+                        address: true,
+                        contact: true,
+                    }
+                },
                 email: true,
-                profilePicture: true,
                 isActive: true,
                 role: true,
                 createdAt: true,
                 updatedAt: true,
             }
+        });
+        return data;
+    }
+
+    //Customer
+    async create_customer(customerDto: CustomerDto) {
+        const data = await this.prisma.customer.create({
+            data: customerDto,
+        });
+        return data;
+    }
+
+    async get_customers(page: number, limit: number) {
+        const data = await this.prisma.customer.findMany({
+            orderBy: { createdAt: "desc" },
+            skip: (page - 1) * limit,
+            take: limit,
+        });
+        return data;
+    }
+
+    async update_customer(id: string, updateCustomerDto: UpdateCustomerDto) {
+        const data = await this.prisma.customer.update({
+            where: { id },
+            data: updateCustomerDto,
         });
         return data;
     }

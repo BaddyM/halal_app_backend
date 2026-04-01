@@ -1,18 +1,13 @@
-import { Controller, Get, Post, Body, Patch, Param, Delete, BadRequestException, Res, UseGuards, Query, Inject, UseInterceptors, UploadedFiles, NotFoundException, InternalServerErrorException } from '@nestjs/common';
+import { Controller, Get, Post, Body, Patch, Param, Delete, BadRequestException, Res, UseGuards, Query, Inject } from '@nestjs/common';
 import { UserService } from './user.service';
-import { CreateUserDto } from './dto/create-user.dto';
+import { CreateUserDto, CustomerDto, UpdateCustomerDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { Response } from 'express';
-import { ApiBearerAuth, ApiConsumes, ApiParam, ApiQuery } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiParam, ApiQuery } from '@nestjs/swagger';
 import { AuthGuard } from 'src/auth/auth.guard';
-import { Cache, CACHE_MANAGER, CacheInterceptor, CacheTTL } from '@nestjs/cache-manager';
-import { FilesInterceptor } from '@nestjs/platform-express';
-import { memoryStorage } from "multer";
+import { Cache, CACHE_MANAGER } from '@nestjs/cache-manager';
 const fs = require("fs");
-import * as path from 'path';
-import { randomBytes } from 'crypto';
 import { PrismaService } from 'src/prisma/prisma.service';
-import { DocumentType } from '@prisma/client';
 
 @Controller('user')
 export class UserController {
@@ -45,108 +40,6 @@ export class UserController {
 
     @ApiBearerAuth()
     @UseGuards(AuthGuard)
-    @Post("update/profilePicture/:userId")
-    @ApiParam({ name: "userId" })
-    @ApiConsumes('multipart/form-data')
-    @UseInterceptors(
-        FilesInterceptor('image', 8, {
-            storage: memoryStorage(),
-            limits: {
-                fileSize: 1 * 1024 * 1024
-            },
-            fileFilter: (req, file, cb) => {
-                if (!file.originalname.match(/\.(jpg|jpeg|png)$/)) {
-                    return cb(new BadRequestException('Only image files are allowed!'), false);
-                }
-                cb(null, true);
-            },
-        }),
-    )
-    async updateProfilePicture(
-        @UploadedFiles() file: Express.Multer.File,
-        @Param("userId") userId: string,
-    ) {
-        const current_profile_picture = await this.prisma.user.findFirst({
-            where: { id: userId },
-            select: { profilePicture: true }
-        });
-
-        if (!current_profile_picture) {
-            throw new NotFoundException({
-                success: false,
-                message: "User not found",
-            });
-        }
-
-        if (current_profile_picture.profilePicture != null) {
-            //Delete previous if exists
-            fs.unlinkSync(`./uploads/users/${current_profile_picture.profilePicture}`, (err: any) => {
-                throw new InternalServerErrorException({
-                    success: false,
-                    message: "Failed to delete previous image",
-                    error: err,
-                });
-            });
-        }
-
-        const ext = path.extname(file[0].originalname); // keep the original file extension
-        const randomPart = randomBytes(6).toString('hex'); // e.g. 'a3f4c9d2'
-        const timestamp = Date.now();
-        const newFileName = `user_${timestamp}_${randomPart}${ext}`;
-        const uploadPath = `./uploads/users/${newFileName}`;
-        fs.writeFileSync(uploadPath, file[0].buffer); // Save the file manually
-        return this.userService.updateProfilePicture(userId, newFileName);
-    }
-
-    @ApiBearerAuth()
-    @UseGuards(AuthGuard)
-    @Post("upload/document/:userId")
-    @ApiQuery({ name: "docType" })
-    @ApiParam({ name: "userId" })
-    @ApiConsumes('multipart/form-data')
-    @UseInterceptors(
-        FilesInterceptor('image', 8, {
-            storage: memoryStorage(),
-            limits: {
-                fileSize: 1 * 1024 * 1024
-            },
-            fileFilter: (req, file, cb) => {
-                if (!file.originalname.match(/\.(jpg|jpeg|png)$/)) {
-                    return cb(new BadRequestException('Only image files are allowed!'), false);
-                }
-                cb(null, true);
-            },
-        })
-    )
-    async updateDocument(
-        @UploadedFiles() file: Express.Multer.File,
-        @Param("userId") userId: string,
-        @Query("docType") docType: DocumentType,
-    ) {
-        const current_user = await this.prisma.user.findFirst({
-            where: { id: userId }
-        });
-
-        if (!current_user) {
-            throw new NotFoundException({
-                success: false,
-                message: "User not found",
-            });
-        }
-
-        const ext = path.extname(file[0].originalname); // keep the original file extension
-        const randomPart = randomBytes(6).toString('hex'); // e.g. 'a3f4c9d2'
-        const timestamp = Date.now();
-        const newFileName = `doc_${timestamp}_${randomPart}${ext}`;
-        const uploadPath = `./uploads/documents/${newFileName}`;
-        fs.writeFileSync(uploadPath, file[0].buffer); // Save the file manually
-        return this.userService.uploadDocument(userId, docType, newFileName);
-    }
-
-    @ApiBearerAuth()
-    @UseGuards(AuthGuard)
-    // @UseInterceptors(CacheInterceptor)
-    // @CacheTTL(300_000)
     @Get("all")
     @ApiQuery({ name: "page" })
     @ApiQuery({ name: "limit" })
@@ -156,8 +49,6 @@ export class UserController {
 
     @ApiBearerAuth()
     @UseGuards(AuthGuard)
-    // @UseInterceptors(CacheInterceptor)
-    // @CacheTTL(300_000)
     @Get("loginAccess")
     @ApiQuery({ name: "page" })
     @ApiQuery({ name: "limit" })
@@ -167,8 +58,6 @@ export class UserController {
 
     @ApiBearerAuth()
     @UseGuards(AuthGuard)
-    // @UseInterceptors(CacheInterceptor)
-    // @CacheTTL(300_000)
     @ApiParam({ name: "userId" })
     @Get(':userId')
     findOne(@Param('userId') userId: string) {
@@ -190,5 +79,30 @@ export class UserController {
     @Delete(':userId')
     remove(@Param('userId') userId: string) {
         return this.userService.remove(userId);
+    }
+
+    //Customer
+    @ApiBearerAuth()
+    @UseGuards(AuthGuard)
+    @Post('customer/create')
+    create_customer(@Body() customerData: CustomerDto) {
+        return this.userService.create_customer(customerData);
+    }
+
+    @ApiBearerAuth()
+    @UseGuards(AuthGuard)
+    @ApiQuery({ name: "page" })
+    @ApiQuery({ name: "limit" })
+    @Get('customer/list')
+    get_customers(@Query("page") page: string, @Query("limit") limit: string) {
+        return this.userService.get_customers(parseInt(page), parseInt(limit));
+    }
+
+    @ApiBearerAuth()
+    @UseGuards(AuthGuard)
+    @ApiParam({ name: "id" })
+    @Patch('customer/update/:id')
+    update_customer(@Body() customerData: UpdateCustomerDto, @Param("id") id: string) {
+        return this.userService.update_customer(id, customerData);
     }
 }
