@@ -1,10 +1,12 @@
-import { Controller, Get, Post, Body, Patch, Param, Delete, Query } from '@nestjs/common';
+import { Controller, Get, Post, Body, Patch, Param, Delete, Query, UseGuards } from '@nestjs/common';
 import { DailyReportService } from './daily_report.service';
 import { CreateDailyReportDto } from './dto/create-daily_report.dto';
 import { UpdateDailyReportDto } from './dto/update-daily_report.dto';
 import { ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
+import { AuthGuard } from 'src/auth/auth.guard';
 
 @ApiBearerAuth()
+@UseGuards(AuthGuard)
 @Controller('daily-report')
 export class DailyReportController {
     constructor(private readonly dailyReportService: DailyReportService) { }

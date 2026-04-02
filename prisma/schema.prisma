@@ -49,7 +49,6 @@ model Branch {
     users        User[]
     stockTakes   StockTake[]
     receipts     Receipt[]
-    expenses     Expense[]
     customers    Customer[]
     dailyReports DailyReport[]
     staff        Staff[]
@@ -77,6 +76,7 @@ model User {
     creditPayments      CreditPayment[]
     dailyReports        DailyReport[]
     settings            Settings[]
+    salaries            Salary[]
 }
 
 model Customer {
@@ -221,15 +221,13 @@ model Receipt {
 
 model Expense {
     id          String          @id @default(uuid())
-    branchId    String
-    repId       String
+    userId      String
     description String?
     amount      Float
     category    ExpenseCategory
     createdAt   DateTime        @default(now())
     updatedAt   DateTime        @default(now()) @updatedAt
-    branch      Branch          @relation(fields: [branchId], references: [id], onDelete: Cascade)
-    rep         User            @relation(fields: [repId], references: [id], onDelete: Cascade)
+    user        User            @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 model Notification {
@@ -265,6 +263,8 @@ model Salary {
     staff     Staff        @relation(fields: [staffId], references: [id])
     period    String
     amount    Float
+    userId    String
+    user      User         @relation(fields: [userId], references: [id])
     status    SalaryStatus @default(PENDING)
     createdAt DateTime     @default(now())
     updatedAt DateTime     @default(now()) @updatedAt

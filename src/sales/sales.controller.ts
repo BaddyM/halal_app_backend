@@ -1,10 +1,12 @@
-import { Controller, Get, Post, Body, Patch, Param, Delete, Query } from '@nestjs/common';
+import { Controller, Get, Post, Body, Patch, Param, Delete, Query, UseGuards } from '@nestjs/common';
 import { SalesService } from './sales.service';
 import { CreateSaleDto, CreditSalePaymentDto, UpdateCreditSaleDto, UpdateCreditSalePaymentDto } from './dto/create-sale.dto';
 import { UpdateSaleDto } from './dto/update-sale.dto';
 import { ApiBearerAuth, ApiParam, ApiQuery } from '@nestjs/swagger';
+import { AuthGuard } from 'src/auth/auth.guard';
 
 @ApiBearerAuth()
+@UseGuards(AuthGuard)
 @Controller('sales')
 export class SalesController {
     constructor(private readonly salesService: SalesService) { }
@@ -17,8 +19,9 @@ export class SalesController {
     @Get()
     @ApiQuery({ name: "page" })
     @ApiQuery({ name: "limit" })
-    findAll(@Query("page") page: string, @Query("limit") limit: string) {
-        return this.salesService.findAll(parseInt(page), parseInt(limit));
+    @ApiQuery({ name: "date", required: false })
+    findAll(@Query("page") page: string, @Query("limit") limit: string, @Query("date") date: string) {
+        return this.salesService.findAll(parseInt(page), parseInt(limit), date);
     }
 
     @Get(":orderId")

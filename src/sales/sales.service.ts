@@ -56,7 +56,21 @@ export class SalesService {
         }
     }
 
-    async findAll(page: number, limit: number) {
+    async findAll(page: number, limit: number, date?: string) {
+        let dateFilter = {}
+
+        if (date != null && date != undefined && date != "undefined" && date != "") {
+            const start = new Date(date);
+            start.setHours(0, 0, 0, 0);
+
+            const end = new Date(start);
+            end.setDate(end.getDate() + 1);
+            (dateFilter as any).createdAt = {
+                gte: start,
+                lt: end
+            };
+        }
+
         const records = await this.prisma.sale.findMany({
             orderBy: { createdAt: "desc" },
             include: {
@@ -69,6 +83,9 @@ export class SalesService {
                     }
                 },
                 customer: true,
+            },
+            where: {
+                ...dateFilter
             },
             take: limit,
             skip: (page - 1) * limit,

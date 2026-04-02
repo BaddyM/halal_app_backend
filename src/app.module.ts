@@ -12,6 +12,9 @@ import { BranchModule } from './branch/branch.module';
 import { DailyReportModule } from './daily_report/daily_report.module';
 import { ProductModule } from './product/product.module';
 import { SalesModule } from './sales/sales.module';
+import { ExpenseModule } from './expense/expense.module';
+import { StaffModule } from './staff/staff.module';
+import { DashboardModule } from './dashboard/dashboard.module';
 
 @Module({
     imports: [
@@ -46,6 +49,9 @@ import { SalesModule } from './sales/sales.module';
         DailyReportModule,
         ProductModule,
         SalesModule,
+        ExpenseModule,
+        StaffModule,
+        DashboardModule,
     ],
     controllers: [],
     providers: [],
