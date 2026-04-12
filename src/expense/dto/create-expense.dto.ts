@@ -11,6 +11,11 @@ export class CreateExpenseDto {
     @ApiProperty()
     @IsString()
     @IsOptional()
+    date?: string;
+
+    @ApiProperty()
+    @IsString()
+    @IsOptional()
     description?: string;
 
     @ApiProperty()

@@ -97,7 +97,9 @@ export class UserService {
             skip: (page - 1) * limit,
             take: limit,
         });
-        return data;
+        const total = await this.prisma.user.count();
+        const totalPages = Math.ceil(total / limit);
+        return { data, totalPages };
     }
 
     async findOne(userId: string) {
@@ -199,7 +201,9 @@ export class UserService {
             skip: (page - 1) * limit,
             take: limit,
         });
-        return data;
+        const total = await this.prisma.customer.count();
+        const totalPages = Math.ceil(total / limit);
+        return { data, totalPages };
     }
 
     async update_customer(id: string, updateCustomerDto: UpdateCustomerDto) {

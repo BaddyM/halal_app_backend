@@ -20,8 +20,9 @@ export class SalesController {
     @ApiQuery({ name: "page" })
     @ApiQuery({ name: "limit" })
     @ApiQuery({ name: "date", required: false })
-    findAll(@Query("page") page: string, @Query("limit") limit: string, @Query("date") date: string) {
-        return this.salesService.findAll(parseInt(page), parseInt(limit), date);
+    @ApiQuery({ name: "productId", required: false })
+    findAll(@Query("page") page: string, @Query("limit") limit: string, @Query("date") date: string, @Query("productId") productId: string) {
+        return this.salesService.findAll(parseInt(page), parseInt(limit), date, productId);
     }
 
     @Get(":orderId")

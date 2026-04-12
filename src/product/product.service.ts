@@ -20,7 +20,9 @@ export class ProductService {
             take: limit,
             orderBy: { createdAt: "desc" },
         });
-        return data;
+        const total = await this.prisma.product.count();
+        const totalPages = Math.ceil(total / limit);
+        return { totalPages, data };
     }
 
     async update(id: string, updateProductDto: UpdateProductDto) {

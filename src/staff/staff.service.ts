@@ -19,8 +19,10 @@ export class StaffService {
             skip: (page - 1) * limit,
             take: limit,
             orderBy: { createdAt: "desc" },
-        })
-        return data;
+        });
+        const total = await this.prisma.staff.count();
+        const totalPages = Math.ceil(total / limit);
+        return { data, totalPages };
     }
 
     async update(id: string, updateStaffDto: UpdateStaffDto) {
@@ -48,10 +50,31 @@ export class StaffService {
 
     async fetch_salary(page: number, limit: number, period?: string, staffId?: string) {
         let filter: any = {}
+        const months = [
+            "Jan",
+            "Feb",
+            "Mar",
+            "Apr",
+            "May",
+            "Jun",
+            "Jul",
+            "Aug",
+            "Sep",
+            "Oct",
+            "Nov",
+            "Dec",
+        ];
+
+        const current_month: number = new Date().getMonth();
+        const current_year: number = new Date().getFullYear();
+        const month: string = String(months[current_month]).toUpperCase();
+        const current_period: string = `${month}-${current_year}`;
 
         //Filter by period
         if (period != null && period != undefined && period != "undefined" && period != "") {
             filter.period = period;
+        } else {
+            filter.period = current_period;
         }
 
         //Filter by staff
@@ -67,7 +90,18 @@ export class StaffService {
                 ...filter,
             }
         });
-        return data;
+
+        const total = await this.prisma.salary.count({
+            skip: (page - 1) * limit,
+            take: limit,
+            orderBy: { createdAt: "desc" },
+            where: {
+                ...filter,
+            }
+        });
+
+        const totalPages = Math.ceil(total / limit);
+        return { data, totalPages };
     }
 
     async update_salary(id: string, updateSalaryDto: UpdateSalaryDto) {

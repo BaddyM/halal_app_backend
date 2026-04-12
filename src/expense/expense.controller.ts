@@ -20,8 +20,9 @@ export class ExpenseController {
     @ApiQuery({ name: "page" })
     @ApiQuery({ name: "limit" })
     @ApiQuery({ name: "date", required: false })
-    findAll(@Query("page") page: string, @Query("limit") limit: string, @Query("date") date: string) {
-        return this.expenseService.findAll(parseInt(page), parseInt(limit), date);
+    @ApiQuery({ name: "branchId", required: false })
+    findAll(@Query("page") page: string, @Query("limit") limit: string, @Query("date") date: string, @Query("branchId") branchId: string) {
+        return this.expenseService.findAll(parseInt(page), parseInt(limit), date, branchId);
     }
 
     @Patch(':id')

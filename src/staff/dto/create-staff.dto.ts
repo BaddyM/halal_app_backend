@@ -64,6 +64,11 @@ export class CreateSalaryDto {
     @IsEnum(SalaryStatus, { message: "Please select the correct status" })
     @IsOptional()
     status?: SalaryStatus;
+
+    @ApiProperty()
+    @IsString()
+    @IsOptional()
+    memo?: string;
 }
 
 export class UpdateSalaryDto extends PartialType(CreateSalaryDto) { }

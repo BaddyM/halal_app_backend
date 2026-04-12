@@ -266,6 +266,7 @@ model Salary {
     userId    String
     user      User         @relation(fields: [userId], references: [id])
     status    SalaryStatus @default(PENDING)
+    memo      String?      @db.LongText
     createdAt DateTime     @default(now())
     updatedAt DateTime     @default(now()) @updatedAt
 }

@@ -18,8 +18,10 @@ export class BranchService {
             skip: (page - 1),
             take: limit,
             orderBy: { createdAt: "desc" }
-        })
-        return data;
+        });
+        const total = await this.prisma.branch.count();
+        const totalPages = Math.ceil(total / limit);
+        return { data, totalPages };
     }
 
     async update(id: string, updateBranchDto: UpdateBranchDto) {

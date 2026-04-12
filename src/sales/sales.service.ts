@@ -56,7 +56,7 @@ export class SalesService {
         }
     }
 
-    async findAll(page: number, limit: number, date?: string) {
+    async findAll(page: number, limit: number, date?: string, productId?: string) {
         let dateFilter = {}
 
         if (date != null && date != undefined && date != "undefined" && date != "") {
@@ -71,6 +71,10 @@ export class SalesService {
             };
         }
 
+        if (productId != null && productId != "" && productId != "undefined" && productId != undefined) {
+            (dateFilter as any).productId = productId;
+        }
+
         const records = await this.prisma.sale.findMany({
             orderBy: { createdAt: "desc" },
             include: {
@@ -83,9 +87,10 @@ export class SalesService {
                     }
                 },
                 customer: true,
+                product: true,
             },
             where: {
-                ...dateFilter
+                ...dateFilter,
             },
             take: limit,
             skip: (page - 1) * limit,
@@ -97,6 +102,7 @@ export class SalesService {
                 acc[item.orderId] = {
                     orderId: item.orderId,
                     user: item.rep,
+                    product: item.product,
                     customer: item.customer,
                     memo: item.memo,
                     onCredit: item.onCredit,
