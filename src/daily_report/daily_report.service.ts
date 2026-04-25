@@ -18,16 +18,31 @@ export class DailyReportService {
         const data = await this.prisma.dailyReport.findMany({
             skip: (page - 1) * limit,
             take: limit,
+            include: {
+                user: {
+                    select: {
+                        name: true,
+                        email: true,
+                    }
+                },
+                branch: true,
+            },
             orderBy: { createdAt: "desc" },
-        })
-        return data;
+        });
+        const total = await this.prisma.dailyReport.count({
+            skip: (page - 1) * limit,
+            take: limit,
+            orderBy: { createdAt: "desc" },
+        });
+        const totalPages = Math.ceil(total / limit);
+        return { data, totalPages };
     }
 
     async update(id: string, updateDailyReportDto: UpdateDailyReportDto) {
         const data = await this.prisma.dailyReport.update({
-            where:{id},
-            data:updateDailyReportDto,
-        })
+            where: { id },
+            data: updateDailyReportDto,
+        });
         return data;
     }
 }

@@ -1,6 +1,7 @@
 import { ApiProperty, PartialType } from "@nestjs/swagger"
-import { ProductCategory, StockTakeStatus } from "@prisma/client"
-import { IsEnum, IsNotEmpty, IsNumber, IsOptional, IsString } from "class-validator"
+import { ProductCategory } from "@prisma/client"
+import { IsArray, IsEnum, IsNotEmpty, IsNumber, IsOptional, IsString, ValidateNested } from "class-validator"
+import { Type } from 'class-transformer';
 
 export class CreateProductDto {
     @ApiProperty()
@@ -29,31 +30,11 @@ export class CreateProductDto {
     subject?: string;
 }
 
-//Stock taking
-export class StockTakeDto {
-    @ApiProperty()
-    @IsString()
-    @IsNotEmpty()
-    repId!: string;
-
-    @ApiProperty()
-    @IsString()
-    @IsNotEmpty()
-    branchId!: string;
-
-    @ApiProperty()
-    @IsEnum(StockTakeStatus, { message: "Please select the correct status" })
-    @IsNotEmpty()
-    status!: StockTakeStatus;
-}
-
-export class UpdateStockTakeDto extends PartialType(StockTakeDto) { }
-
 export class StockTakeItemDto {
     @ApiProperty()
     @IsString()
     @IsNotEmpty()
-    stockTakeId!: string;
+    userId!: string;
 
     @ApiProperty()
     @IsString()
@@ -79,6 +60,14 @@ export class StockTakeItemDto {
     @IsNumber()
     @IsNotEmpty()
     revenue!: number;
+}
+
+export class CreateStockTakeDto {
+    @ApiProperty({ type: [StockTakeItemDto] }) // Tells Swagger it's an array
+    @IsArray()
+    @ValidateNested({ each: true }) // Validates every object inside the array
+    @Type(() => StockTakeItemDto)   // Necessary for class-transformer to "see" the child DTO
+    items!: StockTakeItemDto[];
 }
 
 export class UpdateStockTakeItemDto extends PartialType(StockTakeItemDto) { }

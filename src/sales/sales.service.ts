@@ -1,5 +1,5 @@
 import { Injectable, InternalServerErrorException } from '@nestjs/common';
-import { CreateSaleDto, CreditSaleDto, CreditSalePaymentDto, UpdateCreditSaleDto, UpdateCreditSalePaymentDto } from './dto/create-sale.dto';
+import { CreateMultipleSaleDto, CreditSaleDto, CreditSalePaymentDto, UpdateCreditSaleDto, UpdateCreditSalePaymentDto } from './dto/create-sale.dto';
 import { UpdateSaleDto } from './dto/update-sale.dto';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { v4 } from "uuid";
@@ -8,39 +8,73 @@ import { v4 } from "uuid";
 export class SalesService {
     constructor(private readonly prisma: PrismaService) { }
 
-    async create(createSaleDto: CreateSaleDto[]) {
+    async create(createSaleDto: CreateMultipleSaleDto) {
         try {
             let data: any[] = [];
             const orderId = v4();
 
-            for (let i = 0; i < createSaleDto.length; i++) {
+            for (let i = 0; i < createSaleDto.items.length; i++) {
                 //Deduct from product
                 let currentStock = await this.prisma.product.findFirst({
-                    where: { id: createSaleDto[i].productId },
+                    where: { id: createSaleDto.items[i].productId },
                     select: { totalStock: true },
                 });
 
-                let newStock = (currentStock!.totalStock - createSaleDto[i].quantity)
+                let newStock = (currentStock!.totalStock - createSaleDto.items[i].quantity)
 
                 //Update Stock
                 await this.prisma.product.update({
-                    where: { id: createSaleDto[i].productId },
+                    where: { id: createSaleDto.items[i].productId },
                     data: { totalStock: newStock },
                 });
 
                 //Add Sales
                 let sale_data = await this.prisma.sale.create({
                     data: {
-                        ...createSaleDto[i],
+                        ...createSaleDto.items[i],
                         orderId,
                     },
+                    include: {
+                        rep: {
+                            select: {
+                                id: true,
+                                role: true,
+                            }
+                        },
+                        product: {
+                            select: {
+                                id: true,
+                            }
+                        }
+                    }
                 });
+
+                //Deduct from sales rep.
+                if (sale_data.rep.role == "sales_rep") {
+                    let current_stock_item = await this.prisma.stockTakeItem.findFirst({
+                        where: {
+                            userId: sale_data.rep.id,
+                            productId: sale_data.product.id,
+                        }
+                    });
+
+                    let new_stock_taken: number = (current_stock_item?.quantitySold ?? 0 + createSaleDto.items[i].quantity);
+
+                    await this.prisma.stockTakeItem.update({
+                        where: {
+                            id: current_stock_item?.id,
+                        },
+                        data: {
+                            quantitySold: new_stock_taken
+                        }
+                    });
+                }
 
                 data.push(sale_data);
             }
 
             //Create a sale on credit
-            if (createSaleDto[0].onCredit) {
+            if (createSaleDto.items[0].onCredit) {
                 const amount = data.reduce((sum, item) => (sum + (item.quantity * item.unitPrice)), 0);
                 const creditSale: CreditSaleDto = {
                     orderId: data[0].orderId,
@@ -52,7 +86,11 @@ export class SalesService {
 
             return data!;
         } catch (e) {
-            throw new InternalServerErrorException("Sorry, failed to create sale");
+            console.error("Error creating sale:", e);
+            throw new InternalServerErrorException({
+                message: "Sorry, failed to create sale",
+                error: e,
+            });
         }
     }
 

@@ -73,7 +73,13 @@ export class UserService {
         return data;
     }
 
-    async findAll(page: number, limit: number) {
+    async findAll(page: number, limit: number, role?: string) {
+        let filter = {}
+
+        if (role != "" && role != undefined && role != "undefined" && role != null && role != "none") {
+            (filter as any).role = role;
+        }
+
         const data = await this.prisma.user.findMany({
             select: {
                 id: true,
@@ -90,6 +96,9 @@ export class UserService {
                 role: true,
                 createdAt: true,
                 updatedAt: true,
+            },
+            where: {
+                ...filter
             },
             orderBy: {
                 createdAt: "desc"

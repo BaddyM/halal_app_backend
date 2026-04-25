@@ -1,6 +1,6 @@
 import { Controller, Get, Post, Body, Patch, Param, Delete, Query, UseGuards } from '@nestjs/common';
 import { SalesService } from './sales.service';
-import { CreateSaleDto, CreditSalePaymentDto, UpdateCreditSaleDto, UpdateCreditSalePaymentDto } from './dto/create-sale.dto';
+import { CreateMultipleSaleDto, CreditSalePaymentDto, UpdateCreditSaleDto, UpdateCreditSalePaymentDto } from './dto/create-sale.dto';
 import { UpdateSaleDto } from './dto/update-sale.dto';
 import { ApiBearerAuth, ApiParam, ApiQuery } from '@nestjs/swagger';
 import { AuthGuard } from 'src/auth/auth.guard';
@@ -12,7 +12,7 @@ export class SalesController {
     constructor(private readonly salesService: SalesService) { }
 
     @Post()
-    create(@Body() createSaleDto: CreateSaleDto[]) {
+    create(@Body() createSaleDto: CreateMultipleSaleDto) {
         return this.salesService.create(createSaleDto);
     }
 

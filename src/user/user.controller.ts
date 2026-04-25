@@ -43,8 +43,9 @@ export class UserController {
     @Get("all")
     @ApiQuery({ name: "page" })
     @ApiQuery({ name: "limit" })
-    findAll(@Query("page") page: string, @Query("limit") limit: string) {
-        return this.userService.findAll(parseInt(page), parseInt(limit));
+    @ApiQuery({ name: "role", required: false })
+    findAll(@Query("page") page: string, @Query("limit") limit: string, @Query("role") role: string) {
+        return this.userService.findAll(parseInt(page), parseInt(limit), role);
     }
 
     @ApiBearerAuth()

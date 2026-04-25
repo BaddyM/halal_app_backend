@@ -1,6 +1,6 @@
 import { ApiProperty, PartialType } from "@nestjs/swagger";
-import { IsBoolean, IsNotEmpty, IsNumber, IsOptional, IsString } from "class-validator";
-
+import { IsArray, IsBoolean, IsNotEmpty, IsNumber, IsOptional, IsString, ValidateNested } from "class-validator";
+import { Type } from 'class-transformer';
 export class CreateSaleDto {
     @ApiProperty()
     @IsString()
@@ -34,13 +34,21 @@ export class CreateSaleDto {
 
     @ApiProperty()
     @IsString()
-    @IsNotEmpty()
+    @IsOptional()
     memo?: string;
 
     @ApiProperty()
     @IsBoolean()
     @IsNotEmpty()
     onCredit?: boolean;
+}
+
+export class CreateMultipleSaleDto {
+    @ApiProperty({ type: [CreateSaleDto] }) // Tells Swagger it's an array
+    @IsArray()
+    @ValidateNested({ each: true }) // Validates every object inside the array
+    @Type(() => CreateSaleDto)   // Necessary for class-transformer to "see" the child DTO
+    items!: CreateSaleDto[];
 }
 
 export class CreditSaleDto {

@@ -15,6 +15,7 @@ import { SalesModule } from './sales/sales.module';
 import { ExpenseModule } from './expense/expense.module';
 import { StaffModule } from './staff/staff.module';
 import { DashboardModule } from './dashboard/dashboard.module';
+import { SupplierModule } from './supplier/supplier.module';
 
 @Module({
     imports: [
@@ -52,6 +53,7 @@ import { DashboardModule } from './dashboard/dashboard.module';
         ExpenseModule,
         StaffModule,
         DashboardModule,
+        SupplierModule,
     ],
     controllers: [],
     providers: [],

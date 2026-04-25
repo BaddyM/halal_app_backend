@@ -1,5 +1,5 @@
-import { Injectable } from '@nestjs/common';
-import { CreateProductDto, StockTakeDto, StockTakeItemDto, UpdateStockTakeDto, UpdateStockTakeItemDto } from './dto/create-product.dto';
+import { Injectable, InternalServerErrorException } from '@nestjs/common';
+import { CreateProductDto, CreateStockTakeDto, StockTakeItemDto, UpdateStockTakeItemDto } from './dto/create-product.dto';
 import { UpdateProductDto } from './dto/update-product.dto';
 import { PrismaService } from 'src/prisma/prisma.service';
 
@@ -14,10 +14,19 @@ export class ProductService {
         return data;
     }
 
-    async findAll(page: number, limit: number) {
+    async findAll(page: number, limit: number, category?: string) {
+        let filter = {}
+
+        if (category != "" && category != undefined && category != "undefined" && category != null && category != "none") {
+            (filter as any).category = category;
+        }
+
         const data = await this.prisma.product.findMany({
             skip: (page - 1) * limit,
             take: limit,
+            where: {
+                ...filter
+            },
             orderBy: { createdAt: "desc" },
         });
         const total = await this.prisma.product.count();
@@ -40,43 +49,136 @@ export class ProductService {
         return data;
     }
 
-    //Stock Take
-    async create_stock_take(stockTake: StockTakeDto) {
-        const data = await this.prisma.stockTake.create({
-            data: stockTake,
-        });
-        return data;
+    //Stock Take Item
+    async create_stock_take_item(stockTake: CreateStockTakeDto) {
+        try {
+            for (let i = 0; i < stockTake.items.length; i++) {
+                const exists = await this.prisma.stockTakeItem.count({
+                    where: {
+                        userId: stockTake.items[i].userId,
+                        productId: stockTake.items[i].productId,
+                    }
+                });
+
+                //Deduct from stock
+                let currentStock = await this.prisma.product.findFirst({
+                    where: { id: stockTake.items[i].productId },
+                    select: { totalStock: true },
+                });
+
+                let newStock = (currentStock!.totalStock - stockTake.items[i].quantityTaken)
+
+                //Update Stock
+                await this.prisma.product.update({
+                    where: { id: stockTake.items[i].productId },
+                    data: { totalStock: newStock },
+                });
+
+                if (exists == 0) {
+                    const data = await this.prisma.stockTakeItem.create({
+                        data: stockTake.items[i],
+                    });
+
+                    //Stock take history
+                    await this.prisma.stockTakeItemHistory.create({
+                        data: {
+                            stockTakeItemId: data.id,
+                        }
+                    });
+                } else {
+                    await this.prisma.stockTakeItem.updateMany({
+                        where: {
+                            userId: stockTake.items[i].userId,
+                            productId: stockTake.items[i].productId,
+                        },
+                        data: {
+                            quantityTaken: stockTake.items[i].quantityTaken,
+                            quantitySold: stockTake.items[i].quantitySold,
+                            quantityReturned: stockTake.items[i].quantityReturned,
+                            revenue: stockTake.items[i].revenue,
+                        },
+                    });
+
+                    const data = await this.prisma.stockTakeItem.findMany({
+                        where: {
+                            userId: stockTake.items[i].userId,
+                            productId: stockTake.items[i].productId,
+                        },
+                    });
+
+                    //Stock take history
+                    await this.prisma.stockTakeItemHistory.create({
+                        data: {
+                            stockTakeItemId: data[0].id,
+                        }
+                    });
+                }
+            }
+            return { message: "Stock taken successfully" }
+        } catch (e) {
+            console.log(e)
+            throw new InternalServerErrorException({
+                message: "Sorry, failed to take stock item",
+                error: e,
+            })
+        }
     }
 
-    async fetch_stock_take(page: number, limit: number) {
-        const data = await this.prisma.stockTake.findMany({
+    async fetch_stock_take_item(page: number, limit: number, userId?: string) {
+        let filter = {}
+
+        if (userId != null && userId != undefined && userId != "undefined" && userId != "" && userId != "none") {
+            (filter as any).userId = userId;
+        }
+
+        const data = await this.prisma.stockTakeItem.findMany({
+            skip: (page - 1) * limit,
+            take: limit,
+            include: {
+                user: {
+                    select: {
+                        id: true,
+                        name: true,
+                        email: true,
+                        branch: {
+                            select: {
+                                name: true,
+                            }
+                        }
+                    }
+                },
+                product: true,
+            },
+            where: {
+                ...filter,
+            },
+            orderBy: { createdAt: "desc" }
+        });
+        const total = await this.prisma.stockTakeItem.count({
             skip: (page - 1) * limit,
             take: limit,
             orderBy: { createdAt: "desc" }
         });
-        return data;
+        const totalPages = Math.ceil(total / limit);
+        return { data, totalPages };
     }
 
-    async update_stock_take(id: string, updateStockTake: UpdateStockTakeDto) {
-        const data = await this.prisma.stockTake.update({
-            where: { id },
-            data: updateStockTake,
-        });
-        return data;
-    }
-
-    //Stock Take Item
-    async create_stock_take_item(stockTake: StockTakeItemDto) {
-        const data = await this.prisma.stockTakeItem.create({
-            data: stockTake,
-        });
-        return data;
-    }
-
-    async fetch_stock_take_item(page: number, limit: number) {
-        const data = await this.prisma.stockTakeItem.findMany({
+    async fetch_stock_take_item_history(page: number, limit: number) {
+        const data = await this.prisma.stockTakeItemHistory.findMany({
             skip: (page - 1) * limit,
             take: limit,
+            include: {
+                stockTakeItem: {
+                    include: {
+                        user: {
+                            select: {
+                                name: true,
+                            }
+                        },
+                        product: true,
+                    }
+                },
+            },
             orderBy: { createdAt: "desc" }
         });
         return data;

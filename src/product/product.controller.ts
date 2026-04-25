@@ -1,6 +1,6 @@
 import { Controller, Get, Post, Body, Patch, Param, Query, Delete, UseGuards } from '@nestjs/common';
 import { ProductService } from './product.service';
-import { CreateProductDto, StockTakeDto, StockTakeItemDto, UpdateStockTakeDto, UpdateStockTakeItemDto } from './dto/create-product.dto';
+import { CreateProductDto, CreateStockTakeDto, StockTakeItemDto, UpdateStockTakeItemDto } from './dto/create-product.dto';
 import { UpdateProductDto } from './dto/update-product.dto';
 import { ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
 import { AuthGuard } from 'src/auth/auth.guard';
@@ -19,8 +19,9 @@ export class ProductController {
     @Get()
     @ApiQuery({ name: "page" })
     @ApiQuery({ name: "limit" })
-    findAll(@Query("page") page: string, @Query("limit") limit: string) {
-        return this.productService.findAll(parseInt(page), parseInt(limit));
+    @ApiQuery({ name: "category", required: false })
+    findAll(@Query("page") page: string, @Query("limit") limit: string, @Query("category") category: string) {
+        return this.productService.findAll(parseInt(page), parseInt(limit), category);
     }
 
     @Patch(':id')
@@ -33,35 +34,25 @@ export class ProductController {
         return this.productService.delete(id);
     }
 
-    //Stock Take
-    @Post("stockTake/create")
-    create_stock_take(@Body() createStockTakeDto: StockTakeDto) {
-        return this.productService.create_stock_take(createStockTakeDto);
-    }
-
-    @Get("stockTake/list")
-    @ApiQuery({ name: "page" })
-    @ApiQuery({ name: "limit" })
-    fetch_stock_take(@Query("page") page: string, @Query("limit") limit: string) {
-        return this.productService.fetch_stock_take(parseInt(page), parseInt(limit));
-    }
-
-    @Patch('stockTake/:id')
-    update_stock_take(@Param('id') id: string, @Body() updateStockTakeDto: UpdateStockTakeDto) {
-        return this.productService.update_stock_take(id, updateStockTakeDto);
-    }
-
     //Stock Take Item
     @Post("stockTake/item/create")
-    create_stock_take_item(@Body() createStockTakeItemDto: StockTakeItemDto) {
+    create_stock_take_item(@Body() createStockTakeItemDto: CreateStockTakeDto) {
         return this.productService.create_stock_take_item(createStockTakeItemDto);
     }
 
     @Get("stockTake/item/list")
     @ApiQuery({ name: "page" })
     @ApiQuery({ name: "limit" })
-    fetch_stock_take_item(@Query("page") page: string, @Query("limit") limit: string) {
-        return this.productService.fetch_stock_take_item(parseInt(page), parseInt(limit));
+    @ApiQuery({ name: "userId", required: false })
+    fetch_stock_take_item(@Query("page") page: string, @Query("limit") limit: string, @Query("userId") userId: string) {
+        return this.productService.fetch_stock_take_item(parseInt(page), parseInt(limit), userId);
+    }
+
+    @Get("stockTake/item/history/list")
+    @ApiQuery({ name: "page" })
+    @ApiQuery({ name: "limit" })
+    fetch_stock_take_item_history(@Query("page") page: string, @Query("limit") limit: string) {
+        return this.productService.fetch_stock_take_item_history(parseInt(page), parseInt(limit));
     }
 
     @Patch('stockTake/item/:id')

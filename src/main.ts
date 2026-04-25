@@ -9,8 +9,8 @@ async function bootstrap() {
     if (process.env.MODE == "Dev") {
         // Set up Swagger
         const config = new DocumentBuilder()
-            .setTitle('Anchor Within API')
-            .setDescription('API documentation for Anchor Within')
+            .setTitle('Jubra Stock Management API')
+            .setDescription('API documentation for Jubra')
             .setVersion('1.0')
             .addBearerAuth()
             .build();
