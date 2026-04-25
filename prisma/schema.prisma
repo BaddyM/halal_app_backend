@@ -38,6 +38,11 @@ enum StockTakeStatus {
     completed
 }
 
+enum SaleItemType {
+    PRODUCT
+    CUSTOM
+}
+
 model Branch {
     id           String        @id @default(uuid())
     name         String        @unique
@@ -155,7 +160,9 @@ model Sale {
     orderId     String
     repId       String
     stockTakeId String?
-    productId   String
+    productId   String?
+    itemName    String
+    itemType    SaleItemType @default(PRODUCT)
     quantity    Int
     customerId  String?
     customer    Customer? @relation(fields: [customerId], references: [id])
@@ -165,8 +172,10 @@ model Sale {
     createdAt   DateTime  @default(now())
     updatedAt   DateTime  @default(now()) @updatedAt
     rep         User      @relation(fields: [repId], references: [id], onDelete: Cascade)
-    product     Product   @relation(fields: [productId], references: [id], onDelete: Cascade)
+    product     Product?  @relation(fields: [productId], references: [id], onDelete: SetNull)
     receipts    Receipt[]
+
+    @@index([productId])
 }
 
 model CreditSale {

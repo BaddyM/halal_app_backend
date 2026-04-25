@@ -77,6 +77,19 @@ export class DashboardService {
             },
         })
 
+        const supplier_spend = await this.prisma.purchaseOrder.aggregate({
+            _sum: {
+                totalPrice: true,
+                amountDue: true,
+            },
+            where: {
+                createdAt: {
+                    gte: start,
+                    lt: end,
+                },
+            },
+        });
+
         const total_sales = today_sales.reduce((sum, item) => (sum + (item.quantity * item.unitPrice)), 0);
         const revenue = (total_sales + (total_credit_paid._sum.paid ?? 0));
 
@@ -93,6 +106,9 @@ export class DashboardService {
         });
 
         const net_revenue = (revenue - (expense._sum.amount ?? 0));
+        const supplier_spend_total = supplier_spend._sum.totalPrice ?? 0;
+        const supplier_due_total = supplier_spend._sum.amountDue ?? 0;
+        const supplier_net_revenue = (net_revenue - supplier_spend_total);
 
         const restock = await this.prisma.product.findMany({
             where: {
@@ -109,7 +125,10 @@ export class DashboardService {
             stock_returned: stock_returned._sum.quantityReturned ?? 0,
             revenue,
             expense: expense._sum.amount ?? 0,
+            supplier_spend: supplier_spend_total,
+            supplier_due: supplier_due_total,
             net_revenue,
+            supplier_net_revenue,
             restock,
         };
     }
