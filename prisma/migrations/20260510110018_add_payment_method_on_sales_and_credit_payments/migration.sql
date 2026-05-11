@@ -1,0 +1,10 @@
+-- AlterTable
+ALTER TABLE `CreditPayment` ADD COLUMN `paymentMethod` ENUM('CASH', 'MOBILE_MONEY', 'BANK_TRANSFER', 'CARD', 'CHEQUE', 'OTHER') NOT NULL DEFAULT 'CASH',
+    ADD COLUMN `reference` VARCHAR(191) NULL;
+
+-- AlterTable
+ALTER TABLE `PurchaseOrderPayment` MODIFY `method` ENUM('CASH', 'MOBILE_MONEY', 'BANK_TRANSFER', 'CARD', 'CHEQUE', 'OTHER') NOT NULL DEFAULT 'CASH';
+
+-- AlterTable
+ALTER TABLE `Sale` ADD COLUMN `paymentMethod` ENUM('CASH', 'MOBILE_MONEY', 'BANK_TRANSFER', 'CARD', 'CHEQUE', 'OTHER') NULL,
+    ADD COLUMN `paymentReference` VARCHAR(191) NULL;

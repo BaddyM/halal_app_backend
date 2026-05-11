@@ -24,6 +24,11 @@ export class ProductController {
         return this.productService.findAll(parseInt(page), parseInt(limit), category);
     }
 
+    @Get('low-stock/list')
+    lowStockList() {
+        return this.productService.low_stock_list();
+    }
+
     @Patch(':id')
     update(@Param('id') id: string, @Body() updateProductDto: UpdateProductDto) {
         return this.productService.update(id, updateProductDto);

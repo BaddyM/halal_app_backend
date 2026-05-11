@@ -1,5 +1,6 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { PurchaseOrderPaymentStatus, PurchaseOrderPaymentTerms, PurchaseOrderStatus } from '@prisma/client';
+import { AuditService } from 'src/audit/audit.service';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { CreatePurchaseOrderPaymentDto } from './dto/create-purchase-order-payment.dto';
 import { CreatePurchaseOrderDto } from './dto/create-purchase-order.dto';
@@ -10,7 +11,10 @@ import { UpdateSupplierProductDto } from './dto/update-supplier-product.dto';
 
 @Injectable()
 export class SupplierService {
-  constructor(private readonly prisma: PrismaService) { }
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly auditService: AuditService,
+  ) { }
 
   private buildPaymentStatus(amountPaid: number, totalPrice: number): PurchaseOrderPaymentStatus {
     if (amountPaid <= 0) return PurchaseOrderPaymentStatus.UNPAID;
@@ -21,7 +25,7 @@ export class SupplierService {
   async create(createSupplierDto: CreateSupplierDto) {
     const { products, ...supplierData } = createSupplierDto;
 
-    return this.prisma.supplier.create({
+    const supplier = await this.prisma.supplier.create({
       data: {
         ...supplierData,
         supplierProducts: products?.length
@@ -38,6 +42,15 @@ export class SupplierService {
         supplierProducts: true,
       },
     });
+
+    await this.auditService.log({
+      action: 'SUPPLIER_CREATED',
+      entity: 'Supplier',
+      entityId: supplier.id,
+      after: supplier,
+    });
+
+    return supplier;
   }
 
   async findAll(page: number, limit: number) {
@@ -86,17 +99,38 @@ export class SupplierService {
 
   async update(id: string, updateSupplierDto: UpdateSupplierDto) {
     const { products, ...data } = updateSupplierDto;
+    const before = await this.prisma.supplier.findUnique({ where: { id } });
 
-    return this.prisma.supplier.update({
+    const supplier = await this.prisma.supplier.update({
       where: { id },
       data,
     });
+
+    await this.auditService.log({
+      action: 'SUPPLIER_UPDATED',
+      entity: 'Supplier',
+      entityId: id,
+      before,
+      after: supplier,
+    });
+
+    return supplier;
   }
 
   async remove(id: string) {
-    return this.prisma.supplier.delete({
+    const before = await this.prisma.supplier.findUnique({ where: { id } });
+    const supplier = await this.prisma.supplier.delete({
       where: { id },
     });
+
+    await this.auditService.log({
+      action: 'SUPPLIER_DELETED',
+      entity: 'Supplier',
+      entityId: id,
+      before,
+    });
+
+    return supplier;
   }
 
   async createSupplierProduct(createSupplierProductDto: CreateSupplierProductDto) {
@@ -109,9 +143,18 @@ export class SupplierService {
       throw new NotFoundException('Supplier not found');
     }
 
-    return this.prisma.supplierProduct.create({
+    const product = await this.prisma.supplierProduct.create({
       data: createSupplierProductDto,
     });
+
+    await this.auditService.log({
+      action: 'SUPPLIER_PRODUCT_CREATED',
+      entity: 'SupplierProduct',
+      entityId: product.id,
+      after: product,
+    });
+
+    return product;
   }
 
   async findSupplierProducts(supplierId?: string, page = 1, limit = 20) {
@@ -138,16 +181,37 @@ export class SupplierService {
   }
 
   async updateSupplierProduct(id: string, updateSupplierProductDto: UpdateSupplierProductDto) {
-    return this.prisma.supplierProduct.update({
+    const before = await this.prisma.supplierProduct.findUnique({ where: { id } });
+    const product = await this.prisma.supplierProduct.update({
       where: { id },
       data: updateSupplierProductDto,
     });
+
+    await this.auditService.log({
+      action: 'SUPPLIER_PRODUCT_UPDATED',
+      entity: 'SupplierProduct',
+      entityId: id,
+      before,
+      after: product,
+    });
+
+    return product;
   }
 
   async removeSupplierProduct(id: string) {
-    return this.prisma.supplierProduct.delete({
+    const before = await this.prisma.supplierProduct.findUnique({ where: { id } });
+    const product = await this.prisma.supplierProduct.delete({
       where: { id },
     });
+
+    await this.auditService.log({
+      action: 'SUPPLIER_PRODUCT_DELETED',
+      entity: 'SupplierProduct',
+      entityId: id,
+      before,
+    });
+
+    return product;
   }
 
   async createPurchaseOrder(createPurchaseOrderDto: CreatePurchaseOrderDto) {
@@ -177,7 +241,7 @@ export class SupplierService {
     const amountDue = totalPrice - amountPaid;
     const paymentStatus = this.buildPaymentStatus(amountPaid, totalPrice);
 
-    return this.prisma.purchaseOrder.create({
+    const purchaseOrder = await this.prisma.purchaseOrder.create({
       data: {
         orderId: createPurchaseOrderDto.orderId ?? `PO-${Date.now()}`,
         supplierId: createPurchaseOrderDto.supplierId,
@@ -205,6 +269,15 @@ export class SupplierService {
         payments: true,
       },
     });
+
+    await this.auditService.log({
+      action: 'PURCHASE_ORDER_CREATED',
+      entity: 'PurchaseOrder',
+      entityId: purchaseOrder.id,
+      after: purchaseOrder,
+    });
+
+    return purchaseOrder;
   }
 
   async addPurchaseOrderPayment(purchaseOrderId: string, paymentDto: CreatePurchaseOrderPaymentDto) {
@@ -242,7 +315,7 @@ export class SupplierService {
         },
       });
 
-      return tx.purchaseOrder.update({
+      const purchaseOrder = await tx.purchaseOrder.update({
         where: { id: purchaseOrderId },
         data: {
           amountPaid: nextPaid,
@@ -257,6 +330,20 @@ export class SupplierService {
           },
         },
       });
+
+      await this.auditService.log({
+        action: 'PURCHASE_ORDER_PAYMENT_ADDED',
+        entity: 'PurchaseOrderPayment',
+        entityId: purchaseOrderId,
+        after: {
+          amount: paymentDto.amount,
+          amountPaid: nextPaid,
+          amountDue: nextDue,
+          paymentStatus: nextStatus,
+        },
+      });
+
+      return purchaseOrder;
     });
   }
 

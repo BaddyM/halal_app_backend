@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { PurchaseOrderPaymentMethod } from '@prisma/client';
+import { PaymentMethod } from '@prisma/client';
 import { IsEnum, IsNumber, IsOptional, IsString, Min } from 'class-validator';
 
 export class CreatePurchaseOrderPaymentDto {
@@ -8,10 +8,10 @@ export class CreatePurchaseOrderPaymentDto {
     @Min(0.01)
     amount!: number;
 
-    @ApiPropertyOptional({ enum: PurchaseOrderPaymentMethod })
-    @IsEnum(PurchaseOrderPaymentMethod)
+    @ApiPropertyOptional({ enum: PaymentMethod })
+    @IsEnum(PaymentMethod)
     @IsOptional()
-    method?: PurchaseOrderPaymentMethod;
+    method?: PaymentMethod;
 
     @ApiPropertyOptional()
     @IsString()

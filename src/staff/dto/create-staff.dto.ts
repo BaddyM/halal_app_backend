@@ -65,6 +65,21 @@ export class CreateSalaryDto {
     @IsOptional()
     status?: SalaryStatus;
 
+    @ApiProperty({ required: false })
+    @IsNumber()
+    @IsOptional()
+    allowances?: number;
+
+    @ApiProperty({ required: false })
+    @IsNumber()
+    @IsOptional()
+    deductions?: number;
+
+    @ApiProperty({ required: false })
+    @IsNumber()
+    @IsOptional()
+    advanceDeducted?: number;
+
     @ApiProperty()
     @IsString()
     @IsOptional()
@@ -72,3 +87,20 @@ export class CreateSalaryDto {
 }
 
 export class UpdateSalaryDto extends PartialType(CreateSalaryDto) { }
+
+export class CreateSalaryAdvanceDto {
+    @ApiProperty()
+    @IsString()
+    @IsNotEmpty()
+    staffId!: string;
+
+    @ApiProperty()
+    @IsNumber()
+    @IsNotEmpty()
+    amount!: number;
+
+    @ApiProperty({ required: false })
+    @IsString()
+    @IsOptional()
+    reason?: string;
+}

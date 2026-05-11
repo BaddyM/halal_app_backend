@@ -16,6 +16,9 @@ import { ExpenseModule } from './expense/expense.module';
 import { StaffModule } from './staff/staff.module';
 import { DashboardModule } from './dashboard/dashboard.module';
 import { SupplierModule } from './supplier/supplier.module';
+import { ProductionModule } from './production/production.module';
+import { AuditModule } from './audit/audit.module';
+import { InvoiceModule } from './invoice/invoice.module';
 
 @Module({
     imports: [
@@ -54,6 +57,9 @@ import { SupplierModule } from './supplier/supplier.module';
         StaffModule,
         DashboardModule,
         SupplierModule,
+        ProductionModule,
+        AuditModule,
+        InvoiceModule,
     ],
     controllers: [],
     providers: [],

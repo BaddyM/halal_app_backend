@@ -2,6 +2,7 @@ import { ApiProperty, PartialType } from '@nestjs/swagger';
 import {
   IsArray,
   IsBoolean,
+  IsEnum,
   IsNotEmpty,
   IsNumber,
   IsOptional,
@@ -9,6 +10,15 @@ import {
   ValidateNested,
 } from 'class-validator';
 import { Type } from 'class-transformer';
+
+export enum PaymentMethod {
+  CASH = 'CASH',
+  MOBILE_MONEY = 'MOBILE_MONEY',
+  BANK_TRANSFER = 'BANK_TRANSFER',
+  CARD = 'CARD',
+  CHEQUE = 'CHEQUE',
+  OTHER = 'OTHER',
+}
 export class CreateSaleDto {
   @ApiProperty()
   @IsString()
@@ -54,6 +64,16 @@ export class CreateSaleDto {
   @IsBoolean()
   @IsNotEmpty()
   onCredit?: boolean;
+
+  @ApiProperty({ enum: PaymentMethod, required: false })
+  @IsEnum(PaymentMethod)
+  @IsOptional()
+  paymentMethod?: PaymentMethod;
+
+  @ApiProperty({ required: false })
+  @IsString()
+  @IsOptional()
+  paymentReference?: string;
 }
 
 export class CreateMultipleSaleDto {
@@ -80,6 +100,11 @@ export class CreditSaleDto {
   @IsNotEmpty()
   amount!: number;
 
+  @ApiProperty({ required: false })
+  @IsString()
+  @IsOptional()
+  customerId?: string;
+
   @ApiProperty()
   @IsBoolean()
   @IsOptional()
@@ -103,6 +128,16 @@ export class CreditSalePaymentDto {
   @IsString()
   @IsNotEmpty()
   userId!: string;
+
+  @ApiProperty({ enum: PaymentMethod, required: false })
+  @IsEnum(PaymentMethod)
+  @IsOptional()
+  paymentMethod?: PaymentMethod;
+
+  @ApiProperty({ required: false })
+  @IsString()
+  @IsOptional()
+  reference?: string;
 }
 
 export class UpdateCreditSalePaymentDto extends PartialType(

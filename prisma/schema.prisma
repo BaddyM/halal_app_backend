@@ -9,6 +9,7 @@ datasource db {
 
 enum UserRole {
     admin
+    cashier
     office
     sales_rep
 }
@@ -44,18 +45,21 @@ enum SaleItemType {
 }
 
 model Branch {
-    id           String        @id @default(uuid())
-    name         String        @unique
-    address      String?
-    contact      String?
-    isActive     Boolean       @default(false)
-    createdAt    DateTime      @default(now())
-    updatedAt    DateTime      @default(now()) @updatedAt
-    users        User[]
-    receipts     Receipt[]
-    customers    Customer[]
-    dailyReports DailyReport[]
-    staff        Staff[]
+    id              String           @id @default(uuid())
+    name            String           @unique
+    address         String?
+    contact         String?
+    isActive        Boolean          @default(false)
+    createdAt       DateTime         @default(now())
+    updatedAt       DateTime         @default(now()) @updatedAt
+    users           User[]
+    receipts        Receipt[]
+    customers       Customer[]
+    dailyReports    DailyReport[]
+    staff           Staff[]
+    branchStocks    BranchStock[]
+    transfersFrom   StockTransfer[]  @relation("TransferFromBranch")
+    transfersTo     StockTransfer[]  @relation("TransferToBranch")
 }
 
 model User {
@@ -81,20 +85,95 @@ model User {
     settings            Settings[]
     salaries            Salary[]
     stockTakeItems      StockTakeItem[]
+    approvedReturns     SaleReturn[]       @relation("ApprovedReturns")
+    commissionRate      Float              @default(0)
+    commissionPayouts   CommissionPayout[]
+    auditLogs           AuditLog[]
+    periodLocks         PeriodLock[]
+    invoices            Invoice[]
+    invoicePayments     InvoicePayment[]
+    failedLoginCount    Int                  @default(0)
+    lockedUntil         DateTime?
+    passwordResetTokens PasswordResetToken[]
+}
+
+model PasswordResetToken {
+    id        String    @id @default(uuid())
+    userId    String
+    user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+    token     String    @unique
+    expiresAt DateTime
+    usedAt    DateTime?
+    createdAt DateTime  @default(now())
+
+    @@index([userId])
+}
+
+model AuditLog {
+    id        String   @id @default(uuid())
+    userId    String?
+    user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+    action    String
+    entity    String
+    entityId  String?
+    before    String?  @db.LongText
+    after     String?  @db.LongText
+    createdAt DateTime @default(now())
+
+    @@index([entity, entityId])
+    @@index([userId])
+    @@index([createdAt])
+}
+
+model PeriodLock {
+    id          String   @id @default(uuid())
+    period      String   @unique
+    lockedAt    DateTime @default(now())
+    lockedById  String
+    lockedBy    User     @relation(fields: [lockedById], references: [id])
+    note        String?  @db.LongText
+    createdAt   DateTime @default(now())
+    updatedAt   DateTime @default(now()) @updatedAt
+}
+
+enum CommissionPayoutStatus {
+    PENDING
+    PAID
+    CANCELLED
+}
+
+model CommissionPayout {
+    id              String                 @id @default(uuid())
+    userId          String
+    user            User                   @relation(fields: [userId], references: [id])
+    period          String
+    totalSales      Float
+    totalCommission Float
+    status          CommissionPayoutStatus @default(PENDING)
+    paidAt          DateTime?
+    notes           String?                @db.LongText
+    createdAt       DateTime               @default(now())
+    updatedAt       DateTime               @default(now()) @updatedAt
+
+    @@index([userId])
 }
 
 model Customer {
-    id          String   @id @default(uuid())
+    id          String       @id @default(uuid())
     name        String
     email       String?
     phoneNumber String
     address     String?
     branchId    String
-    isDeleted   Boolean  @default(false)
-    branch      Branch   @relation(fields: [branchId], references: [id])
-    createdAt   DateTime @default(now())
-    updatedAt   DateTime @default(now()) @updatedAt
+    creditLimit Float        @default(0)
+    isDeleted   Boolean      @default(false)
+    branch      Branch       @relation(fields: [branchId], references: [id])
+    createdAt   DateTime     @default(now())
+    updatedAt   DateTime     @default(now()) @updatedAt
     sales       Sale[]
+    creditSales CreditSale[]
+    invoices    Invoice[]
+    invoiceLinks CustomerInvoice[]
 }
 
 model DailyReport {
@@ -121,6 +200,8 @@ model Product {
     id             String          @id @default(uuid())
     category       ProductCategory
     price          Float
+    costPrice      Float           @default(0)
+    reorderLevel   Int             @default(0)
     totalStock     Int
     classLevel     String?
     subject        String?
@@ -128,6 +209,50 @@ model Product {
     updatedAt      DateTime        @default(now()) @updatedAt
     stockTakeItems StockTakeItem[]
     sales          Sale[]
+    branchStocks   BranchStock[]
+    stockTransfers StockTransfer[]
+    invoiceItems   InvoiceItem[]
+}
+
+model BranchStock {
+    id        String   @id @default(uuid())
+    branchId  String
+    productId String
+    quantity  Int      @default(0)
+    branch    Branch   @relation(fields: [branchId], references: [id], onDelete: Cascade)
+    product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+    createdAt DateTime @default(now())
+    updatedAt DateTime @default(now()) @updatedAt
+
+    @@unique([branchId, productId])
+    @@index([productId])
+}
+
+enum StockTransferStatus {
+    PENDING
+    COMPLETED
+    CANCELLED
+}
+
+model StockTransfer {
+    id           String              @id @default(uuid())
+    fromBranchId String
+    toBranchId   String
+    productId    String
+    quantity     Int
+    status       StockTransferStatus @default(PENDING)
+    notes        String?             @db.LongText
+    createdById  String
+    completedAt  DateTime?
+    createdAt    DateTime            @default(now())
+    updatedAt    DateTime            @default(now()) @updatedAt
+    fromBranch   Branch              @relation("TransferFromBranch", fields: [fromBranchId], references: [id])
+    toBranch     Branch              @relation("TransferToBranch", fields: [toBranchId], references: [id])
+    product      Product             @relation(fields: [productId], references: [id])
+
+    @@index([fromBranchId])
+    @@index([toBranchId])
+    @@index([productId])
 }
 
 model StockTakeItem {
@@ -156,26 +281,53 @@ model StockTakeItemHistory {
 }
 
 model Sale {
-    id          String    @id @default(uuid())
-    orderId     String
-    repId       String
-    stockTakeId String?
-    productId   String?
-    itemName    String
-    itemType    SaleItemType @default(PRODUCT)
-    quantity    Int
-    customerId  String?
-    customer    Customer? @relation(fields: [customerId], references: [id])
-    unitPrice   Float
-    memo        String?   @db.LongText
-    onCredit    Boolean   @default(false)
-    createdAt   DateTime  @default(now())
-    updatedAt   DateTime  @default(now()) @updatedAt
-    rep         User      @relation(fields: [repId], references: [id], onDelete: Cascade)
-    product     Product?  @relation(fields: [productId], references: [id], onDelete: SetNull)
-    receipts    Receipt[]
+    id               String         @id @default(uuid())
+    orderId          String
+    repId            String
+    stockTakeId      String?
+    productId        String?
+    itemName         String
+    itemType         SaleItemType   @default(PRODUCT)
+    quantity         Int
+    customerId       String?
+    customer         Customer?      @relation(fields: [customerId], references: [id])
+    unitPrice        Float
+    unitCost         Float          @default(0)
+    memo             String?        @db.LongText
+    onCredit         Boolean        @default(false)
+    paymentMethod    PaymentMethod?
+    paymentReference String?
+    createdAt        DateTime       @default(now())
+    updatedAt        DateTime       @default(now()) @updatedAt
+    rep              User           @relation(fields: [repId], references: [id], onDelete: Cascade)
+    product          Product?       @relation(fields: [productId], references: [id], onDelete: SetNull)
+    receipts         Receipt[]
+    returns          SaleReturn[]
 
     @@index([productId])
+}
+
+enum ReturnStatus {
+    PENDING
+    COMPLETED
+    CANCELLED
+}
+
+model SaleReturn {
+    id           String        @id @default(uuid())
+    saleId       String
+    sale         Sale          @relation(fields: [saleId], references: [id], onDelete: Cascade)
+    quantity     Int
+    refundAmount Float
+    reason       String?       @db.LongText
+    refundMethod PaymentMethod @default(CASH)
+    status       ReturnStatus  @default(PENDING)
+    approvedById String
+    approvedBy   User          @relation("ApprovedReturns", fields: [approvedById], references: [id])
+    createdAt    DateTime      @default(now())
+    updatedAt    DateTime      @default(now()) @updatedAt
+
+    @@index([saleId])
 }
 
 model CreditSale {
@@ -183,12 +335,16 @@ model CreditSale {
     orderId        String
     amount         Float
     userId         String
+    customerId     String?
+    customer       Customer?        @relation(fields: [customerId], references: [id])
     user           User             @relation(fields: [userId], references: [id])
     isDeleted      Boolean          @default(false)
     status         CreditSaleStatus @default(PENDING)
     createdAt      DateTime         @default(now())
     updatedAt      DateTime         @default(now()) @updatedAt
     creditPayments CreditPayment[]
+
+    @@index([customerId])
 }
 
 enum CreditSaleStatus {
@@ -198,14 +354,16 @@ enum CreditSaleStatus {
 }
 
 model CreditPayment {
-    id           String     @id @default(uuid())
-    creditSaleId String
-    creditSale   CreditSale @relation(fields: [creditSaleId], references: [id])
-    paid         Float
-    userId       String
-    user         User       @relation(fields: [userId], references: [id])
-    createdAt    DateTime   @default(now())
-    updatedAt    DateTime   @default(now()) @updatedAt
+    id            String        @id @default(uuid())
+    creditSaleId  String
+    creditSale    CreditSale    @relation(fields: [creditSaleId], references: [id])
+    paid          Float
+    userId        String
+    user          User          @relation(fields: [userId], references: [id])
+    paymentMethod PaymentMethod @default(CASH)
+    reference     String?
+    createdAt     DateTime      @default(now())
+    updatedAt     DateTime      @default(now()) @updatedAt
 }
 
 model Receipt {
@@ -246,7 +404,7 @@ model Notification {
 }
 
 model Staff {
-    id         String   @id @default(uuid())
+    id         String           @id @default(uuid())
     name       String
     phone      String
     email      String?
@@ -254,24 +412,50 @@ model Staff {
     role       String
     baseSalary Float
     branchId   String
-    branch     Branch   @relation(fields: [branchId], references: [id])
-    createdAt  DateTime @default(now())
-    updatedAt  DateTime @default(now()) @updatedAt
+    branch     Branch           @relation(fields: [branchId], references: [id])
+    createdAt  DateTime         @default(now())
+    updatedAt  DateTime         @default(now()) @updatedAt
     salaries   Salary[]
+    advances   SalaryAdvance[]
+}
+
+enum SalaryAdvanceStatus {
+    PENDING
+    REPAID
+    CANCELLED
+}
+
+model SalaryAdvance {
+    id        String              @id @default(uuid())
+    staffId   String
+    staff     Staff               @relation(fields: [staffId], references: [id])
+    amount    Float
+    reason    String?             @db.LongText
+    status    SalaryAdvanceStatus @default(PENDING)
+    repaidAt  DateTime?
+    createdAt DateTime            @default(now())
+    updatedAt DateTime            @default(now()) @updatedAt
+
+    @@index([staffId])
 }
 
 model Salary {
-    id        String       @id @default(uuid())
-    staffId   String
-    staff     Staff        @relation(fields: [staffId], references: [id])
-    period    String
-    amount    Float
-    userId    String
-    user      User         @relation(fields: [userId], references: [id])
-    status    SalaryStatus @default(PENDING)
-    memo      String?      @db.LongText
-    createdAt DateTime     @default(now())
-    updatedAt DateTime     @default(now()) @updatedAt
+    id              String       @id @default(uuid())
+    staffId         String
+    staff           Staff        @relation(fields: [staffId], references: [id])
+    period          String
+    amount          Float
+    allowances      Float        @default(0)
+    deductions      Float        @default(0)
+    advanceDeducted Float        @default(0)
+    netPay          Float        @default(0)
+    userId          String
+    user            User         @relation(fields: [userId], references: [id])
+    status          SalaryStatus @default(PENDING)
+    paidAt          DateTime?
+    memo            String?      @db.LongText
+    createdAt       DateTime     @default(now())
+    updatedAt       DateTime     @default(now()) @updatedAt
 }
 
 enum SalaryStatus {
@@ -335,16 +519,16 @@ model PurchaseOrder {
 }
 
 model PurchaseOrderPayment {
-    id              String                     @id @default(uuid())
+    id              String        @id @default(uuid())
     purchaseOrderId String
     amount          Float
-    method          PurchaseOrderPaymentMethod @default(CASH)
+    method          PaymentMethod @default(CASH)
     reference       String?
-    note            String?                    @db.LongText
-    paidAt          DateTime                   @default(now())
-    createdAt       DateTime                   @default(now())
-    updatedAt       DateTime                   @default(now()) @updatedAt
-    purchaseOrder   PurchaseOrder              @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade)
+    note            String?       @db.LongText
+    paidAt          DateTime      @default(now())
+    createdAt       DateTime      @default(now())
+    updatedAt       DateTime      @default(now()) @updatedAt
+    purchaseOrder   PurchaseOrder @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade)
 
     @@index([purchaseOrderId])
 }
@@ -366,10 +550,92 @@ enum PurchaseOrderPaymentStatus {
     PAID
 }
 
-enum PurchaseOrderPaymentMethod {
+enum PaymentMethod {
     CASH
-    BANK_TRANSFER
     MOBILE_MONEY
+    BANK_TRANSFER
+    CARD
     CHEQUE
     OTHER
 }
+
+enum InvoiceStatus {
+    PENDING
+    PAID
+    CONVERTED
+    CANCELLED
+}
+
+model Invoice {
+    id              String           @id @default(uuid())
+    invoiceId       String           @unique
+    userId          String
+    user            User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+    customerId      String?
+    customer        Customer?        @relation(fields: [customerId], references: [id], onDelete: SetNull)
+    status          InvoiceStatus    @default(PENDING)
+    totalAmount     Float            @default(0)
+    amountPaid      Float            @default(0)
+    amountDue       Float            @default(0)
+    memo            String?          @db.LongText
+    convertedToSaleId String?
+    createdAt       DateTime         @default(now())
+    updatedAt       DateTime         @default(now()) @updatedAt
+    items           InvoiceItem[]
+    payments        InvoicePayment[]
+
+    @@index([userId])
+    @@index([customerId])
+    @@index([status])
+}
+
+model InvoiceItem {
+    id          String    @id @default(uuid())
+    invoiceId   String
+    invoice     Invoice   @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+    productId   String?
+    product     Product?  @relation(fields: [productId], references: [id], onDelete: SetNull)
+    itemName    String
+    quantity    Int
+    unitPrice   Float
+    lineTotal   Float
+    isCustom    Boolean   @default(false)
+    createdAt   DateTime  @default(now())
+    updatedAt   DateTime  @default(now()) @updatedAt
+
+    @@index([invoiceId])
+    @@index([productId])
+}
+
+model InvoicePayment {
+    id            String        @id @default(uuid())
+    invoiceId     String
+    invoice       Invoice       @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+    amount        Float
+    paymentMethod PaymentMethod @default(CASH)
+    reference     String?
+    notes         String?       @db.LongText
+    userId        String
+    user          User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+    createdAt     DateTime      @default(now())
+    updatedAt     DateTime      @default(now()) @updatedAt
+
+    @@index([invoiceId])
+    @@index([userId])
+}
+
+model CustomerInvoice {
+    id        String   @id @default(uuid())
+    customerId String
+    customer  Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+    invoiceId String
+    createdAt DateTime @default(now())
+
+    @@unique([customerId, invoiceId])
+    @@index([customerId])
+}
+
+// Add these relations to existing models
+// Add to Product model: invoiceItems InvoiceItem[]
+// Add to Customer model: invoices Invoice[] and invoiceLink CustomerInvoice[]
+// Add to User model: invoices Invoice[] and invoicePayments InvoicePayment[]

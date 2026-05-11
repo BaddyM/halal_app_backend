@@ -1,6 +1,6 @@
 import { Controller, Get, Post, Body, Patch, Param, Delete, Query } from '@nestjs/common';
 import { StaffService } from './staff.service';
-import { CreateSalaryDto, CreateStaffDto, UpdateSalaryDto } from './dto/create-staff.dto';
+import { CreateSalaryAdvanceDto, CreateSalaryDto, CreateStaffDto, UpdateSalaryDto } from './dto/create-staff.dto';
 import { UpdateStaffDto } from './dto/update-staff.dto';
 import { ApiQuery } from '@nestjs/swagger';
 
@@ -53,5 +53,32 @@ export class StaffController {
     @Delete('salary/delete/:id')
     remove_salary(@Param('id') id: string) {
         return this.staffService.delete_salary(id);
+    }
+
+    @Patch('salary/:id/paid')
+    mark_salary_paid(@Param('id') id: string) {
+        return this.staffService.mark_salary_paid(id);
+    }
+
+    @Get('salary/:id/payslip')
+    generate_payslip(@Param('id') id: string) {
+        return this.staffService.generate_payslip(id);
+    }
+
+    //Salary Advances
+    @Post('advance/create')
+    create_advance(@Body() dto: CreateSalaryAdvanceDto) {
+        return this.staffService.create_salary_advance(dto);
+    }
+
+    @Get('advance/list')
+    @ApiQuery({ name: 'staffId', required: false })
+    list_advances(@Query('staffId') staffId?: string) {
+        return this.staffService.list_salary_advances(staffId);
+    }
+
+    @Patch('advance/:id/repay')
+    repay_advance(@Param('id') id: string) {
+        return this.staffService.repay_salary_advance(id);
     }
 }

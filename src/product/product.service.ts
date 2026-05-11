@@ -34,6 +34,15 @@ export class ProductService {
         return { totalPages, data };
     }
 
+    async low_stock_list() {
+        const products = await this.prisma.product.findMany({
+            where: {
+                reorderLevel: { gt: 0 },
+            },
+        });
+        return products.filter((p) => p.totalStock <= p.reorderLevel);
+    }
+
     async update(id: string, updateProductDto: UpdateProductDto) {
         const data = await this.prisma.product.update({
             where: { id },

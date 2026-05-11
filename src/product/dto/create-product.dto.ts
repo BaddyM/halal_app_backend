@@ -14,6 +14,16 @@ export class CreateProductDto {
     @IsNotEmpty()
     price!: number;
 
+    @ApiProperty({ required: false })
+    @IsNumber()
+    @IsOptional()
+    costPrice?: number;
+
+    @ApiProperty({ required: false })
+    @IsNumber()
+    @IsOptional()
+    reorderLevel?: number;
+
     @ApiProperty()
     @IsNumber()
     @IsNotEmpty()

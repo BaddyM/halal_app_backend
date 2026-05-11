@@ -1,6 +1,7 @@
 import { Controller, Get, Post, Body, Patch, Param, Delete, Query, UseGuards } from '@nestjs/common';
 import { SalesService } from './sales.service';
 import { CreateMultipleSaleDto, CreditSalePaymentDto, UpdateCreditSaleDto, UpdateCreditSalePaymentDto } from './dto/create-sale.dto';
+import { CreateReturnDto } from './dto/return.dto';
 import { UpdateSaleDto } from './dto/update-sale.dto';
 import { ApiBearerAuth, ApiParam, ApiQuery } from '@nestjs/swagger';
 import { AuthGuard } from 'src/auth/auth.guard';
@@ -50,6 +51,12 @@ export class SalesController {
         return this.salesService.update_credit_sale(id, updateCreditSale);
     }
 
+    @Get("customer/:customerId/credit-summary")
+    @ApiParam({ name: "customerId" })
+    customer_credit_summary(@Param("customerId") customerId: string) {
+        return this.salesService.customer_credit_summary(customerId);
+    }
+
     //Credit Payment
     @Post("credit/payment")
     create_credit_payment(@Body() creditPaymentDto: CreditSalePaymentDto) {
@@ -67,5 +74,24 @@ export class SalesController {
     @ApiParam({ name: "id" })
     update_credit_payment(@Param("id") id: string, @Body() updateCreditPayment: UpdateCreditSalePaymentDto) {
         return this.salesService.update_credit_payment(id, updateCreditPayment);
+    }
+
+    //Returns
+    @Post("returns")
+    create_return(@Body() dto: CreateReturnDto) {
+        return this.salesService.create_return(dto);
+    }
+
+    @Get("returns/list")
+    @ApiQuery({ name: "page" })
+    @ApiQuery({ name: "limit" })
+    list_returns(@Query("page") page: string, @Query("limit") limit: string) {
+        return this.salesService.list_returns(parseInt(page), parseInt(limit));
+    }
+
+    @Patch("returns/:id/complete")
+    @ApiParam({ name: "id" })
+    complete_return(@Param("id") id: string) {
+        return this.salesService.complete_return(id);
     }
 }

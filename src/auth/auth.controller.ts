@@ -24,6 +24,23 @@ export class AuthController {
         return data;
     }
 
+    @Post("password-reset/request")
+    async request_password_reset(@Body() body: { email: string }) {
+        return this.authService.request_password_reset(body.email);
+    }
+
+    @Post("password-reset/confirm")
+    async confirm_password_reset(@Body() body: { token: string; newPassword: string }) {
+        return this.authService.reset_password(body.token, body.newPassword);
+    }
+
+    @Post("user/:userId/unlock")
+    @UseGuards(AuthGuard)
+    @ApiBearerAuth()
+    async unlock_user(@Body() body: { userId: string }) {
+        return this.authService.unlock_user(body.userId);
+    }
+
     @Get("logout")
     @UseGuards(AuthGuard)
     @ApiBearerAuth()

@@ -3,6 +3,7 @@ import { IsBoolean, IsEmail, IsEnum, IsNotEmpty, IsOptional, IsString } from "cl
 
 export enum UserRole {
     admin = "admin",
+    cashier = "cashier",
     office = "office",
     sales_rep = "sales_rep"
 }
@@ -30,8 +31,8 @@ export class CreateUserDto {
 
     @ApiProperty({ name: "branchId", type: "string" })
     @IsString()
-    @IsNotEmpty()
-    branchId!: string;
+    @IsOptional()
+    branchId?: string;
 
     @ApiProperty({ name: "role" })
     @IsEnum(UserRole, { message: "Please add a valid role." })
@@ -42,6 +43,10 @@ export class CreateUserDto {
     @IsBoolean()
     @IsOptional()
     isActive?: boolean;
+
+    @ApiProperty({ name: "commissionRate", type: "number", required: false })
+    @IsOptional()
+    commissionRate?: number;
 }
 
 export class CustomerDto {
@@ -69,6 +74,10 @@ export class CustomerDto {
     @IsString()
     @IsNotEmpty()
     branchId!: string;
+
+    @ApiProperty({ name: "creditLimit", type: "number", required: false })
+    @IsOptional()
+    creditLimit?: number;
 
     @ApiProperty({ name: "isDeleted", type: "boolean" })
     @IsBoolean()

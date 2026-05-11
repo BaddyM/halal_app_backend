@@ -6,8 +6,10 @@ import {
   UpdateCreditSaleDto,
   UpdateCreditSalePaymentDto,
 } from './dto/create-sale.dto';
+import { CreateReturnDto } from './dto/return.dto';
 import { UpdateSaleDto } from './dto/update-sale.dto';
 import { PrismaService } from 'src/prisma/prisma.service';
+import { AuditService } from 'src/audit/audit.service';
 import { v4 } from 'uuid';
 
 type SaleRecord = {
@@ -74,7 +76,10 @@ type CreatedSale = {
 
 @Injectable()
 export class SalesService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly auditService: AuditService,
+  ) {}
 
   private buildProductItemName(product: {
     category: string;
@@ -139,11 +144,23 @@ export class SalesService {
       const orderId = v4();
       const rep = await this.prisma.user.findUnique({
         where: { id: createSaleDto.items[0]?.repId },
-        select: { id: true, role: true },
+        select: { 
+          id: true, 
+          role: true, 
+          branchId: true,
+          branch: { select: { id: true, name: true } }
+        },
       });
 
       if (!rep) {
         throw new InternalServerErrorException('Sales rep was not found');
+      }
+
+      // For office role, verify branch is assigned
+      if (rep.role === 'office' && !rep.branchId) {
+        throw new InternalServerErrorException(
+          'Office user is not assigned to a branch',
+        );
       }
 
       for (let i = 0; i < createSaleDto.items.length; i++) {
@@ -160,6 +177,7 @@ export class SalesService {
         let productRecord: {
           id: string;
           totalStock: number;
+          costPrice: number;
           category: string;
           classLevel?: string | null;
           subject?: string | null;
@@ -171,6 +189,7 @@ export class SalesService {
             select: {
               id: true,
               totalStock: true,
+              costPrice: true,
               category: true,
               classLevel: true,
               subject: true,
@@ -187,7 +206,25 @@ export class SalesService {
             itemName = this.buildProductItemName(productRecord);
           }
 
-          if (saleItem.quantity > productRecord.totalStock) {
+          // For office users, check branch-specific stock
+          if (rep.role === 'office') {
+            const branchStock = await this.prisma.branchStock.findUnique({
+              where: {
+                branchId_productId: {
+                  branchId: rep.branchId!,
+                  productId: saleItem.productId!,
+                },
+              },
+            });
+
+            const availableQuantity = branchStock?.quantity ?? 0;
+            if (saleItem.quantity > availableQuantity) {
+              throw new InternalServerErrorException(
+                `Insufficient stock for ${itemName} in branch ${rep.branch?.name}. Available: ${availableQuantity}`,
+              );
+            }
+          } else if (saleItem.quantity > productRecord.totalStock) {
+            // For other roles, check global stock
             throw new InternalServerErrorException(
               `Insufficient stock for ${itemName}`,
             );
@@ -227,7 +264,27 @@ export class SalesService {
           );
         }
 
-        if (productRecord) {
+        // For office users, decrement branch stock; for others, decrement global stock
+        if (rep.role === 'office' && productRecord) {
+          const branchStock = await this.prisma.branchStock.findUnique({
+            where: {
+              branchId_productId: {
+                branchId: rep.branchId!,
+                productId: productRecord.id,
+              },
+            },
+          });
+
+          if (branchStock) {
+            await this.prisma.branchStock.update({
+              where: { id: branchStock.id },
+              data: { 
+                quantity: Math.max(0, branchStock.quantity - saleItem.quantity) 
+              },
+            });
+          }
+        } else if (productRecord) {
+          // For sales_rep and others, decrement global stock
           await this.prisma.product.update({
             where: { id: productRecord.id },
             data: { totalStock: productRecord.totalStock - saleItem.quantity },
@@ -235,6 +292,7 @@ export class SalesService {
         }
 
         //Add Sales
+        const isOnCredit = saleItem.onCredit ?? false;
         const salePayload: Record<string, unknown> = {
           repId: saleItem.repId,
           stockTakeId: saleItem.stockTakeId,
@@ -245,7 +303,14 @@ export class SalesService {
           customerId: saleItem.customerId,
           unitPrice: saleItem.unitPrice,
           memo: saleItem.memo,
-          onCredit: saleItem.onCredit ?? false,
+          onCredit: isOnCredit,
+          paymentMethod: isOnCredit
+            ? null
+            : (saleItem.paymentMethod ?? 'CASH'),
+          paymentReference: isOnCredit
+            ? null
+            : (saleItem.paymentReference ?? null),
+          unitCost: productRecord?.costPrice ?? 0,
           orderId,
         };
 
@@ -284,16 +349,48 @@ export class SalesService {
         data.push(sale_data);
       }
 
+      // Log sale to audit
+      if (rep.role === 'office') {
+        const totalAmount = data.reduce(
+          (sum, item) => sum + item.quantity * item.unitPrice,
+          0,
+        );
+        const totalQuantity = data.reduce((sum, item) => sum + item.quantity, 0);
+
+        await this.auditService.log({
+          userId: rep.id,
+          action: 'SALE_CREATED',
+          entity: 'Sale',
+          entityId: orderId,
+          after: {
+            orderId,
+            branchId: rep.branchId,
+            branchName: rep.branch?.name,
+            totalQuantity,
+            totalAmount,
+            itemCount: data.length,
+            items: data.map((d) => ({
+              quantity: d.quantity,
+              unitPrice: d.unitPrice,
+            })),
+          },
+        });
+      }
+
       //Create a sale on credit
       if (createSaleDto.items[0].onCredit) {
         const amount = data.reduce(
           (sum, item) => sum + item.quantity * item.unitPrice,
           0,
         );
+        const customerId =
+          createSaleDto.items.find((it) => !!it.customerId)?.customerId ??
+          undefined;
         const creditSale: CreditSaleDto = {
           orderId: data[0].orderId,
           amount,
           userId: data[0].repId,
+          customerId,
         };
         await this.create_credit_sale(creditSale);
       }
@@ -401,11 +498,43 @@ export class SalesService {
             email: true,
           },
         },
+        customer: {
+          select: {
+            id: true,
+            name: true,
+            phoneNumber: true,
+          },
+        },
       },
       skip: (page - 1) * limit,
       take: limit,
     });
     return data;
+  }
+
+  async customer_credit_summary(customerId: string) {
+    const credits = await this.prisma.creditSale.findMany({
+      where: { customerId, status: 'PENDING' },
+      include: { creditPayments: true },
+    });
+    const totalOwed = credits.reduce((sum, c) => sum + Number(c.amount), 0);
+    const totalPaid = credits.reduce(
+      (sum, c) =>
+        sum + c.creditPayments.reduce((s, p) => s + Number(p.paid), 0),
+      0,
+    );
+    const customer = await this.prisma.customer.findUnique({
+      where: { id: customerId },
+      select: { id: true, name: true, creditLimit: true },
+    });
+    const outstanding = totalOwed - totalPaid;
+    return {
+      customer,
+      outstanding,
+      creditLimit: customer?.creditLimit ?? 0,
+      available: Math.max(0, (customer?.creditLimit ?? 0) - outstanding),
+      pendingOrders: credits.length,
+    };
   }
 
   async update_credit_sale(
@@ -478,6 +607,8 @@ export class SalesService {
               creditSaleId: creditSaleId.id,
               paid: creditSalePaymentDto.paid,
               userId: creditSalePaymentDto.userId,
+              paymentMethod: creditSalePaymentDto.paymentMethod ?? 'CASH',
+              reference: creditSalePaymentDto.reference ?? null,
             },
           });
 
@@ -533,5 +664,74 @@ export class SalesService {
       data: updateCreditPaymentDto,
     });
     return data;
+  }
+
+  //Sale Returns
+  async create_return(dto: CreateReturnDto) {
+    const sale = await this.prisma.sale.findUnique({
+      where: { id: dto.saleId },
+      include: { returns: true },
+    });
+    if (!sale) {
+      throw new InternalServerErrorException('Sale not found');
+    }
+    const alreadyReturned = sale.returns.reduce(
+      (s, r) => s + r.quantity,
+      0,
+    );
+    if (dto.quantity + alreadyReturned > sale.quantity) {
+      throw new InternalServerErrorException(
+        'Return quantity exceeds the quantity sold',
+      );
+    }
+    return this.prisma.saleReturn.create({
+      data: {
+        saleId: dto.saleId,
+        quantity: dto.quantity,
+        refundAmount: dto.refundAmount,
+        reason: dto.reason,
+        refundMethod: dto.refundMethod ?? 'CASH',
+        approvedById: dto.approvedById,
+      },
+    });
+  }
+
+  async list_returns(page: number, limit: number) {
+    const data = await this.prisma.saleReturn.findMany({
+      skip: (page - 1) * limit,
+      take: limit,
+      orderBy: { createdAt: 'desc' },
+      include: {
+        sale: { select: { id: true, orderId: true, itemName: true } },
+        approvedBy: { select: { id: true, name: true } },
+      },
+    });
+    const total = await this.prisma.saleReturn.count();
+    return { data, totalPages: Math.ceil(total / limit) };
+  }
+
+  async complete_return(id: string) {
+    const ret = await this.prisma.saleReturn.findUnique({
+      where: { id },
+      include: { sale: true },
+    });
+    if (!ret) {
+      throw new InternalServerErrorException('Return not found');
+    }
+    if (ret.status !== 'PENDING') {
+      throw new InternalServerErrorException('Return is not pending');
+    }
+    return this.prisma.$transaction(async (tx) => {
+      if (ret.sale.productId) {
+        await tx.product.update({
+          where: { id: ret.sale.productId },
+          data: { totalStock: { increment: ret.quantity } },
+        });
+      }
+      return tx.saleReturn.update({
+        where: { id },
+        data: { status: 'COMPLETED' },
+      });
+    });
   }
 }

@@ -1,5 +1,5 @@
-import { Injectable } from '@nestjs/common';
-import { CreateSalaryDto, CreateStaffDto, UpdateSalaryDto } from './dto/create-staff.dto';
+import { Injectable, InternalServerErrorException } from '@nestjs/common';
+import { CreateSalaryAdvanceDto, CreateSalaryDto, CreateStaffDto, UpdateSalaryDto } from './dto/create-staff.dto';
 import { UpdateStaffDto } from './dto/update-staff.dto';
 import { PrismaService } from 'src/prisma/prisma.service';
 
@@ -42,8 +42,19 @@ export class StaffService {
 
     //Salary
     async create_salary(createSalaryDto: CreateSalaryDto) {
+        const allowances = createSalaryDto.allowances ?? 0;
+        const deductions = createSalaryDto.deductions ?? 0;
+        const advanceDeducted = createSalaryDto.advanceDeducted ?? 0;
+        const netPay =
+            createSalaryDto.amount + allowances - deductions - advanceDeducted;
         const data = await this.prisma.salary.create({
-            data: createSalaryDto,
+            data: {
+                ...createSalaryDto,
+                allowances,
+                deductions,
+                advanceDeducted,
+                netPay,
+            },
         });
         return data;
     }
@@ -117,5 +128,67 @@ export class StaffService {
             where: { id },
         });
         return data;
+    }
+
+    async mark_salary_paid(id: string) {
+        return this.prisma.salary.update({
+            where: { id },
+            data: { status: 'COMPLETED', paidAt: new Date() },
+        });
+    }
+
+    async generate_payslip(id: string) {
+        const salary = await this.prisma.salary.findUnique({
+            where: { id },
+            include: { staff: true },
+        });
+        if (!salary) {
+            throw new InternalServerErrorException('Salary not found');
+        }
+        return {
+            staff: {
+                name: salary.staff.name,
+                role: salary.staff.role,
+                phone: salary.staff.phone,
+                email: salary.staff.email,
+            },
+            period: salary.period,
+            baseAmount: salary.amount,
+            allowances: salary.allowances,
+            deductions: salary.deductions,
+            advanceDeducted: salary.advanceDeducted,
+            netPay: salary.netPay,
+            status: salary.status,
+            paidAt: salary.paidAt,
+            memo: salary.memo,
+        };
+    }
+
+    //Salary Advances
+    async create_salary_advance(dto: CreateSalaryAdvanceDto) {
+        return this.prisma.salaryAdvance.create({
+            data: {
+                staffId: dto.staffId,
+                amount: dto.amount,
+                reason: dto.reason,
+            },
+        });
+    }
+
+    async list_salary_advances(staffId?: string) {
+        return this.prisma.salaryAdvance.findMany({
+            where: staffId ? { staffId } : {},
+            include: {
+                staff: { select: { id: true, name: true } },
+            },
+            orderBy: { createdAt: 'desc' },
+        });
+    }
+
+    async repay_salary_advance(id: string) {
+        return this.prisma.salaryAdvance.update({
+            where: { id },
+            data: { status: 'REPAID', repaidAt: new Date() },
+        });
     }
 }

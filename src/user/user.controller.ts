@@ -106,4 +106,39 @@ export class UserController {
     update_customer(@Body() customerData: UpdateCustomerDto, @Param("id") id: string) {
         return this.userService.update_customer(id, customerData);
     }
+
+    //Commissions
+    @ApiBearerAuth()
+    @UseGuards(AuthGuard)
+    @Get(':userId/commission/:period')
+    @ApiParam({ name: 'userId' })
+    @ApiParam({ name: 'period' })
+    compute_commission(@Param('userId') userId: string, @Param('period') period: string) {
+        return this.userService.compute_commission(userId, period);
+    }
+
+    @ApiBearerAuth()
+    @UseGuards(AuthGuard)
+    @Post(':userId/commission/:period/payout')
+    @ApiParam({ name: 'userId' })
+    @ApiParam({ name: 'period' })
+    create_commission_payout(@Param('userId') userId: string, @Param('period') period: string) {
+        return this.userService.create_commission_payout(userId, period);
+    }
+
+    @ApiBearerAuth()
+    @UseGuards(AuthGuard)
+    @Get('commission/payouts/list')
+    @ApiQuery({ name: 'userId', required: false })
+    list_commission_payouts(@Query('userId') userId?: string) {
+        return this.userService.list_commission_payouts(userId);
+    }
+
+    @ApiBearerAuth()
+    @UseGuards(AuthGuard)
+    @Patch('commission/payout/:id/paid')
+    @ApiParam({ name: 'id' })
+    mark_commission_paid(@Param('id') id: string) {
+        return this.userService.mark_commission_paid(id);
+    }
 }
