@@ -1,4 +1,4 @@
-import { Injectable, InternalServerErrorException } from '@nestjs/common';
+import { BadRequestException, Injectable, InternalServerErrorException } from '@nestjs/common';
 import { CreateUserDto, CustomerDto, UpdateCustomerDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { PrismaService } from 'src/prisma/prisma.service';
@@ -15,18 +15,32 @@ export class UserService {
     async create(createUserDto: CreateUserDto) {
         const password = await bcrypt.hash(`${createUserDto.password}`, 10);
         const { branchId, ...otherData } = createUserDto;
+        const normalizedBranchId = branchId?.trim();
+
+        if (normalizedBranchId) {
+            const branch = await this.prisma.branch.findUnique({
+                where: { id: normalizedBranchId },
+                select: { id: true },
+            });
+
+            if (!branch) {
+                throw new BadRequestException('Selected branch does not exist');
+            }
+        }
+
         const userData: any = {
             ...otherData,
             password,
         };
-        if (branchId) {
-            userData.branchId = branchId;
+        if (normalizedBranchId) {
+            userData.branchId = normalizedBranchId;
         }
         const data = await this.prisma.user.create({
             data: userData,
             select: {
                 id: true,
                 name: true,
+                branchId: true,
                 branch: {
                     select: {
                         name: true,
@@ -102,6 +116,7 @@ export class UserService {
             select: {
                 id: true,
                 name: true,
+                branchId: true,
                 branch: {
                     select: {
                         name: true,
@@ -138,6 +153,7 @@ export class UserService {
             select: {
                 id: true,
                 name: true,
+                branchId: true,
                 branch: {
                     select: {
                         name: true,
@@ -158,10 +174,28 @@ export class UserService {
 
     async update(userId: string, updateUserDto: UpdateUserDto) {
         // 1. Destructure the password out of the DTO
-        const { password, ...otherData } = updateUserDto;
+        const { password, branchId, ...otherData } = updateUserDto;
+        const normalizedBranchId = branchId?.trim();
+
+        if (branchId !== undefined) {
+            if (normalizedBranchId) {
+                const branch = await this.prisma.branch.findUnique({
+                    where: { id: normalizedBranchId },
+                    select: { id: true },
+                });
+
+                if (!branch) {
+                    throw new BadRequestException('Selected branch does not exist');
+                }
+            }
+        }
 
         // 2. Prepare the update data object
         const updateData: any = { ...otherData };
+
+        if (branchId !== undefined) {
+            updateData.branchId = normalizedBranchId || null;
+        }
 
         // 3. Conditionally hash and add the password if it exists
         if (password) {
@@ -188,6 +222,7 @@ export class UserService {
             select: {
                 id: true,
                 name: true,
+                branchId: true,
                 branch: {
                     select: {
                         name: true,
@@ -236,6 +271,7 @@ export class UserService {
             select: {
                 id: true,
                 name: true,
+                branchId: true,
                 branch: {
                     select: {
                         name: true,

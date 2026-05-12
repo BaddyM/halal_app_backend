@@ -27,7 +27,7 @@ services:
       redis:
         condition: service_started
     networks:
-      - mysql-redis-network
+      - jubra-network
 
   redis:
     image: redis:7-alpine
@@ -36,7 +36,7 @@ services:
     ports:
       - "6378:6379"
     networks:
-      - mysql-redis-network
+      - jubra-network
 
   mysql:
     image: mysql:9.6.0
@@ -52,11 +52,11 @@ services:
     healthcheck:
       test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-pSextape,123"]
     networks:
-      - mysql-redis-network
+      - jubra-network
 
 networks:
-  mysql-redis-network:
-    name: "mysql-redis-network"
+  jubra-network:
+    name: "jubra-network"
     driver: bridge
 
 volumes:
