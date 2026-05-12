@@ -30,7 +30,7 @@ services:
       - mysql-redis-network
 
   redis:
-    image: redis:alpine
+    image: redis:7-alpine
     container_name: jubra-redis
     restart: always
     ports:
