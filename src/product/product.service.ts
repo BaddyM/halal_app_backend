@@ -7,15 +7,23 @@ import { PrismaService } from 'src/prisma/prisma.service';
 export class ProductService {
     constructor(private readonly prisma: PrismaService) { }
 
-    private async syncMainBranchStock(tx: any, productId: string, quantity: number) {
+    private async resolveMainBranch(tx: any) {
         const mainBranch = await tx.branch.findFirst({
-            where: { name: 'Main' },
+            where: {
+                OR: [{ isMainBranch: true }, { name: 'Main' }],
+            },
             select: { id: true },
         });
 
         if (!mainBranch) {
             throw new InternalServerErrorException('Main branch not found');
         }
+
+        return mainBranch;
+    }
+
+    private async syncMainBranchStock(tx: any, productId: string, quantity: number) {
+        const mainBranch = await this.resolveMainBranch(tx);
 
         await tx.branchStock.upsert({
             where: {

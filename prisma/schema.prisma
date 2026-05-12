@@ -60,6 +60,7 @@ model Branch {
     dailyReports    DailyReport[]
     staff           Staff[]
     branchStocks    BranchStock[]
+    productions     Production[]
     transfersFrom   StockTransfer[]  @relation("TransferFromBranch")
     transfersTo     StockTransfer[]  @relation("TransferToBranch")
 }
@@ -79,6 +80,7 @@ model User {
     sales               Sale[]
     receipts            Receipt[]
     expenses            Expense[]
+    productions         Production[]
     targetNotifications Notification[]  @relation("TargetUser")
     loginAccesses       LoginAccess[]
     creditSales         CreditSale[]
@@ -212,8 +214,28 @@ model Product {
     stockTakeItems StockTakeItem[]
     sales          Sale[]
     branchStocks   BranchStock[]
+    productions    Production[]
     stockTransfers StockTransfer[]
     invoiceItems   InvoiceItem[]
+}
+
+model Production {
+    id          String   @id @default(uuid())
+    productId   String
+    branchId    String
+    quantity    Int
+    note        String?  @db.LongText
+    createdById String?
+    createdAt   DateTime @default(now())
+    updatedAt   DateTime @default(now()) @updatedAt
+    product     Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+    branch      Branch   @relation(fields: [branchId], references: [id], onDelete: Restrict)
+    createdBy   User?    @relation(fields: [createdById], references: [id], onDelete: SetNull)
+
+    @@index([productId])
+    @@index([branchId])
+    @@index([createdById])
+    @@index([createdAt])
 }
 
 model BranchStock {

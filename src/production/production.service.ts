@@ -7,14 +7,11 @@ import { PrismaService } from 'src/prisma/prisma.service';
 export class ProductionService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async create(createProductionDto: CreateProductionDto) {
-    const quantity = Number(createProductionDto.quantity);
-    if (!createProductionDto.productId || !Number.isFinite(quantity) || quantity <= 0) {
-      throw new InternalServerErrorException('Product and quantity are required');
-    }
-
-    const mainBranch = await this.prisma.branch.findFirst({
-      where: { name: 'Main' },
+  private async resolveMainBranch(tx: any) {
+    const mainBranch = await tx.branch.findFirst({
+      where: {
+        OR: [{ isMainBranch: true }, { name: 'Main' }],
+      },
       select: { id: true, name: true },
     });
 
@@ -22,16 +19,27 @@ export class ProductionService {
       throw new InternalServerErrorException('Main branch not found');
     }
 
-    const product = await this.prisma.product.findUnique({
-      where: { id: createProductionDto.productId },
-      select: { id: true, totalStock: true, price: true },
-    });
+    return mainBranch;
+  }
 
-    if (!product) {
-      throw new InternalServerErrorException('Product not found');
+  async create(createProductionDto: CreateProductionDto) {
+    const quantity = Number(createProductionDto.quantity);
+    if (!createProductionDto.productId || !Number.isFinite(quantity) || quantity <= 0) {
+      throw new InternalServerErrorException('Product and quantity are required');
     }
 
     return this.prisma.$transaction(async (tx) => {
+      const mainBranch = await this.resolveMainBranch(tx);
+
+      const product = await tx.product.findUnique({
+        where: { id: createProductionDto.productId },
+        select: { id: true, totalStock: true, price: true },
+      });
+
+      if (!product) {
+        throw new InternalServerErrorException('Product not found');
+      }
+
       const updatedProduct = await tx.product.update({
         where: { id: createProductionDto.productId },
         data: {
@@ -56,18 +64,52 @@ export class ProductionService {
         },
       });
 
+      const production = await tx.production.create({
+        data: {
+          productId: createProductionDto.productId,
+          branchId: mainBranch.id,
+          quantity,
+          note: createProductionDto.note || null,
+          createdById: createProductionDto.createdById || null,
+        },
+        include: {
+          product: true,
+          branch: true,
+          createdBy: {
+            select: {
+              id: true,
+              name: true,
+              email: true,
+            },
+          },
+        },
+      });
+
       return {
         message: 'Production recorded successfully',
         product: updatedProduct,
         mainBranch,
         mainBranchStock,
-        note: createProductionDto.note || null,
+        production,
       };
     });
   }
 
   findAll() {
-    return `Production history is not yet persisted`;
+    return this.prisma.production.findMany({
+      include: {
+        product: true,
+        branch: true,
+        createdBy: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+          },
+        },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
   }
 
   findOne(id: number) {
