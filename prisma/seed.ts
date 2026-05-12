@@ -9,6 +9,19 @@ async function main() {
 
     const hashed = await bcrypt.hash(adminPassword, 10);
 
+    const branch = await prisma.branch.upsert({
+        where: { name: 'Main' },
+        update: {},
+        create: {
+            name: 'Intersoft Main Branch',
+            contact: "0200909858",
+            address: "Nasser Road, Opposite Roko - Entebbe Road, Kampala",
+            isMainBranch: true,
+        },
+    });
+
+    console.log('Ensured main branch exists:', branch.name);
+
     const user = await prisma.user.upsert({
         where: { email: adminEmail },
         update: {
@@ -22,6 +35,7 @@ async function main() {
             email: adminEmail,
             password: hashed,
             role: UserRole.admin,
+            branchId: branch.id,
             isActive: true,
         },
     });
