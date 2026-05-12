@@ -12,6 +12,7 @@ enum UserRole {
     cashier
     office
     sales_rep
+    production
 }
 
 enum ProductCategory {
@@ -50,6 +51,7 @@ model Branch {
     address         String?
     contact         String?
     isActive        Boolean          @default(false)
+    isMainBranch    Boolean          @default(false)
     createdAt       DateTime         @default(now())
     updatedAt       DateTime         @default(now()) @updatedAt
     users           User[]

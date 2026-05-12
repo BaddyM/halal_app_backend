@@ -5,7 +5,8 @@ export enum UserRole {
     admin = "admin",
     cashier = "cashier",
     office = "office",
-    sales_rep = "sales_rep"
+    sales_rep = "sales_rep",
+    production = "production",
 }
 
 export class CreateUserDto {

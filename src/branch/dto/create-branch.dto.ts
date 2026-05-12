@@ -21,4 +21,9 @@ export class CreateBranchDto {
     @IsBoolean()
     @IsOptional()
     isActive?:boolean;
+
+    @ApiProperty()
+    @IsBoolean()
+    @IsOptional()
+    isMainBranch?: boolean;
 }

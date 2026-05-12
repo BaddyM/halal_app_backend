@@ -14,11 +14,16 @@ export class UserService {
 
     async create(createUserDto: CreateUserDto) {
         const password = await bcrypt.hash(`${createUserDto.password}`, 10);
+        const { branchId, ...otherData } = createUserDto;
+        const userData: any = {
+            ...otherData,
+            password,
+        };
+        if (branchId) {
+            userData.branchId = branchId;
+        }
         const data = await this.prisma.user.create({
-            data: {
-                ...createUserDto,
-                password: password,
-            },
+            data: userData,
             select: {
                 id: true,
                 name: true,
@@ -32,6 +37,7 @@ export class UserService {
                 email: true,
                 isActive: true,
                 role: true,
+                commissionRate: true,
                 createdAt: true,
                 updatedAt: true,
             }
@@ -106,6 +112,7 @@ export class UserService {
                 email: true,
                 isActive: true,
                 role: true,
+                commissionRate: true,
                 createdAt: true,
                 updatedAt: true,
             },
@@ -141,6 +148,7 @@ export class UserService {
                 email: true,
                 isActive: true,
                 role: true,
+                commissionRate: true,
                 createdAt: true,
                 updatedAt: true,
             }
@@ -190,6 +198,7 @@ export class UserService {
                 email: true,
                 isActive: true,
                 role: true,
+                commissionRate: true,
                 createdAt: true,
                 updatedAt: true,
             }
@@ -237,6 +246,7 @@ export class UserService {
                 email: true,
                 isActive: true,
                 role: true,
+                commissionRate: true,
                 createdAt: true,
                 updatedAt: true,
             }
@@ -331,13 +341,13 @@ export class UserService {
                 .reduce((acc, r) => acc + r.refundAmount, 0);
             totalSales += grossLine - refundedAmount;
         }
-        const totalCommission = totalSales * (user.commissionRate ?? 0);
+        const totalCommission = totalSales * ((user.commissionRate ?? 0) / 100);
         return {
             user,
             period,
             totalSales,
             totalCommission,
-            commissionRate: user.commissionRate ?? 0,
+            commissionRate: ((user.commissionRate ?? 0) / 100),
         };
     }
 
@@ -361,9 +371,12 @@ export class UserService {
         });
     }
 
-    async list_commission_payouts(userId?: string) {
+    async list_commission_payouts(userId?: string, period?: string) {
+        const where: any = {};
+        if (userId) where.userId = userId;
+        if (period) where.period = period;
         return this.prisma.commissionPayout.findMany({
-            where: userId ? { userId } : {},
+            where,
             include: {
                 user: { select: { id: true, name: true, email: true } },
             },

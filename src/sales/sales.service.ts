@@ -728,6 +728,15 @@ export class SalesService {
           data: { totalStock: { increment: ret.quantity } },
         });
       }
+      // Also return stock back to the Main branch if configured
+      const mainBranch = await tx.branch.findFirst({ where: ({ isMainBranch: true } as any) });
+      if (mainBranch && ret.sale.productId) {
+        await tx.branchStock.upsert({
+          where: { branchId_productId: { branchId: mainBranch.id, productId: ret.sale.productId } },
+          create: { branchId: mainBranch.id, productId: ret.sale.productId, quantity: ret.quantity },
+          update: { quantity: { increment: ret.quantity } },
+        });
+      }
       return tx.saleReturn.update({
         where: { id },
         data: { status: 'COMPLETED' },

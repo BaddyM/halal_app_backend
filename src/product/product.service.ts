@@ -7,11 +7,44 @@ import { PrismaService } from 'src/prisma/prisma.service';
 export class ProductService {
     constructor(private readonly prisma: PrismaService) { }
 
-    async create(createProductDto: CreateProductDto) {
-        const data = this.prisma.product.create({
-            data: createProductDto,
+    private async syncMainBranchStock(tx: any, productId: string, quantity: number) {
+        const mainBranch = await tx.branch.findFirst({
+            where: { name: 'Main' },
+            select: { id: true },
         });
-        return data;
+
+        if (!mainBranch) {
+            throw new InternalServerErrorException('Main branch not found');
+        }
+
+        await tx.branchStock.upsert({
+            where: {
+                branchId_productId: {
+                    branchId: mainBranch.id,
+                    productId,
+                },
+            },
+            create: {
+                branchId: mainBranch.id,
+                productId,
+                quantity,
+            },
+            update: {
+                quantity,
+            },
+        });
+    }
+
+    async create(createProductDto: CreateProductDto) {
+        return this.prisma.$transaction(async (tx) => {
+            const data = await tx.product.create({
+                data: createProductDto,
+            });
+
+            await this.syncMainBranchStock(tx, data.id, data.totalStock);
+
+            return data;
+        });
     }
 
     async findAll(page: number, limit: number, category?: string) {
@@ -44,11 +77,25 @@ export class ProductService {
     }
 
     async update(id: string, updateProductDto: UpdateProductDto) {
-        const data = await this.prisma.product.update({
-            where: { id },
-            data: updateProductDto,
+        return this.prisma.$transaction(async (tx) => {
+            const current = await tx.product.findUnique({
+                where: { id },
+                select: { totalStock: true },
+            });
+
+            const data = await tx.product.update({
+                where: { id },
+                data: updateProductDto,
+            });
+
+            await this.syncMainBranchStock(
+                tx,
+                id,
+                updateProductDto.totalStock ?? current?.totalStock ?? data.totalStock,
+            );
+
+            return data;
         });
-        return data;
     }
 
     async delete(id: string) {

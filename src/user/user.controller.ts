@@ -130,8 +130,9 @@ export class UserController {
     @UseGuards(AuthGuard)
     @Get('commission/payouts/list')
     @ApiQuery({ name: 'userId', required: false })
-    list_commission_payouts(@Query('userId') userId?: string) {
-        return this.userService.list_commission_payouts(userId);
+    @ApiQuery({ name: 'period', required: false })
+    list_commission_payouts(@Query('userId') userId?: string, @Query('period') period?: string) {
+        return this.userService.list_commission_payouts(userId, period);
     }
 
     @ApiBearerAuth()

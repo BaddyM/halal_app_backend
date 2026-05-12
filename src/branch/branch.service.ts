@@ -11,6 +11,10 @@ import { PrismaService } from 'src/prisma/prisma.service';
 export class BranchService {
     constructor(private readonly prisma: PrismaService) { }
     async create(createBranchDto: CreateBranchDto) {
+        // If this branch is set as main, unset other main branches
+        if (createBranchDto.isMainBranch) {
+            await this.prisma.branch.updateMany({ where: { isMainBranch: true }, data: { isMainBranch: false } });
+        }
         const data = await this.prisma.branch.create({
             data: createBranchDto,
         });
@@ -29,6 +33,10 @@ export class BranchService {
     }
 
     async update(id: string, updateBranchDto: UpdateBranchDto) {
+        // If this update marks the branch as main, clear other mains first
+        if ((updateBranchDto as any).isMainBranch) {
+            await this.prisma.branch.updateMany({ where: { isMainBranch: true }, data: { isMainBranch: false } });
+        }
         const data = await this.prisma.branch.update({
             where: { id },
             data: updateBranchDto

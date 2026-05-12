@@ -205,6 +205,34 @@ export class DashboardService {
             }
         })
 
+        // Credit sales outstanding (amount on credit not yet completed)
+        const credit_outstanding = await this.prisma.creditSale.aggregate({
+            _sum: { amount: true },
+            where: { status: 'PENDING' },
+        });
+
+        // Rep activity today: aggregate stockTakeItem per user
+        const takes = await this.prisma.stockTakeItem.findMany({
+            where: {
+                createdAt: { gte: start, lt: end },
+            },
+            include: {
+                user: { select: { id: true, name: true, branchId: true, branch: { select: { name: true } } } },
+            },
+        });
+
+        const repMap = new Map<string, { repId: string; repName: string; branchName: string; taken: number; sold: number; returned: number; revenue: number }>();
+        for (const t of takes) {
+            const key = t.userId || 'unknown';
+            const current = repMap.get(key) || { repId: t.userId, repName: t.user?.name || 'Unknown', branchName: t.user?.branch?.name || '—', taken: 0, sold: 0, returned: 0, revenue: 0 };
+            current.taken += t.quantityTaken || 0;
+            current.sold += t.quantitySold || 0;
+            current.returned += t.quantityReturned || 0;
+            current.revenue += t.revenue || 0;
+            repMap.set(key, current);
+        }
+        const rep_activity = Array.from(repMap.values());
+
         return {
             total_stock: total_stock._sum.totalStock ?? 0,
             stock_out: stock_out._sum.quantityTaken ?? 0,
@@ -218,6 +246,8 @@ export class DashboardService {
             supplier_net_revenue,
             branch_summary,
             restock,
+            credit_sales_outstanding: credit_outstanding._sum.amount ?? 0,
+            rep_activity,
         };
     }
 }
