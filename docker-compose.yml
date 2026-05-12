@@ -6,21 +6,21 @@ services:
       context: .
       dockerfile: Dockerfile
     command: sh -c "npx prisma db push && npm run start:prod"
-    container_name: sacco-backend
+    container_name: jubra-backend
     restart: always
     ports:
-      - "3001:3000"
+      - "3003:3000"
     environment:
-      - DATABASE_URL=mysql://root:@Bekhan12@mysql:3306/sacco_db
+      - DATABASE_URL=mysql://root:Sextape,123@mysql:3306/sacco_db
       - PORT=3000
       - SYSTEM_SECRET=MYAUTHSECRETISVERYSTRONG
       - MODE=Prod
       - REDIS_URL=redis://redis:6379
-      - EMAIL_USER=anchorwithin069@gmail.com
-      - EMAIL_PASS=dvna yfox yvsd lxjg
+      - EMAIL_USER=
+      - EMAIL_PASS=
     volumes:
-      - /root/sacco/sacco-assets:/app/uploads
-      - /root/sacco/assets:/app/src/assets
+      - /root/jubra/jubra-assets:/app/uploads
+      - /root/jubra/assets:/app/src/assets
     depends_on:
       mysql:
         condition: service_healthy
@@ -31,24 +31,26 @@ services:
 
   redis:
     image: redis:alpine
-    container_name: redis
+    container_name: jubra-redis
     restart: always
     ports:
-      - "127.0.0.1:6379:6379"
+      - "6378:6379"
     networks:
       - mysql-redis-network
 
   mysql:
-    image: mysql:8.0
-    container_name: mysql
+    image: mysql:9.6.0
+    container_name: jubra-mysql
     restart: always
+    ports:
+      - "3307:3306"
     environment:
-      - MYSQL_ROOT_PASSWORD=@Bekhan12
-      - MYSQL_DATABASE=sacco_db
+      - MYSQL_ROOT_PASSWORD=Sextape,123
+      - MYSQL_DATABASE=jubra_db
     volumes:
       - mysql_data:/var/lib/mysql
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-p@Bekhan12"]
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-pSextape,123"]
     networks:
       - mysql-redis-network
 

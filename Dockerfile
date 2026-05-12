@@ -1,18 +1,18 @@
-# --- Stage 1: Build ---
-FROM node:20 AS builder
+FROM node:20-bookworm-slim AS builder
 WORKDIR /app
-COPY package*.json ./
-RUN npm install
+
+COPY package.json package-lock.json ./
+RUN npm ci
+
 COPY . .
 RUN npx prisma generate
 RUN npm run build
 
-# --- Stage 2: Run ---
-FROM node:20-slim
+FROM node:20-bookworm-slim AS runner
 WORKDIR /app
+ENV NODE_ENV=production
 
-# 1. Install Chromium and dependencies for Puppeteer
-RUN apt-get update && apt-get install -y \
+RUN apt-get update && apt-get install -y --no-install-recommends \
     chromium \
     fonts-liberation \
     libasound2 \
@@ -49,18 +49,16 @@ RUN apt-get update && apt-get install -y \
     lsb-release \
     wget \
     xdg-utils \
-    --no-install-recommends && \
-    rm -rf /var/lib/apt/lists/*
+  && rm -rf /var/lib/apt/lists/*
 
-# 2. Tell Puppeteer to use the installed Chromium instead of trying to download its own
 ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true \
     PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
 
-COPY --from=builder /app/package*.json ./
 COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/prisma ./prisma
+COPY --from=builder /app/package.json ./package.json
 
 EXPOSE 3000
 
-CMD [ "npm", "run", "start:prod" ]
+CMD ["npm", "run", "start:prod"]
