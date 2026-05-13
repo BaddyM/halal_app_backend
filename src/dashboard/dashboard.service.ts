@@ -111,8 +111,20 @@ export class DashboardService {
             },
         });
 
+        const branch_deposits_paid = await this.prisma.branchDeposit.aggregate({
+            _sum: {
+                amount: true,
+            },
+            where: {
+                createdAt: {
+                    gte: start,
+                    lt: end,
+                },
+            },
+        });
+
         const total_sales = today_sales.reduce((sum, item) => (sum + (item.quantity * item.unitPrice)), 0);
-        const revenue = (total_sales + (total_credit_paid._sum.paid ?? 0));
+        const revenue = (total_sales + (total_credit_paid._sum.paid ?? 0) + (branch_deposits_paid._sum.amount ?? 0));
 
         const today_expenses = await this.prisma.expense.findMany({
             select: {

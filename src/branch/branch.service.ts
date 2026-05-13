@@ -1,9 +1,10 @@
-import { Injectable, InternalServerErrorException } from '@nestjs/common';
+import { BadRequestException, Injectable, InternalServerErrorException } from '@nestjs/common';
 import { CreateBranchDto } from './dto/create-branch.dto';
 import { UpdateBranchDto } from './dto/update-branch.dto';
 import {
-  CreateStockTransferDto,
-  UpsertBranchStockDto,
+    CreateStockTransferDto,
+    UpsertBranchStockDto,
+    CreateBulkStockTransferDto,
 } from './dto/branch-stock.dto';
 import { PrismaService } from 'src/prisma/prisma.service';
 
@@ -101,7 +102,7 @@ export class BranchService {
                 'Insufficient stock at source branch',
             );
         }
-        return this.prisma.stockTransfer.create({
+        const transfer = await this.prisma.stockTransfer.create({
             data: {
                 fromBranchId: dto.fromBranchId,
                 toBranchId: dto.toBranchId,
@@ -110,6 +111,126 @@ export class BranchService {
                 createdById: dto.createdById,
                 notes: dto.notes,
             },
+        });
+
+        // If this transfer was marked as credit, create a payable record for the receiving branch
+        if (dto.onCredit) {
+            if (!dto.totalAmount || dto.totalAmount <= 0) {
+                throw new BadRequestException('totalAmount is required and must be > 0 when onCredit is true');
+            }
+
+            await this.prisma.branchPayable.create({
+                data: {
+                    branchId: dto.toBranchId,
+                    stockTransferId: transfer.id,
+                    description: dto.notes || `Payable for transfer ${transfer.id}`,
+                    totalAmount: dto.totalAmount,
+                    outstanding: dto.totalAmount,
+                    createdById: dto.createdById,
+                },
+            });
+        }
+
+        return transfer;
+    }
+
+    async create_bulk_stock_transfer(dto: CreateBulkStockTransferDto) {
+        if (dto.fromBranchId === dto.toBranchId) {
+            throw new InternalServerErrorException(
+                'Source and destination branches must differ',
+            );
+        }
+
+        if (!dto.items || dto.items.length === 0) {
+            throw new BadRequestException('No items provided for bulk transfer');
+        }
+
+        // Validate source stock availability for each item
+        let payableTotal = 0;
+        for (const item of dto.items) {
+            if (!item.quantity || item.quantity <= 0) {
+                throw new BadRequestException('Transfer quantity must be greater than zero');
+            }
+            const source = await this.prisma.branchStock.findUnique({
+                where: {
+                    branchId_productId: {
+                        branchId: dto.fromBranchId,
+                        productId: item.productId,
+                    },
+                },
+                include: { product: true }
+            });
+            if (!source || source.quantity < item.quantity) {
+                throw new BadRequestException(
+                    `Insufficient stock for product ${item.productId}. Available: ${source?.quantity || 0}`,
+                );
+            }
+            if (dto.onCredit) {
+                payableTotal += (source.product.price * item.quantity);
+            }
+        }
+
+        // Create transfers in a transaction
+        return this.prisma.$transaction(async (tx) => {
+            const createdTransfers: any[] = [];
+            for (const item of dto.items) {
+                // Decrement from source
+                await tx.branchStock.update({
+                    where: {
+                        branchId_productId: {
+                            branchId: dto.fromBranchId,
+                            productId: item.productId,
+                        },
+                    },
+                    data: { quantity: { decrement: item.quantity } },
+                });
+
+                // Increment to destination
+                await tx.branchStock.upsert({
+                    where: {
+                        branchId_productId: {
+                            branchId: dto.toBranchId,
+                            productId: item.productId,
+                        },
+                    },
+                    create: {
+                        branchId: dto.toBranchId,
+                        productId: item.productId,
+                        quantity: item.quantity,
+                    },
+                    update: { quantity: { increment: item.quantity } },
+                });
+
+                const t = await tx.stockTransfer.create({
+                    data: {
+                        fromBranchId: dto.fromBranchId,
+                        toBranchId: dto.toBranchId,
+                        productId: item.productId,
+                        quantity: item.quantity,
+                        createdById: dto.createdById,
+                        status: 'COMPLETED',
+                        completedAt: new Date(),
+                        notes: dto.notes,
+                    },
+                });
+                createdTransfers.push(t);
+            }
+
+            let payable: any = null;
+            if (dto.onCredit) {
+                payable = await tx.branchPayable.create({
+                    data: {
+                        branchId: dto.toBranchId,
+                        // bulk transfer uses no single stockTransferId; keep null
+                        description: dto.notes || `Payable for bulk transfer (${createdTransfers.length} items)`,
+                        totalAmount: payableTotal,
+                        outstanding: payableTotal,
+                        createdById: dto.createdById,
+                    },
+                });
+            }
+
+            return { transfers: createdTransfers, payable };
         });
     }
 
@@ -173,6 +294,7 @@ export class BranchService {
                 fromBranch: { select: { id: true, name: true } },
                 toBranch: { select: { id: true, name: true } },
                 product: true,
+                createdBy: { select: { id: true, name: true, role: true } },
             },
             orderBy: { createdAt: 'desc' },
         });

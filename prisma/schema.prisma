@@ -61,6 +61,8 @@ model Branch {
     staff           Staff[]
     branchStocks    BranchStock[]
     productions     Production[]
+    branchPayables  BranchPayable[]
+    branchDeposits  BranchDeposit[]
     transfersFrom   StockTransfer[]  @relation("TransferFromBranch")
     transfersTo     StockTransfer[]  @relation("TransferToBranch")
 }
@@ -89,6 +91,7 @@ model User {
     settings            Settings[]
     salaries            Salary[]
     stockTakeItems      StockTakeItem[]
+    stockTransfers      StockTransfer[]
     approvedReturns     SaleReturn[]       @relation("ApprovedReturns")
     commissionRate      Float              @default(0)
     commissionPayouts   CommissionPayout[]
@@ -273,10 +276,57 @@ model StockTransfer {
     fromBranch   Branch              @relation("TransferFromBranch", fields: [fromBranchId], references: [id])
     toBranch     Branch              @relation("TransferToBranch", fields: [toBranchId], references: [id])
     product      Product             @relation(fields: [productId], references: [id])
+    createdBy    User                @relation(fields: [createdById], references: [id])
+    payables     BranchPayable[]
 
     @@index([fromBranchId])
     @@index([toBranchId])
     @@index([productId])
+    @@index([createdById])
+}
+
+enum PayableStatus {
+    OPEN
+    PARTIALLY_PAID
+    PAID
+    CANCELLED
+}
+
+model BranchPayable {
+    id            String        @id @default(uuid())
+    branchId      String
+    stockTransferId String? 
+    description   String?       @db.LongText
+    totalAmount   Float
+    outstanding   Float
+    status        PayableStatus @default(OPEN)
+    createdById   String?
+    deposits      BranchDeposit[]
+    createdAt     DateTime      @default(now())
+    updatedAt     DateTime      @default(now()) @updatedAt
+
+    branch        Branch        @relation(fields: [branchId], references: [id], onDelete: Cascade)
+    stockTransfer StockTransfer? @relation(fields: [stockTransferId], references: [id], onDelete: SetNull)
+
+    @@index([branchId])
+    @@index([stockTransferId])
+}
+
+model BranchDeposit {
+    id            String        @id @default(uuid())
+    payableId     String
+    branchId      String
+    amount        Float
+    paymentMethod PaymentMethod @default(CASH)
+    reference     String?
+    recordedById  String?
+    createdAt     DateTime      @default(now())
+
+    payable       BranchPayable @relation(fields: [payableId], references: [id], onDelete: Cascade)
+    branch        Branch        @relation(fields: [branchId], references: [id], onDelete: Cascade)
+
+    @@index([payableId])
+    @@index([branchId])
 }
 
 model StockTakeItem {

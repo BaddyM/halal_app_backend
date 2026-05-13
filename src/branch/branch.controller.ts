@@ -15,6 +15,7 @@ import { UpdateBranchDto } from './dto/update-branch.dto';
 import {
   CreateStockTransferDto,
   UpsertBranchStockDto,
+  CreateBulkStockTransferDto,
 } from './dto/branch-stock.dto';
 import { ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
 import { AuthGuard } from 'src/auth/auth.guard';
@@ -73,6 +74,13 @@ export class BranchController {
   @Post('transfer')
   createStockTransfer(@Body() dto: CreateStockTransferDto) {
     return this.branchService.create_stock_transfer(dto);
+  }
+
+  @UseGuards(AuthGuard)
+  @ApiBearerAuth()
+  @Post('transfer/bulk')
+  createBulkStockTransfer(@Body() dto: CreateBulkStockTransferDto) {
+    return this.branchService.create_bulk_stock_transfer(dto);
   }
 
   @UseGuards(AuthGuard)

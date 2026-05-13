@@ -19,6 +19,7 @@ import { SupplierModule } from './supplier/supplier.module';
 import { ProductionModule } from './production/production.module';
 import { AuditModule } from './audit/audit.module';
 import { InvoiceModule } from './invoice/invoice.module';
+import { BranchPayablesModule } from './branch-payables/branch-payables.module';
 
 @Module({
     imports: [
@@ -60,6 +61,8 @@ import { InvoiceModule } from './invoice/invoice.module';
         ProductionModule,
         AuditModule,
         InvoiceModule,
+        // Branch payables (admin)
+        BranchPayablesModule,
     ],
     controllers: [],
     providers: [],
