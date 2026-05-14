@@ -20,6 +20,9 @@ import { ProductionModule } from './production/production.module';
 import { AuditModule } from './audit/audit.module';
 import { InvoiceModule } from './invoice/invoice.module';
 import { BranchPayablesModule } from './branch-payables/branch-payables.module';
+import { UploadModule } from './upload/upload.module';
+import { WebsiteModule } from './website/website.module';
+import { CmsModule } from './cms/cms.module';
 
 @Module({
     imports: [
@@ -63,6 +66,10 @@ import { BranchPayablesModule } from './branch-payables/branch-payables.module';
         InvoiceModule,
         // Branch payables (admin)
         BranchPayablesModule,
+        // Website CMS for jubra-edutech-portal
+        UploadModule,
+        WebsiteModule,
+        CmsModule,
     ],
     controllers: [],
     providers: [],

@@ -95,9 +95,9 @@ export class AuthService {
                     }
                 });
 
-                //Add new token in cache
+                //Add new token in cache — store the {id, role} shape that AuthGuard expects on request.user
                 const cacheKey = `auth_session:${user.accessToken}`
-                await this.cacheManager.set(cacheKey, user.accessToken, 300000) //Cache set for 5 minutes
+                await this.cacheManager.set(cacheKey, { id: user.id, role: user.role }, 300000) //Cache set for 5 minutes
 
                 //Add to login access
                 await this.prisma.loginAccess.create({

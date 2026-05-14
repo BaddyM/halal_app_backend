@@ -206,6 +206,12 @@ model LoginAccess {
 model Product {
     id             String          @id @default(uuid())
     category       ProductCategory
+    name           String          @default("")
+    description    String?         @db.Text
+    image          String?
+    featured       Boolean         @default(false)
+    isPublished    Boolean         @default(false)
+    slug           String?         @unique
     price          Float
     costPrice      Float           @default(0)
     reorderLevel   Int             @default(0)
@@ -713,3 +719,144 @@ model CustomerInvoice {
 // Add to Product model: invoiceItems InvoiceItem[]
 // Add to Customer model: invoices Invoice[] and invoiceLink CustomerInvoice[]
 // Add to User model: invoices Invoice[] and invoicePayments InvoicePayment[]
+
+// ============================================================
+// Website CMS models (jubra-edutech-portal)
+// ============================================================
+
+model BlogPost {
+    id          String   @id @default(uuid())
+    slug        String   @unique
+    title       String
+    excerpt     String?  @db.Text
+    body        String   @db.LongText
+    cover       String?
+    date        DateTime @default(now())
+    author      String   @default("Jubra Editorial")
+    readMinutes Int      @default(5)
+    isPublished Boolean  @default(true)
+    createdAt   DateTime @default(now())
+    updatedAt   DateTime @default(now()) @updatedAt
+
+    @@index([isPublished])
+}
+
+model Testimonial {
+    id          String   @id @default(uuid())
+    name        String
+    role        String?
+    quote       String   @db.Text
+    image       String?
+    sortOrder   Int      @default(0)
+    isPublished Boolean  @default(true)
+    createdAt   DateTime @default(now())
+    updatedAt   DateTime @default(now()) @updatedAt
+}
+
+model Faq {
+    id          String   @id @default(uuid())
+    question    String   @db.Text
+    answer      String   @db.Text
+    sortOrder   Int      @default(0)
+    isPublished Boolean  @default(true)
+    createdAt   DateTime @default(now())
+    updatedAt   DateTime @default(now()) @updatedAt
+}
+
+model CompanyValue {
+    id          String   @id @default(uuid())
+    icon        String   @default("Sparkles")
+    title       String
+    description String   @db.Text
+    sortOrder   Int      @default(0)
+    isPublished Boolean  @default(true)
+    createdAt   DateTime @default(now())
+    updatedAt   DateTime @default(now()) @updatedAt
+}
+
+model CompanyStat {
+    id          String   @id @default(uuid())
+    value       String
+    label       String
+    sortOrder   Int      @default(0)
+    isPublished Boolean  @default(true)
+    createdAt   DateTime @default(now())
+    updatedAt   DateTime @default(now()) @updatedAt
+}
+
+model OtherService {
+    id          String   @id @default(uuid())
+    icon        String   @default("Sparkles")
+    title       String
+    description String   @db.Text
+    sortOrder   Int      @default(0)
+    isPublished Boolean  @default(true)
+    createdAt   DateTime @default(now())
+    updatedAt   DateTime @default(now()) @updatedAt
+}
+
+model FeaturedPick {
+    id          String   @id @default(uuid())
+    productId   String
+    sortOrder   Int      @default(0)
+    isPublished Boolean  @default(true)
+    createdAt   DateTime @default(now())
+    updatedAt   DateTime @default(now()) @updatedAt
+
+    @@unique([productId])
+    @@index([isPublished])
+    @@index([sortOrder])
+}
+
+model HowItWorksVideo {
+    id          String   @id @default(uuid())
+    title       String
+    description String?  @db.Text
+    url         String
+    thumbnail   String?
+    category    String?
+    durationSec Int?
+    sortOrder   Int      @default(0)
+    isPublished Boolean  @default(true)
+    createdAt   DateTime @default(now())
+    updatedAt   DateTime @default(now()) @updatedAt
+
+    @@index([isPublished])
+    @@index([sortOrder])
+}
+
+model SiteSetting {
+    id        String   @id @default(uuid())
+    key       String   @unique
+    value     String   @db.LongText
+    createdAt DateTime @default(now())
+    updatedAt DateTime @default(now()) @updatedAt
+}
+
+enum InquiryType {
+    CART
+    CONTACT
+}
+
+enum InquiryStatus {
+    NEW
+    SEEN
+    HANDLED
+}
+
+model WebsiteInquiry {
+    id        String        @id @default(uuid())
+    type      InquiryType
+    name      String
+    email     String?
+    phone     String?
+    message   String?       @db.Text
+    payload   String?       @db.LongText
+    status    InquiryStatus @default(NEW)
+    createdAt DateTime      @default(now())
+    updatedAt DateTime      @default(now()) @updatedAt
+
+    @@index([status])
+    @@index([type])
+    @@index([createdAt])
+}

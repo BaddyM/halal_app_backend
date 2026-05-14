@@ -46,9 +46,13 @@ export class AuthGuard implements CanActivate {
 
             // 1. Check Redis first (The "Fast Path")
             const cacheKey = `auth_session:${token}`;
-            let userSession = await this.cacheManager.get(cacheKey);
+            let userSession: any = await this.cacheManager.get(cacheKey);
 
-            if (!userSession) {
+            // Treat malformed cached values (e.g. legacy entries holding the token string) as cache miss
+            const isValidSession =
+                userSession && typeof userSession === 'object' && 'role' in userSession;
+
+            if (!isValidSession) {
                 // 2. Cache Miss - Hit Prisma (The "Slow Path")
                 const userFromToken = await this.prisma.user.findFirst({
                     where: { accessToken: token, isActive: true },
