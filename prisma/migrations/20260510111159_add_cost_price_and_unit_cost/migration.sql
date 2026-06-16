@@ -1,5 +1,0 @@
--- AlterTable
-ALTER TABLE `Product` ADD COLUMN `costPrice` DOUBLE NOT NULL DEFAULT 0;
-
--- AlterTable
-ALTER TABLE `Sale` ADD COLUMN `unitCost` DOUBLE NOT NULL DEFAULT 0;

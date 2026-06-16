@@ -1,862 +1,636 @@
 generator client {
-    provider = "prisma-client-js"
+  provider = "prisma-client-js"
 }
 
 datasource db {
-    provider = "mysql"
-    url      = env("DATABASE_URL")
+  provider = "mysql"
+  url      = env("DATABASE_URL")
 }
 
-enum UserRole {
-    admin
-    cashier
-    office
-    sales_rep
-    production
+// ─────────────────────────────────────────────────────────────
+//  ENUMS
+// ─────────────────────────────────────────────────────────────
+enum Role {
+  user
+  admin
 }
 
-enum ProductCategory {
-    exams
-    workbooks
-    holiday_packages
+// Granular account state for the admin dashboard. `isActive` is kept in sync
+// (active/pending → true, suspended/banned → false) so existing guards/queries
+// that read isActive keep working.
+enum UserStatus {
+  active
+  pending
+  suspended
+  banned
 }
 
-enum ExpenseCategory {
-    transport
-    meals
-    supplies
-    other
+enum Gender {
+  male
+  female
 }
 
-enum NotificationType {
-    info
-    warning
-    success
-    error
+enum PrayerFrequency {
+  fiveTimes
+  mostPrayers
+  jumuahOnly
+  workingOnIt
+  sometimes
+  rarely
+  preferNotToSay
 }
 
-enum StockTakeStatus {
-    active
-    completed
+enum IslamicSect {
+  sunni
+  shia
+  sufi
+  other
+  preferNotToSay
 }
 
-enum SaleItemType {
-    PRODUCT
-    CUSTOM
+enum HijabPreference {
+  hijab
+  niqab
+  notApplicable
+  preferNotToSay
 }
 
-model Branch {
-    id              String           @id @default(uuid())
-    name            String           @unique
-    address         String?
-    contact         String?
-    isActive        Boolean          @default(false)
-    isMainBranch    Boolean          @default(false)
-    createdAt       DateTime         @default(now())
-    updatedAt       DateTime         @default(now()) @updatedAt
-    users           User[]
-    receipts        Receipt[]
-    customers       Customer[]
-    dailyReports    DailyReport[]
-    staff           Staff[]
-    branchStocks    BranchStock[]
-    productions     Production[]
-    branchPayables  BranchPayable[]
-    branchDeposits  BranchDeposit[]
-    transfersFrom   StockTransfer[]  @relation("TransferFromBranch")
-    transfersTo     StockTransfer[]  @relation("TransferToBranch")
+enum MarriageTimeline {
+  asap
+  withinYear
+  oneToTwoYears
+  openTimeline
 }
 
+enum ChildrenPreference {
+  noWantThem
+  noOpenToIt
+  haveWantMore
+  haveNoMore
+  preferNotToSay
+}
+
+enum LocationPreference {
+  sameCity
+  sameCountry
+  anywhere
+  countryOrAbroad
+}
+
+enum SubscriptionPlan {
+  basic
+  premium
+  vip
+}
+
+enum LikeType {
+  like
+  superLike
+  pass
+}
+
+// ─────────────────────────────────────────────────────────────
+//  USER & AUTH
+// ─────────────────────────────────────────────────────────────
 model User {
-    id                  String          @id @default(uuid())
-    name                String
-    email               String          @unique
-    accessToken         String?
-    password            String
-    role                UserRole
-    isActive            Boolean         @default(false)
-    branchId            String?
-    createdAt           DateTime        @default(now())
-    updatedAt           DateTime        @default(now()) @updatedAt
-    branch              Branch?         @relation(fields: [branchId], references: [id], onDelete: SetNull)
-    sales               Sale[]
-    receipts            Receipt[]
-    expenses            Expense[]
-    productions         Production[]
-    targetNotifications Notification[]  @relation("TargetUser")
-    loginAccesses       LoginAccess[]
-    creditSales         CreditSale[]
-    creditPayments      CreditPayment[]
-    dailyReports        DailyReport[]
-    settings            Settings[]
-    salaries            Salary[]
-    stockTakeItems      StockTakeItem[]
-    stockTransfers      StockTransfer[]
-    approvedReturns     SaleReturn[]       @relation("ApprovedReturns")
-    commissionRate      Float              @default(0)
-    commissionPayouts   CommissionPayout[]
-    auditLogs           AuditLog[]
-    periodLocks         PeriodLock[]
-    invoices            Invoice[]
-    invoicePayments     InvoicePayment[]
-    failedLoginCount    Int                  @default(0)
-    lockedUntil         DateTime?
-    passwordResetTokens PasswordResetToken[]
+  id                String   @id @default(uuid())
+  email             String   @unique
+  password          String
+  name              String
+  phone             String?
+  isEmailVerified   Boolean  @default(false)
+  isPhoneVerified   Boolean  @default(false)
+  isActive          Boolean  @default(true)
+
+  // Admin / moderation
+  role              Role        @default(user)
+  status            UserStatus  @default(active)
+
+  // OAuth account linkage (null for email/password accounts)
+  googleId          String?  @unique
+  appleId           String?  @unique
+
+  lastSeenAt        DateTime?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  // Subscription
+  plan              SubscriptionPlan @default(basic)
+  planExpiresAt     DateTime?
+
+  // Profile UI settings
+  prayerTimesEnabled        Boolean  @default(true)
+  halalVerificationSubmitted Boolean  @default(false)
+  // Read receipts are a premium feature with a user toggle (Module C).
+  readReceiptsEnabled       Boolean  @default(true)
+
+  // Usage tracking (Basic plan limits)
+  likesUsedToday    Int      @default(0)
+  activeChatsCount  Int      @default(0)
+  lastLikeReset     DateTime @default(now())
+
+  // Notifications read-marker: anything newer than this is "unread".
+  notificationsReadAt DateTime?
+
+  // Relations
+  profile           Profile?
+  onboardingAnswers OnboardingAnswer[]
+  photos            Photo[]
+
+  refreshTokens     RefreshToken[]
+  emailTokens       EmailVerificationToken[]
+  passwordTokens    PasswordResetToken[]
+  phoneTokens       PhoneVerificationToken[]
+
+  photoRequestsMade     PhotoAccessRequest[] @relation("PhotoRequester")
+  photoRequestsReceived PhotoAccessRequest[] @relation("PhotoOwner")
+
+  subscription      Subscription?
+  transactions      Transaction[]
+
+  devices           Device[]
+  inboxMessages     InboxMessage[]
+
+  likesGiven        Like[] @relation("LikesGiven")
+  likesReceived     Like[] @relation("LikesReceived")
+  matchesAsA        Match[] @relation("MatchesAsA")
+  matchesAsB        Match[] @relation("MatchesAsB")
+
+  conversationsAsA  Conversation[] @relation("ConversationsAsA")
+  conversationsAsB  Conversation[] @relation("ConversationsAsB")
+  messagesSent      Message[] @relation("MessagesSent")
+
+  blocksGiven       Block[]  @relation("BlocksGiven")
+  blocksReceived    Block[]  @relation("BlocksReceived")
+  reportsGiven      Report[] @relation("ReportsGiven")
+  reportsReceived   Report[] @relation("ReportsReceived")
+
+  @@index([email])
+}
+
+// ─────────────────────────────────────────────────────────────
+//  PROFILE — Public matrimonial profile
+// ─────────────────────────────────────────────────────────────
+model Profile {
+  userId            String   @id
+  user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  gender            Gender?
+  dateOfBirth       DateTime?
+  city              String?
+  country           String?
+  profession        String?
+  bio               String?  @db.Text
+  primaryImageUrl   String?
+
+  // Faith
+  prayerFrequency   PrayerFrequency?
+  sect              IslamicSect?
+  hijabPreference   HijabPreference?
+
+  // Lifestyle / values
+  ethnicity         String?
+  maritalTimeline   MarriageTimeline?
+  childrenPref      ChildrenPreference?
+  locationPref      LocationPreference?
+  values            Json? // up to 3 strings
+  interests         Json? // array of strings (tags)
+
+  // Guardian / Wali (optional) — CC'd on chat summaries, involved on request
+  waliName          String?
+  waliEmail         String?
+  waliPhone         String?
+  waliRelation      String? // e.g. father, brother, uncle
+
+  // Verification & visibility
+  isVerified        Boolean  @default(false)
+  isComplete        Boolean  @default(false)
+  // 0–100 profile completeness, recomputed on every profile write.
+  completeness      Int      @default(0)
+
+  updatedAt         DateTime @updatedAt
+
+  @@index([gender, country, city])
+}
+
+// ─────────────────────────────────────────────────────────────
+//  ONBOARDING — raw answers from the onboarding quiz
+// ─────────────────────────────────────────────────────────────
+model OnboardingAnswer {
+  id         String   @id @default(uuid())
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  questionId String
+  answer     Json // string or array
+  createdAt  DateTime @default(now())
+
+  @@unique([userId, questionId])
+  @@index([userId])
+}
+
+// ─────────────────────────────────────────────────────────────
+//  PHOTOS
+// ─────────────────────────────────────────────────────────────
+model Photo {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  url       String
+  isPrimary Boolean  @default(false)
+  // Private/locked photos are hidden in discovery & on the public profile.
+  // They become visible to a viewer only after an approved PhotoAccessRequest.
+  isPrivate Boolean  @default(false)
+  position  Int      @default(0)
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+}
+
+// ─────────────────────────────────────────────────────────────
+//  PRIVATE PHOTO ACCESS — request / grant flow
+// ─────────────────────────────────────────────────────────────
+model PhotoAccessRequest {
+  id          String   @id @default(uuid())
+  requesterId String
+  ownerId     String
+  // pending | granted | denied
+  status      String   @default("pending") @db.VarChar(16)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  requester   User     @relation("PhotoRequester", fields: [requesterId], references: [id], onDelete: Cascade)
+  owner        User    @relation("PhotoOwner", fields: [ownerId], references: [id], onDelete: Cascade)
+
+  @@unique([requesterId, ownerId])
+  @@index([ownerId])
+  @@index([requesterId])
+}
+
+// ─────────────────────────────────────────────────────────────
+//  LIKES & MATCHES
+// ─────────────────────────────────────────────────────────────
+model Like {
+  id         String   @id @default(uuid())
+  fromUserId String
+  toUserId   String
+  type       LikeType
+  createdAt  DateTime @default(now())
+
+  fromUser   User     @relation("LikesGiven", fields: [fromUserId], references: [id], onDelete: Cascade)
+  toUser     User     @relation("LikesReceived", fields: [toUserId], references: [id], onDelete: Cascade)
+
+  @@unique([fromUserId, toUserId])
+  @@index([toUserId])
+}
+
+model Match {
+  id        String   @id @default(uuid())
+  userAId   String
+  userBId   String
+  createdAt DateTime @default(now())
+
+  userA     User     @relation("MatchesAsA", fields: [userAId], references: [id], onDelete: Cascade)
+  userB     User     @relation("MatchesAsB", fields: [userBId], references: [id], onDelete: Cascade)
+
+  @@unique([userAId, userBId])
+  @@index([userAId])
+  @@index([userBId])
+}
+
+// ─────────────────────────────────────────────────────────────
+//  CHAT — Conversations & Messages
+// ─────────────────────────────────────────────────────────────
+model Conversation {
+  id            String   @id @default(uuid())
+  // userAId is always the lexicographically smaller id so we can use a
+  // unique pair index and never end up with two convs for one pair.
+  userAId       String
+  userBId       String
+  userA         User     @relation("ConversationsAsA", fields: [userAId], references: [id], onDelete: Cascade)
+  userB         User     @relation("ConversationsAsB", fields: [userBId], references: [id], onDelete: Cascade)
+  messages      Message[]
+  createdAt     DateTime @default(now())
+  lastMessageAt DateTime @default(now())
+
+  // "Involve wali": a guardian has been CC'd on this conversation summary.
+  waliInvolved   Boolean   @default(false)
+  waliInvolvedAt DateTime?
+
+  @@unique([userAId, userBId])
+  @@index([userAId])
+  @@index([userBId])
+  @@index([lastMessageAt])
+}
+
+model Message {
+  id             String   @id @default(uuid())
+  conversationId String
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  senderId       String
+  sender         User     @relation("MessagesSent", fields: [senderId], references: [id], onDelete: Cascade)
+  text           String   @db.Text
+  // text | image | voice — image/voice are premium-only (Module C).
+  type           String   @default("text") @db.VarChar(16)
+  mediaUrl       String?
+  // Auto-moderation: set when the text matched the flagged-word list.
+  flagged        Boolean  @default(false)
+  createdAt      DateTime @default(now())
+  readAt         DateTime?
+
+  @@index([conversationId, createdAt])
+  @@index([senderId])
+}
+
+// ─────────────────────────────────────────────────────────────
+//  TOKENS — refresh / email verify / password reset
+// ─────────────────────────────────────────────────────────────
+model RefreshToken {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  token     String   @unique @db.VarChar(255)
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  revokedAt DateTime?
+
+  @@index([userId])
+}
+
+model EmailVerificationToken {
+  id         String    @id @default(uuid())
+  userId     String
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  code       String    @db.VarChar(6)
+  expiresAt  DateTime
+  consumedAt DateTime?
+  createdAt  DateTime  @default(now())
+
+  @@index([userId])
 }
 
 model PasswordResetToken {
-    id        String    @id @default(uuid())
-    userId    String
-    user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-    token     String    @unique
-    expiresAt DateTime
-    usedAt    DateTime?
-    createdAt DateTime  @default(now())
+  id         String    @id @default(uuid())
+  userId     String
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  code       String    @db.VarChar(6)
+  expiresAt  DateTime
+  consumedAt DateTime?
+  createdAt  DateTime  @default(now())
 
-    @@index([userId])
+  @@index([userId])
 }
 
+model PhoneVerificationToken {
+  id         String    @id @default(uuid())
+  userId     String
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  phone      String    @db.VarChar(32)
+  code       String    @db.VarChar(6)
+  expiresAt  DateTime
+  consumedAt DateTime?
+  createdAt  DateTime  @default(now())
+
+  @@index([userId])
+  @@index([phone])
+}
+
+// ─────────────────────────────────────────────────────────────
+//  SAFETY — Blocks & Reports
+// ─────────────────────────────────────────────────────────────
+model Block {
+  id        String   @id @default(uuid())
+  blockerId String
+  blockedId String
+  createdAt DateTime @default(now())
+
+  blocker   User     @relation("BlocksGiven", fields: [blockerId], references: [id], onDelete: Cascade)
+  blocked   User     @relation("BlocksReceived", fields: [blockedId], references: [id], onDelete: Cascade)
+
+  @@unique([blockerId, blockedId])
+  @@index([blockerId])
+  @@index([blockedId])
+}
+
+model Report {
+  id         String   @id @default(uuid())
+  reporterId String
+  reportedId String
+  reason     String   @db.VarChar(255)
+  details    String?  @db.Text
+  // Dashboard moderation metadata (optional; the mobile flow sends reason/details).
+  category   String?  @db.VarChar(64)
+  // low | medium | high
+  severity   String   @default("low") @db.VarChar(16)
+  // open | reviewed | resolved | dismissed
+  status     String   @default("open") @db.VarChar(32)
+  resolvedAt DateTime?
+  createdAt  DateTime @default(now())
+
+  reporter   User     @relation("ReportsGiven", fields: [reporterId], references: [id], onDelete: Cascade)
+  reported   User     @relation("ReportsReceived", fields: [reportedId], references: [id], onDelete: Cascade)
+
+  @@index([reportedId])
+  @@index([reporterId])
+}
+
+// ─────────────────────────────────────────────────────────────
+//  MONETIZATION — Plans, Subscriptions, Transactions
+// ─────────────────────────────────────────────────────────────
+// Dashboard-editable plan catalogue. `tier` maps to the SubscriptionPlan enum
+// that drives feature-gating across the app; price/features/visibility are
+// editable so the dashboard can change them without a deploy.
+model Plan {
+  id              String           @id @default(uuid())
+  tier            SubscriptionPlan
+  name            String
+  description     String?          @db.Text
+  priceCents      Int              @default(0)
+  currency        String           @default("USD") @db.VarChar(8)
+  // month | year | once
+  interval        String           @default("month") @db.VarChar(16)
+  features        Json? // string[] of marketing bullet points
+  visible         Boolean          @default(true)
+  sortOrder       Int              @default(0)
+
+  // Provider product/price identifiers for real billing
+  stripePriceId   String?
+  appleProductId  String?
+  googleProductId String?
+
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+
+  subscriptions   Subscription[]
+
+  @@index([visible, sortOrder])
+}
+
+model Subscription {
+  id                String   @id @default(uuid())
+  userId            String   @unique
+  user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  planId            String
+  plan              Plan     @relation(fields: [planId], references: [id])
+
+  // stripe | apple | google | manual
+  provider          String   @db.VarChar(16)
+  // active | canceled | expired | pending
+  status            String   @default("active") @db.VarChar(16)
+  // Provider subscription id / original transaction id (for receipt linking).
+  externalId        String?
+  currentPeriodEnd  DateTime?
+  cancelAtPeriodEnd Boolean  @default(false)
+
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@index([status])
+}
+
+model Transaction {
+  id          String   @id @default(uuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  planId      String?
+  provider    String   @db.VarChar(16)
+  amountCents Int      @default(0)
+  currency    String   @default("USD") @db.VarChar(8)
+  // succeeded | pending | failed | refunded
+  status      String   @default("succeeded") @db.VarChar(16)
+  externalId  String?
+  createdAt   DateTime @default(now())
+
+  @@index([userId])
+}
+
+// ─────────────────────────────────────────────────────────────
+//  DEVICES — push notification tokens (FCM / APNs)
+// ─────────────────────────────────────────────────────────────
+enum DevicePlatform {
+  ios
+  android
+  web
+}
+
+model Device {
+  id        String         @id @default(uuid())
+  userId    String
+  user      User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  token     String         @unique @db.VarChar(255)
+  platform  DevicePlatform
+  createdAt DateTime       @default(now())
+  updatedAt DateTime       @updatedAt
+
+  @@index([userId])
+}
+
+// ─────────────────────────────────────────────────────────────
+//  ADS — dashboard-managed promotional slots
+// ─────────────────────────────────────────────────────────────
+enum AdPlacement {
+  HOME_BANNER
+  BETWEEN_MATCHES
+  CHAT_TOP
+  PROFILE_SIDEBAR
+}
+
+enum AdAudience {
+  ALL
+  FREE
+  PREMIUM
+}
+
+model Ad {
+  id          String      @id @default(uuid())
+  title       String
+  body        String?     @db.Text
+  // @db.Text so dashboard-uploaded data-URL images fit (VARCHAR(191) is too small).
+  imageUrl    String?     @db.Text
+  ctaText     String?
+  targetUrl   String?
+  placement   AdPlacement
+  audience    AdAudience  @default(ALL)
+  isActive    Boolean     @default(true)
+  // Active window (null = open-ended on that side).
+  startsAt    DateTime?
+  endsAt      DateTime?
+  // Lightweight analytics counters incremented by the app.
+  impressions Int         @default(0)
+  clicks      Int         @default(0)
+  sortOrder   Int         @default(0)
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  @@index([placement, isActive])
+}
+
+// ─────────────────────────────────────────────────────────────
+//  INBOX — admin ↔ user messaging (from the dashboard tool)
+// ─────────────────────────────────────────────────────────────
+model InboxMessage {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  // true = sent by an admin to the user; false = the user's reply.
+  fromAdmin Boolean  @default(true)
+  subject   String?
+  body      String   @db.Text
+  isRead    Boolean  @default(false)
+  // Replies reference the root admin message so they form a thread.
+  parentId  String?
+  createdAt DateTime @default(now())
+
+  @@index([userId, createdAt])
+  @@index([parentId])
+}
+
+// ─────────────────────────────────────────────────────────────
+//  ISLAMIC FEATURES — global dashboard toggles (singleton row id=1)
+// ─────────────────────────────────────────────────────────────
+model IslamicSetting {
+  id                  Int      @id @default(1)
+  prayerTimesEnabled  Boolean  @default(true)
+  qiblaEnabled        Boolean  @default(true)
+  dailyContentEnabled Boolean  @default(true)
+  ramadanMode         Boolean  @default(false)
+  // Default calculation method for prayer times (MWL | ISNA | Egypt | Makkah | Karachi)
+  calcMethod          String   @default("MWL") @db.VarChar(16)
+  updatedAt           DateTime @updatedAt
+}
+
+// ─────────────────────────────────────────────────────────────
+//  ADMIN — audit log + app settings
+// ─────────────────────────────────────────────────────────────
 model AuditLog {
-    id        String   @id @default(uuid())
-    userId    String?
-    user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
-    action    String
-    entity    String
-    entityId  String?
-    before    String?  @db.LongText
-    after     String?  @db.LongText
-    createdAt DateTime @default(now())
+  id         String   @id @default(uuid())
+  adminId    String?
+  adminEmail String?
+  // e.g. "POST /admin/users/:id/status"
+  action     String   @db.VarChar(255)
+  // affected entity id(s), serialized
+  target     String?  @db.VarChar(255)
+  createdAt  DateTime @default(now())
 
-    @@index([entity, entityId])
-    @@index([userId])
-    @@index([createdAt])
+  @@index([createdAt])
 }
 
-model PeriodLock {
-    id          String   @id @default(uuid())
-    period      String   @unique
-    lockedAt    DateTime @default(now())
-    lockedById  String
-    lockedBy    User     @relation(fields: [lockedById], references: [id])
-    note        String?  @db.LongText
-    createdAt   DateTime @default(now())
-    updatedAt   DateTime @default(now()) @updatedAt
+// Generic key/value app settings + feature flags edited from the dashboard.
+model AppSetting {
+  key       String   @id
+  value     Json
+  updatedAt DateTime @updatedAt
 }
 
-enum CommissionPayoutStatus {
-    PENDING
-    PAID
-    CANCELLED
-}
-
-model CommissionPayout {
-    id              String                 @id @default(uuid())
-    userId          String
-    user            User                   @relation(fields: [userId], references: [id])
-    period          String
-    totalSales      Float
-    totalCommission Float
-    status          CommissionPayoutStatus @default(PENDING)
-    paidAt          DateTime?
-    notes           String?                @db.LongText
-    createdAt       DateTime               @default(now())
-    updatedAt       DateTime               @default(now()) @updatedAt
-
-    @@index([userId])
-}
-
-model Customer {
-    id          String       @id @default(uuid())
-    name        String
-    email       String?
-    phoneNumber String
-    address     String?
-    branchId    String
-    creditLimit Float        @default(0)
-    isDeleted   Boolean      @default(false)
-    branch      Branch       @relation(fields: [branchId], references: [id])
-    createdAt   DateTime     @default(now())
-    updatedAt   DateTime     @default(now()) @updatedAt
-    sales       Sale[]
-    creditSales CreditSale[]
-    invoices    Invoice[]
-    invoiceLinks CustomerInvoice[]
-}
-
-model DailyReport {
-    id        String   @id @default(uuid())
-    branchId  String
-    branch    Branch   @relation(fields: [branchId], references: [id])
-    notes     String   @db.LongText
-    userId    String
-    user      User     @relation(fields: [userId], references: [id])
-    isDeleted Boolean  @default(false)
-    createdAt DateTime @default(now())
-    updatedAt DateTime @default(now()) @updatedAt
-}
-
-model LoginAccess {
-    id        String   @id @default(uuid())
-    userId    String
-    user      User     @relation(fields: [userId], references: [id])
-    createdAt DateTime @default(now())
-    updatedAt DateTime @default(now()) @updatedAt
-}
-
-model Product {
-    id             String          @id @default(uuid())
-    category       ProductCategory
-    name           String          @default("")
-    description    String?         @db.Text
-    image          String?
-    featured       Boolean         @default(false)
-    isPublished    Boolean         @default(false)
-    slug           String?         @unique
-    price          Float
-    costPrice      Float           @default(0)
-    reorderLevel   Int             @default(0)
-    totalStock     Int
-    classLevel     String?
-    subject        String?
-    createdAt      DateTime        @default(now())
-    updatedAt      DateTime        @default(now()) @updatedAt
-    stockTakeItems StockTakeItem[]
-    sales          Sale[]
-    branchStocks   BranchStock[]
-    productions    Production[]
-    stockTransfers StockTransfer[]
-    invoiceItems   InvoiceItem[]
-}
-
-model Production {
-    id          String   @id @default(uuid())
-    productId   String
-    branchId    String
-    quantity    Int
-    note        String?  @db.LongText
-    createdById String?
-    createdAt   DateTime @default(now())
-    updatedAt   DateTime @default(now()) @updatedAt
-    product     Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
-    branch      Branch   @relation(fields: [branchId], references: [id], onDelete: Restrict)
-    createdBy   User?    @relation(fields: [createdById], references: [id], onDelete: SetNull)
-
-    @@index([productId])
-    @@index([branchId])
-    @@index([createdById])
-    @@index([createdAt])
-}
-
-model BranchStock {
-    id        String   @id @default(uuid())
-    branchId  String
-    productId String
-    quantity  Int      @default(0)
-    branch    Branch   @relation(fields: [branchId], references: [id], onDelete: Cascade)
-    product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
-    createdAt DateTime @default(now())
-    updatedAt DateTime @default(now()) @updatedAt
-
-    @@unique([branchId, productId])
-    @@index([productId])
-}
-
-enum StockTransferStatus {
-    PENDING
-    COMPLETED
-    CANCELLED
-}
-
-model StockTransfer {
-    id           String              @id @default(uuid())
-    fromBranchId String
-    toBranchId   String
-    productId    String
-    quantity     Int
-    status       StockTransferStatus @default(PENDING)
-    notes        String?             @db.LongText
-    createdById  String
-    completedAt  DateTime?
-    createdAt    DateTime            @default(now())
-    updatedAt    DateTime            @default(now()) @updatedAt
-    fromBranch   Branch              @relation("TransferFromBranch", fields: [fromBranchId], references: [id])
-    toBranch     Branch              @relation("TransferToBranch", fields: [toBranchId], references: [id])
-    product      Product             @relation(fields: [productId], references: [id])
-    createdBy    User                @relation(fields: [createdById], references: [id])
-    payables     BranchPayable[]
-
-    @@index([fromBranchId])
-    @@index([toBranchId])
-    @@index([productId])
-    @@index([createdById])
-}
-
-enum PayableStatus {
-    OPEN
-    PARTIALLY_PAID
-    PAID
-    CANCELLED
-}
-
-model BranchPayable {
-    id            String        @id @default(uuid())
-    branchId      String
-    stockTransferId String? 
-    description   String?       @db.LongText
-    totalAmount   Float
-    outstanding   Float
-    status        PayableStatus @default(OPEN)
-    createdById   String?
-    deposits      BranchDeposit[]
-    createdAt     DateTime      @default(now())
-    updatedAt     DateTime      @default(now()) @updatedAt
-
-    branch        Branch        @relation(fields: [branchId], references: [id], onDelete: Cascade)
-    stockTransfer StockTransfer? @relation(fields: [stockTransferId], references: [id], onDelete: SetNull)
-
-    @@index([branchId])
-    @@index([stockTransferId])
-}
-
-model BranchDeposit {
-    id            String        @id @default(uuid())
-    payableId     String
-    branchId      String
-    amount        Float
-    paymentMethod PaymentMethod @default(CASH)
-    reference     String?
-    recordedById  String?
-    createdAt     DateTime      @default(now())
-
-    payable       BranchPayable @relation(fields: [payableId], references: [id], onDelete: Cascade)
-    branch        Branch        @relation(fields: [branchId], references: [id], onDelete: Cascade)
-
-    @@index([payableId])
-    @@index([branchId])
-}
-
-model StockTakeItem {
-    id                     String                 @id @default(uuid())
-    userId                 String
-    user                   User                   @relation(fields: [userId], references: [id])
-    productId              String
-    quantityTaken          Int
-    quantitySold           Int                    @default(0)
-    quantityReturned       Int                    @default(0)
-    revenue                Float                  @default(0)
-    product                Product                @relation(fields: [productId], references: [id], onDelete: Cascade)
-    createdAt              DateTime               @default(now())
-    updatedAt              DateTime               @default(now()) @updatedAt
-    stockTakeItemHistories StockTakeItemHistory[]
-
-    @@unique([userId, productId])
-}
-
-model StockTakeItemHistory {
-    id              String        @id @default(uuid())
-    stockTakeItemId String
-    stockTakeItem   StockTakeItem @relation(fields: [stockTakeItemId], references: [id])
-    createdAt       DateTime      @default(now())
-    updatedAt       DateTime      @default(now()) @updatedAt
-}
-
-model Sale {
-    id               String         @id @default(uuid())
-    orderId          String
-    repId            String
-    stockTakeId      String?
-    productId        String?
-    itemName         String
-    itemType         SaleItemType   @default(PRODUCT)
-    quantity         Int
-    customerId       String?
-    customer         Customer?      @relation(fields: [customerId], references: [id])
-    unitPrice        Float
-    unitCost         Float          @default(0)
-    memo             String?        @db.LongText
-    onCredit         Boolean        @default(false)
-    paymentMethod    PaymentMethod?
-    paymentReference String?
-    createdAt        DateTime       @default(now())
-    updatedAt        DateTime       @default(now()) @updatedAt
-    rep              User           @relation(fields: [repId], references: [id], onDelete: Cascade)
-    product          Product?       @relation(fields: [productId], references: [id], onDelete: SetNull)
-    receipts         Receipt[]
-    returns          SaleReturn[]
-
-    @@index([productId])
-}
-
-enum ReturnStatus {
-    PENDING
-    COMPLETED
-    CANCELLED
-}
-
-model SaleReturn {
-    id           String        @id @default(uuid())
-    saleId       String
-    sale         Sale          @relation(fields: [saleId], references: [id], onDelete: Cascade)
-    quantity     Int
-    refundAmount Float
-    reason       String?       @db.LongText
-    refundMethod PaymentMethod @default(CASH)
-    status       ReturnStatus  @default(PENDING)
-    approvedById String
-    approvedBy   User          @relation("ApprovedReturns", fields: [approvedById], references: [id])
-    createdAt    DateTime      @default(now())
-    updatedAt    DateTime      @default(now()) @updatedAt
-
-    @@index([saleId])
-}
-
-model CreditSale {
-    id             String           @id @default(uuid())
-    orderId        String
-    amount         Float
-    userId         String
-    customerId     String?
-    customer       Customer?        @relation(fields: [customerId], references: [id])
-    user           User             @relation(fields: [userId], references: [id])
-    isDeleted      Boolean          @default(false)
-    status         CreditSaleStatus @default(PENDING)
-    createdAt      DateTime         @default(now())
-    updatedAt      DateTime         @default(now()) @updatedAt
-    creditPayments CreditPayment[]
-
-    @@index([customerId])
-}
-
-enum CreditSaleStatus {
-    PENDING
-    COMPLETED
-    CANCELLED
-}
-
-model CreditPayment {
-    id            String        @id @default(uuid())
-    creditSaleId  String
-    creditSale    CreditSale    @relation(fields: [creditSaleId], references: [id])
-    paid          Float
-    userId        String
-    user          User          @relation(fields: [userId], references: [id])
-    paymentMethod PaymentMethod @default(CASH)
-    reference     String?
-    createdAt     DateTime      @default(now())
-    updatedAt     DateTime      @default(now()) @updatedAt
-}
-
-model Receipt {
-    id        String   @id @default(uuid())
-    saleId    String
-    repId     String
-    branchId  String
-    image     String
-    createdAt DateTime @default(now())
-    updatedAt DateTime @default(now()) @updatedAt
-    verified  Boolean  @default(false)
-    sale      Sale     @relation(fields: [saleId], references: [id], onDelete: Cascade)
-    rep       User     @relation(fields: [repId], references: [id], onDelete: Cascade)
-    branch    Branch   @relation(fields: [branchId], references: [id], onDelete: Cascade)
-}
-
-model Expense {
-    id          String          @id @default(uuid())
-    userId      String
-    description String?
-    amount      Float
-    category    ExpenseCategory
-    createdAt   DateTime        @default(now())
-    updatedAt   DateTime        @default(now()) @updatedAt
-    user        User            @relation(fields: [userId], references: [id], onDelete: Cascade)
-}
-
-model Notification {
-    id           String           @id @default(uuid())
-    title        String
-    message      String
-    type         NotificationType @default(info)
-    targetUserId String?
-    read         Boolean          @default(false)
-    createdAt    DateTime         @default(now())
-    updatedAt    DateTime         @default(now()) @updatedAt
-    targetUser   User?            @relation("TargetUser", fields: [targetUserId], references: [id], onDelete: SetNull)
-}
-
-model Staff {
-    id         String           @id @default(uuid())
-    name       String
-    phone      String
-    email      String?
-    address    String?
-    role       String
-    baseSalary Float
-    branchId   String
-    branch     Branch           @relation(fields: [branchId], references: [id])
-    createdAt  DateTime         @default(now())
-    updatedAt  DateTime         @default(now()) @updatedAt
-    salaries   Salary[]
-    advances   SalaryAdvance[]
-}
-
-enum SalaryAdvanceStatus {
-    PENDING
-    REPAID
-    CANCELLED
-}
-
-model SalaryAdvance {
-    id        String              @id @default(uuid())
-    staffId   String
-    staff     Staff               @relation(fields: [staffId], references: [id])
-    amount    Float
-    reason    String?             @db.LongText
-    status    SalaryAdvanceStatus @default(PENDING)
-    repaidAt  DateTime?
-    createdAt DateTime            @default(now())
-    updatedAt DateTime            @default(now()) @updatedAt
-
-    @@index([staffId])
-}
-
-model Salary {
-    id              String       @id @default(uuid())
-    staffId         String
-    staff           Staff        @relation(fields: [staffId], references: [id])
-    period          String
-    amount          Float
-    allowances      Float        @default(0)
-    deductions      Float        @default(0)
-    advanceDeducted Float        @default(0)
-    netPay          Float        @default(0)
-    userId          String
-    user            User         @relation(fields: [userId], references: [id])
-    status          SalaryStatus @default(PENDING)
-    paidAt          DateTime?
-    memo            String?      @db.LongText
-    createdAt       DateTime     @default(now())
-    updatedAt       DateTime     @default(now()) @updatedAt
-}
-
-enum SalaryStatus {
-    PENDING
-    COMPLETED
-    CANCELLED
-}
-
-model Settings {
-    id                 String   @id @default(uuid())
-    emailNotifications Boolean  @default(false)
-    userId             String
-    user               User     @relation(fields: [userId], references: [id])
-    createdAt          DateTime @default(now())
-    updatedAt          DateTime @default(now()) @updatedAt
-}
-
-model Supplier {
-    id               String            @id @default(uuid())
-    name             String
-    contact          String?
-    email            String?
-    address          String?
-    memo             String?           @db.LongText
-    createdAt        DateTime          @default(now())
-    updatedAt        DateTime          @default(now()) @updatedAt
-    supplierProducts SupplierProduct[]
-    purchaseOrders   PurchaseOrder[]
-}
-
-model SupplierProduct {
-    id             String          @id @default(uuid())
-    supplierId     String
-    name           String
-    price          Float
-    memo           String?         @db.LongText
-    createdAt      DateTime        @default(now())
-    updatedAt      DateTime        @default(now()) @updatedAt
-    supplier       Supplier        @relation(fields: [supplierId], references: [id], onDelete: Cascade)
-    purchaseOrders PurchaseOrder[]
-}
-
-model PurchaseOrder {
-    id            String                     @id @default(uuid())
-    orderId       String
-    supplierId    String
-    productId     String
-    quantity      Int
-    unitPrice     Float
-    totalPrice    Float
-    amountPaid    Float                      @default(0)
-    amountDue     Float                      @default(0)
-    paymentTerms  PurchaseOrderPaymentTerms  @default(FULL)
-    paymentStatus PurchaseOrderPaymentStatus @default(UNPAID)
-    status        PurchaseOrderStatus        @default(PENDING)
-    createdAt     DateTime                   @default(now())
-    updatedAt     DateTime                   @default(now()) @updatedAt
-    supplier      Supplier                   @relation(fields: [supplierId], references: [id], onDelete: Cascade)
-    product       SupplierProduct            @relation(fields: [productId], references: [id], onDelete: Cascade)
-    payments      PurchaseOrderPayment[]
-}
-
-model PurchaseOrderPayment {
-    id              String        @id @default(uuid())
-    purchaseOrderId String
-    amount          Float
-    method          PaymentMethod @default(CASH)
-    reference       String?
-    note            String?       @db.LongText
-    paidAt          DateTime      @default(now())
-    createdAt       DateTime      @default(now())
-    updatedAt       DateTime      @default(now()) @updatedAt
-    purchaseOrder   PurchaseOrder @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade)
-
-    @@index([purchaseOrderId])
-}
-
-enum PurchaseOrderStatus {
-    PENDING
-    RECEIVED
-    CANCELLED
-}
-
-enum PurchaseOrderPaymentTerms {
-    FULL
-    CREDIT
-}
-
-enum PurchaseOrderPaymentStatus {
-    UNPAID
-    PARTIALLY_PAID
-    PAID
-}
-
-enum PaymentMethod {
-    CASH
-    MOBILE_MONEY
-    BANK_TRANSFER
-    CARD
-    CHEQUE
-    OTHER
-}
-
-enum InvoiceStatus {
-    PENDING
-    PAID
-    CONVERTED
-    CANCELLED
-}
-
-model Invoice {
-    id              String           @id @default(uuid())
-    invoiceId       String           @unique
-    userId          String
-    user            User             @relation(fields: [userId], references: [id], onDelete: Cascade)
-    customerId      String?
-    customer        Customer?        @relation(fields: [customerId], references: [id], onDelete: SetNull)
-    status          InvoiceStatus    @default(PENDING)
-    totalAmount     Float            @default(0)
-    amountPaid      Float            @default(0)
-    amountDue       Float            @default(0)
-    memo            String?          @db.LongText
-    convertedToSaleId String?
-    createdAt       DateTime         @default(now())
-    updatedAt       DateTime         @default(now()) @updatedAt
-    items           InvoiceItem[]
-    payments        InvoicePayment[]
-
-    @@index([userId])
-    @@index([customerId])
-    @@index([status])
-}
-
-model InvoiceItem {
-    id          String    @id @default(uuid())
-    invoiceId   String
-    invoice     Invoice   @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
-    productId   String?
-    product     Product?  @relation(fields: [productId], references: [id], onDelete: SetNull)
-    itemName    String
-    quantity    Int
-    unitPrice   Float
-    lineTotal   Float
-    isCustom    Boolean   @default(false)
-    createdAt   DateTime  @default(now())
-    updatedAt   DateTime  @default(now()) @updatedAt
-
-    @@index([invoiceId])
-    @@index([productId])
-}
-
-model InvoicePayment {
-    id            String        @id @default(uuid())
-    invoiceId     String
-    invoice       Invoice       @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
-    amount        Float
-    paymentMethod PaymentMethod @default(CASH)
-    reference     String?
-    notes         String?       @db.LongText
-    userId        String
-    user          User          @relation(fields: [userId], references: [id], onDelete: Cascade)
-    createdAt     DateTime      @default(now())
-    updatedAt     DateTime      @default(now()) @updatedAt
-
-    @@index([invoiceId])
-    @@index([userId])
-}
-
-model CustomerInvoice {
-    id        String   @id @default(uuid())
-    customerId String
-    customer  Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
-    invoiceId String
-    createdAt DateTime @default(now())
-
-    @@unique([customerId, invoiceId])
-    @@index([customerId])
-}
-
-// Add these relations to existing models
-// Add to Product model: invoiceItems InvoiceItem[]
-// Add to Customer model: invoices Invoice[] and invoiceLink CustomerInvoice[]
-// Add to User model: invoices Invoice[] and invoicePayments InvoicePayment[]
-
-// ============================================================
-// Website CMS models (jubra-edutech-portal)
-// ============================================================
-
-model BlogPost {
-    id          String   @id @default(uuid())
-    slug        String   @unique
-    title       String
-    excerpt     String?  @db.Text
-    body        String   @db.LongText
-    cover       String?
-    date        DateTime @default(now())
-    author      String   @default("Jubra Editorial")
-    readMinutes Int      @default(5)
-    isPublished Boolean  @default(true)
-    createdAt   DateTime @default(now())
-    updatedAt   DateTime @default(now()) @updatedAt
-
-    @@index([isPublished])
-}
-
-model Testimonial {
-    id          String   @id @default(uuid())
-    name        String
-    role        String?
-    quote       String   @db.Text
-    image       String?
-    sortOrder   Int      @default(0)
-    isPublished Boolean  @default(true)
-    createdAt   DateTime @default(now())
-    updatedAt   DateTime @default(now()) @updatedAt
-}
-
-model Faq {
-    id          String   @id @default(uuid())
-    question    String   @db.Text
-    answer      String   @db.Text
-    sortOrder   Int      @default(0)
-    isPublished Boolean  @default(true)
-    createdAt   DateTime @default(now())
-    updatedAt   DateTime @default(now()) @updatedAt
-}
-
-model CompanyValue {
-    id          String   @id @default(uuid())
-    icon        String   @default("Sparkles")
-    title       String
-    description String   @db.Text
-    sortOrder   Int      @default(0)
-    isPublished Boolean  @default(true)
-    createdAt   DateTime @default(now())
-    updatedAt   DateTime @default(now()) @updatedAt
-}
-
-model CompanyStat {
-    id          String   @id @default(uuid())
-    value       String
-    label       String
-    sortOrder   Int      @default(0)
-    isPublished Boolean  @default(true)
-    createdAt   DateTime @default(now())
-    updatedAt   DateTime @default(now()) @updatedAt
-}
-
-model OtherService {
-    id          String   @id @default(uuid())
-    icon        String   @default("Sparkles")
-    title       String
-    description String   @db.Text
-    sortOrder   Int      @default(0)
-    isPublished Boolean  @default(true)
-    createdAt   DateTime @default(now())
-    updatedAt   DateTime @default(now()) @updatedAt
-}
-
-model FeaturedPick {
-    id          String   @id @default(uuid())
-    productId   String
-    sortOrder   Int      @default(0)
-    isPublished Boolean  @default(true)
-    createdAt   DateTime @default(now())
-    updatedAt   DateTime @default(now()) @updatedAt
-
-    @@unique([productId])
-    @@index([isPublished])
-    @@index([sortOrder])
-}
-
-model HowItWorksVideo {
-    id          String   @id @default(uuid())
-    title       String
-    description String?  @db.Text
-    url         String
-    thumbnail   String?
-    category    String?
-    durationSec Int?
-    sortOrder   Int      @default(0)
-    isPublished Boolean  @default(true)
-    createdAt   DateTime @default(now())
-    updatedAt   DateTime @default(now()) @updatedAt
-
-    @@index([isPublished])
-    @@index([sortOrder])
-}
-
-model SiteSetting {
-    id        String   @id @default(uuid())
-    key       String   @unique
-    value     String   @db.LongText
-    createdAt DateTime @default(now())
-    updatedAt DateTime @default(now()) @updatedAt
-}
-
-enum InquiryType {
-    CART
-    CONTACT
-}
-
-enum InquiryStatus {
-    NEW
-    SEEN
-    HANDLED
-}
-
-model WebsiteInquiry {
-    id        String        @id @default(uuid())
-    type      InquiryType
-    name      String
-    email     String?
-    phone     String?
-    message   String?       @db.Text
-    payload   String?       @db.LongText
-    status    InquiryStatus @default(NEW)
-    createdAt DateTime      @default(now())
-    updatedAt DateTime      @default(now()) @updatedAt
-
-    @@index([status])
-    @@index([type])
-    @@index([createdAt])
+// Sent broadcast announcements (dashboard "Notifications" history).
+model Broadcast {
+  id        String   @id @default(uuid())
+  title     String
+  message   String   @db.Text
+  // all | free | premium (the segment it targeted)
+  audience  String   @default("all") @db.VarChar(16)
+  // Number of users it reached at send time.
+  reach     Int      @default(0)
+  createdAt DateTime @default(now())
+
+  @@index([createdAt])
 }

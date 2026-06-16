@@ -1,9 +1,9 @@
 import { Module } from '@nestjs/common';
+import { AuthModule } from 'src/auth/auth.module';
 import { UploadController } from './upload.controller';
-import { PrismaService } from 'src/prisma/prisma.service';
 
 @Module({
+    imports: [AuthModule],
     controllers: [UploadController],
-    providers: [PrismaService],
 })
 export class UploadModule {}

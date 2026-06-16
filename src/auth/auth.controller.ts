@@ -1,81 +1,87 @@
-import { Body, Controller, Get, Headers, Inject, InternalServerErrorException, Post, Query, Res, UseGuards } from '@nestjs/common';
-import { LoginDto } from './dto/login.dto';
+import { Body, Controller, Get, Post, Req, UseGuards } from '@nestjs/common';
 import { AuthService } from './auth.service';
-import { Response } from 'express';
-import { AuthGuard } from './auth.guard';
-import { PrismaService } from 'src/prisma/prisma.service';
-import { ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
-import { Cache, CACHE_MANAGER } from '@nestjs/cache-manager';
+import { AuthGuard, AuthedRequest } from './auth.guard';
+import {
+    SignupDto,
+    LoginDto,
+    VerifyEmailDto,
+    ResendVerificationDto,
+    ForgotPasswordDto,
+    ResetPasswordDto,
+    RefreshTokenDto,
+    SendOtpDto,
+    VerifyOtpDto,
+    OAuthLoginDto,
+} from './dto';
 
 @Controller('auth')
 export class AuthController {
-    constructor(
-        private authService: AuthService,
-        private prisma: PrismaService,
-        @Inject(CACHE_MANAGER) private readonly cache: Cache
-    ) { }
+    constructor(private readonly auth: AuthService) {}
 
-    @Post("login")
-    async login(
-        @Body() loginData: LoginDto,
-    ) {
-        await this.cache.del("/user/loginAccess?page=1&limit=10")
-        const data = await this.authService.login(loginData.email, loginData.password);
-        return data;
+    @Post('signup')
+    signup(@Body() dto: SignupDto) {
+        return this.auth.signup(dto.name, dto.email, dto.password);
     }
 
-    @Post("password-reset/request")
-    async request_password_reset(@Body() body: { email: string }) {
-        return this.authService.request_password_reset(body.email);
+    @Post('login')
+    login(@Body() dto: LoginDto) {
+        return this.auth.login(dto.email, dto.password);
     }
 
-    @Post("password-reset/confirm")
-    async confirm_password_reset(@Body() body: { token: string; newPassword: string }) {
-        return this.authService.reset_password(body.token, body.newPassword);
+    @Post('verify-email')
+    verifyEmail(@Body() dto: VerifyEmailDto) {
+        return this.auth.verifyEmail(dto.email, dto.code);
     }
 
-    @Post("user/:userId/unlock")
+    @Post('resend-verification')
+    resendVerification(@Body() dto: ResendVerificationDto) {
+        return this.auth.resendVerification(dto.email);
+    }
+
+    @Post('forgot-password')
+    forgotPassword(@Body() dto: ForgotPasswordDto) {
+        return this.auth.forgotPassword(dto.email);
+    }
+
+    @Post('reset-password')
+    resetPassword(@Body() dto: ResetPasswordDto) {
+        return this.auth.resetPassword(dto.email, dto.code, dto.newPassword);
+    }
+
+    @Post('otp/send')
+    sendOtp(@Body() dto: SendOtpDto) {
+        return this.auth.sendOtp(dto.phone);
+    }
+
+    @Post('otp/verify')
+    verifyOtp(@Body() dto: VerifyOtpDto) {
+        return this.auth.verifyOtp(dto.phone, dto.code);
+    }
+
+    @Post('oauth/google')
+    oauthGoogle(@Body() dto: OAuthLoginDto) {
+        return this.auth.oauthGoogle(dto.idToken);
+    }
+
+    @Post('oauth/apple')
+    oauthApple(@Body() dto: OAuthLoginDto) {
+        return this.auth.oauthApple(dto.idToken, dto.name);
+    }
+
+    @Post('refresh')
+    refresh(@Body() dto: RefreshTokenDto) {
+        return this.auth.refresh(dto.refreshToken);
+    }
+
+    @Post('logout')
     @UseGuards(AuthGuard)
-    @ApiBearerAuth()
-    async unlock_user(@Body() body: { userId: string }) {
-        return this.authService.unlock_user(body.userId);
+    logout(@Body() dto: RefreshTokenDto) {
+        return this.auth.logout(dto.refreshToken);
     }
 
-    @Get("logout")
+    @Get('me')
     @UseGuards(AuthGuard)
-    @ApiBearerAuth()
-    async logout(
-        @Headers("authorization") authHeader: string,
-        @Res() res: Response,
-    ) {
-        try {
-            const accessToken = authHeader.split(" ")[1];
-            const userId = await this.prisma.user.findFirst({
-                where: {
-                    accessToken: accessToken,
-                },
-                select: {
-                    id: true,
-                }
-            });
-            await this.prisma.user.update({
-                where: {
-                    id: userId?.id,
-                },
-                data: {
-                    accessToken: null,
-                }
-            });
-            return res.status(200).json({
-                success: true,
-                message: "User logged out successfully",
-            });
-        } catch (err) {
-            console.log(err);
-            throw new InternalServerErrorException({
-                success: false,
-                message: "Authentication failed",
-            })
-        }
+    me(@Req() req: AuthedRequest) {
+        return { userId: req.user.userId, email: req.user.email };
     }
 }

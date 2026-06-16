@@ -1,30 +1,41 @@
 import { NestFactory } from '@nestjs/core';
-import { AppModule } from './app.module';
-import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { ValidationPipe } from '@nestjs/common';
+import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
+import { AppModule } from './app.module';
 
 async function bootstrap() {
     const app = await NestFactory.create(AppModule);
 
-    if (process.env.MODE == "Dev") {
-        // Set up Swagger
+    app.setGlobalPrefix('api');
+    app.enableCors();
+    app.useGlobalPipes(
+        new ValidationPipe({
+            whitelist: true,
+            forbidNonWhitelisted: false,
+            transform: true,
+            transformOptions: { enableImplicitConversion: true },
+        }),
+    );
+
+    if (process.env.MODE === 'Dev') {
         const config = new DocumentBuilder()
-            .setTitle('Jubra Stock Management API')
-            .setDescription('API documentation for Jubra')
+            .setTitle('Halal Connect / ZawajHub API')
+            .setDescription('Backend for the Halal Connect matrimonial mobile app')
             .setVersion('1.0')
             .addBearerAuth()
             .build();
 
         const document = SwaggerModule.createDocument(app, config);
-        SwaggerModule.setup('api', app, document); // Swagger UI at /api
+        SwaggerModule.setup('docs', app, document);
     }
 
-    app.useGlobalPipes(new ValidationPipe);
-    app.enableCors();
-
-    await app.listen(process.env.PORT ?? 3000);
-    console.log(`🚀 Server running at http://localhost:${process.env.PORT}`);
-    console.log(`📄 Swagger UI available at http://localhost:${process.env.PORT}/api`);
+    const port = Number(process.env.PORT ?? 3000);
+    await app.listen(port);
+    // eslint-disable-next-line no-console
+    console.log(`🚀 Server running at http://localhost:${port}/api`);
+    if (process.env.MODE === 'Dev') {
+        // eslint-disable-next-line no-console
+        console.log(`📄 Swagger UI at http://localhost:${port}/docs`);
+    }
 }
-bootstrap();
-
+void bootstrap();

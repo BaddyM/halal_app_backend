@@ -1,84 +1,74 @@
 import {
     CanActivate,
     ExecutionContext,
+    ForbiddenException,
     Injectable,
     UnauthorizedException,
-    Inject,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
-import { CACHE_MANAGER } from '@nestjs/cache-manager';
-import { Cache } from 'cache-manager';
+import { Request } from 'express';
 import { PrismaService } from 'src/prisma/prisma.service';
+import { RealtimeBus } from 'src/realtime/realtime.bus';
+
+export interface AuthedRequest extends Request {
+    user: { userId: string; email: string; role: string };
+}
 
 @Injectable()
 export class AuthGuard implements CanActivate {
     constructor(
-        private jwtService: JwtService,
-        private prisma: PrismaService,
-        @Inject(CACHE_MANAGER) private cacheManager: Cache,
-    ) { }
+        private readonly jwt: JwtService,
+        private readonly prisma: PrismaService,
+        private readonly realtime: RealtimeBus,
+    ) {}
 
     async canActivate(context: ExecutionContext): Promise<boolean> {
-        const request = context.switchToHttp().getRequest();
-        const token = this.extractTokenFromHeader(request);
-
-        if (process.env.MODE == 'Dev') {
-            console.log('request_url', request.url);
-            console.log('request_method', request.method);
-            console.log('token', token);
+        const req = context.switchToHttp().getRequest<AuthedRequest>();
+        const header = req.headers['authorization'];
+        if (!header || !header.startsWith('Bearer ')) {
+            throw new UnauthorizedException('Missing bearer token');
         }
-
-        if (!token) throw new UnauthorizedException('Invalid token');
-
+        const token = header.slice('Bearer '.length).trim();
+        let payload: { sub: string; email: string };
         try {
-            const payload = await this.jwtService.verifyAsync(token, {
-                secret: process.env.SYSTEM_SECRET,
-                clockTolerance: 0,
-            });
-
-            const now = Math.floor(Date.now() / 1000);
-
-            if (process.env.MODE == "Dev") {
-                console.log(`Token expires at: ${payload.exp}`);
-                console.log(`Current time:      ${now}`);
-                console.log(`Seconds left:      ${payload.exp - now}`);
-            }
-
-            // 1. Check Redis first (The "Fast Path")
-            const cacheKey = `auth_session:${token}`;
-            let userSession: any = await this.cacheManager.get(cacheKey);
-
-            // Treat malformed cached values (e.g. legacy entries holding the token string) as cache miss
-            const isValidSession =
-                userSession && typeof userSession === 'object' && 'role' in userSession;
-
-            if (!isValidSession) {
-                // 2. Cache Miss - Hit Prisma (The "Slow Path")
-                const userFromToken = await this.prisma.user.findFirst({
-                    where: { accessToken: token, isActive: true },
-                    select: { id: true, role: true }, // Only select what you need
-                });
-
-                if (!userFromToken) throw new UnauthorizedException();
-
-                // 3. Store in Redis for future requests (e.g., for 5 minutes)
-                await this.cacheManager.set(cacheKey, userFromToken, 300000);
-                userSession = userFromToken;
-            }
-
-            request['user'] = userSession;
+            payload = await this.jwt.verifyAsync<{ sub: string; email: string }>(token);
         } catch {
-            throw new UnauthorizedException({
-                success: false,
-                location: 'middleware',
-                message: 'User not authorized',
+            throw new UnauthorizedException('Invalid or expired token');
+        }
+
+        // Enforce bans/suspensions immediately: a disabled account is rejected
+        // on its very next request with a code the app maps to a forced logout.
+        const user = await this.prisma.user.findUnique({
+            where: { id: payload.sub },
+            select: { isActive: true, plan: true, planExpiresAt: true, role: true },
+        });
+        if (!user || !user.isActive) {
+            throw new ForbiddenException('account_banned');
+        }
+
+        // Lazily lapse an expired subscription: a Premium plan whose
+        // planExpiresAt has passed is downgraded to Basic on the next request,
+        // so feature-gating (which reads user.plan) reflects reality without a cron.
+        if (
+            user.plan !== 'basic' &&
+            user.planExpiresAt &&
+            user.planExpiresAt.getTime() < Date.now()
+        ) {
+            await this.prisma.user.update({
+                where: { id: payload.sub },
+                data: { plan: 'basic', planExpiresAt: null },
+            });
+            await this.prisma.subscription.updateMany({
+                where: { userId: payload.sub, status: 'active' },
+                data: { status: 'expired' },
+            });
+            this.realtime.emitToUser(payload.sub, 'subscription:updated', {
+                tier: 'basic',
+                status: 'expired',
             });
         }
-        return true;
-    }
 
-    private extractTokenFromHeader(request: any): string | undefined {
-        const [type, token] = request.headers.authorization?.split(' ') ?? [];
-        return type === 'Bearer' ? token : undefined;
+        req.user = { userId: payload.sub, email: payload.email, role: user.role };
+        return true;
     }
 }
