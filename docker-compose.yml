@@ -6,12 +6,12 @@ services:
       context: .
       dockerfile: Dockerfile
     command: sh -c "npx prisma db push && npm run start:prod"
-    container_name: jubra-backend
+    container_name: halal-backend
     restart: always
     ports:
       - "3003:3000"
     environment:
-      - DATABASE_URL=mysql://root:Sextape,123@mysql:3306/jubra_db
+      - DATABASE_URL=mysql://root:Sextape,123@mysql:3306/halal_db
       - PORT=3000
       - SYSTEM_SECRET=MYAUTHSECRETISVERYSTRONG
       - MODE=Prod
@@ -19,44 +19,44 @@ services:
       - EMAIL_USER=
       - EMAIL_PASS=
     volumes:
-      - /root/jubra/jubra-assets:/app/uploads
-      - /root/jubra/assets:/app/src/assets
+      - /root/halal/halal-assets:/app/uploads
+      - /root/halal/assets:/app/src/assets
     depends_on:
       mysql:
         condition: service_healthy
       redis:
         condition: service_started
     networks:
-      - jubra-network
+      - halal-network
 
   redis:
-    image: redis:7-alpine
-    container_name: jubra-redis
+    image: redis:latest
+    container_name: halal-redis
     restart: always
     ports:
       - "6378:6379"
     networks:
-      - jubra-network
+      - halal-network
 
   mysql:
-    image: mysql:9.6.0
-    container_name: jubra-mysql
+    image: mysql:latest
+    container_name: halal-mysql
     restart: always
     ports:
-      - "3307:3306"
+      - "3308:3306"
     environment:
       - MYSQL_ROOT_PASSWORD=Sextape,123
-      - MYSQL_DATABASE=jubra_db
+      - MYSQL_DATABASE=halal_db
     volumes:
       - mysql_data:/var/lib/mysql
     healthcheck:
       test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-pSextape,123"]
     networks:
-      - jubra-network
+      - halal-network
 
 networks:
-  jubra-network:
-    name: "jubra-network"
+  halal-network:
+    name: "halal-network"
     driver: bridge
 
 volumes:
