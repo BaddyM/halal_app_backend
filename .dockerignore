@@ -1,9 +1,19 @@
 node_modules
 dist
+coverage
 npm-debug.log
 .git
-.env
-.prettierrc
 .gitignore
+.env
+.env.*
+.prettierrc
 Dockerfile
+.dockerignore
+docker-compose.yml
 README.md
+# local runtime data — never bake into the image
+uploads
+src/assets
+# never ship credentials
+*firebase-adminsdk*.json
+*service-account*.json
