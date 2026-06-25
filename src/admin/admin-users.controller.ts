@@ -16,6 +16,7 @@ import { AuditInterceptor } from './audit.interceptor';
 import { AdminUsersService } from './admin-users.service';
 import {
   AdminMessageDto,
+  AdminUpdateUserDto,
   AdminUserQueryDto,
   CreateUserDto,
   SetUserStatusDto,
@@ -43,6 +44,11 @@ export class AdminUsersController {
     return this.users.getOne(id);
   }
 
+  @Patch(':id')
+  update(@Param('id') id: string, @Body() dto: AdminUpdateUserDto) {
+    return this.users.updateUser(id, dto);
+  }
+
   @Patch(':id/status')
   setStatus(@Param('id') id: string, @Body() dto: SetUserStatusDto) {
     return this.users.setStatus(id, dto.status as UserStatus);
@@ -56,5 +62,10 @@ export class AdminUsersController {
   @Post(':id/message')
   message(@Param('id') id: string, @Body() dto: AdminMessageDto) {
     return this.users.sendMessage(id, dto.subject, dto.body);
+  }
+
+  @Post(':id/reset-swipes')
+  resetSwipes(@Param('id') id: string) {
+    return this.users.resetSwipes(id);
   }
 }

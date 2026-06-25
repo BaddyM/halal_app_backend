@@ -1,10 +1,15 @@
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
+import { json, urlencoded } from 'express';
 import { AppModule } from './app.module';
 
 async function bootstrap() {
-    const app = await NestFactory.create(AppModule);
+    // Disable Nest's default 100kb body parser so we can raise the limit —
+    // ad images arrive as base64 data URLs (up to ~7MB encoded).
+    const app = await NestFactory.create(AppModule, { bodyParser: false });
+    app.use(json({ limit: '12mb' }));
+    app.use(urlencoded({ extended: true, limit: '12mb' }));
 
     app.setGlobalPrefix('api');
     app.enableCors();

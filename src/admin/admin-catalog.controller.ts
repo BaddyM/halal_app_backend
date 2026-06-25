@@ -14,10 +14,13 @@ import { AdminGuard } from './admin.guard';
 import { AuditInterceptor } from './audit.interceptor';
 import { AdminCatalogService } from './admin-catalog.service';
 import {
+  AttachSubscriptionDto,
   CreateAdDto,
+  CreatePlanDto,
   UpdateAdDto,
   UpdateIslamicSettingsDto,
   UpdatePlanDto,
+  UpdateSubscriptionDto,
 } from './dto';
 
 @UseGuards(AuthGuard, AdminGuard)
@@ -47,15 +50,46 @@ export class AdminCatalogController {
     return this.catalog.deleteAd(id);
   }
 
-  // ── Plans ──────────────────────────────────────────────────
+  // ── Plans (subscription packages) ──────────────────────────
   @Get('plans')
   listPlans() {
     return this.catalog.listPlans();
   }
 
+  @Post('plans')
+  createPlan(@Body() dto: CreatePlanDto) {
+    return this.catalog.createPlan(dto);
+  }
+
   @Patch('plans/:id')
   updatePlan(@Param('id') id: string, @Body() dto: UpdatePlanDto) {
     return this.catalog.updatePlan(id, dto);
+  }
+
+  @Delete('plans/:id')
+  deletePlan(@Param('id') id: string) {
+    return this.catalog.deletePlan(id);
+  }
+
+  // ── Subscriptions ──────────────────────────────────────────
+  @Get('subscriptions')
+  listSubscriptions() {
+    return this.catalog.listSubscriptions();
+  }
+
+  @Post('subscriptions')
+  attachSubscription(@Body() dto: AttachSubscriptionDto) {
+    return this.catalog.attachSubscription(dto);
+  }
+
+  @Patch('subscriptions/:id')
+  updateSubscription(@Param('id') id: string, @Body() dto: UpdateSubscriptionDto) {
+    return this.catalog.updateSubscription(id, dto);
+  }
+
+  @Delete('subscriptions/:id')
+  deleteSubscription(@Param('id') id: string) {
+    return this.catalog.deleteSubscription(id);
   }
 
   // ── Islamic settings ───────────────────────────────────────

@@ -18,18 +18,30 @@ export class AdsService {
     const audiences = isPremium ? ['ALL', 'PREMIUM'] : ['ALL', 'FREE'];
     const now = new Date();
 
-    const ads = await this.prisma.ad.findMany({
-      where: {
-        placement,
-        isActive: true,
-        audience: { in: audiences as any },
-        AND: [
-          { OR: [{ startsAt: null }, { startsAt: { lte: now } }] },
-          { OR: [{ endsAt: null }, { endsAt: { gte: now } }] },
-        ],
-      },
+    // Shared gate: active, within its run window, and visible to this audience.
+    const baseWhere = {
+      isActive: true,
+      audience: { in: audiences as any },
+      AND: [
+        { OR: [{ startsAt: null }, { startsAt: { lte: now } }] },
+        { OR: [{ endsAt: null }, { endsAt: { gte: now } }] },
+      ],
+    };
+
+    // Prefer ads targeted at this exact placement…
+    let ads = await this.prisma.ad.findMany({
+      where: { ...baseWhere, placement },
       orderBy: { sortOrder: 'asc' },
     });
+
+    // …but if none target this slot, fall back to any active ad so uploaded
+    // campaigns still surface everywhere instead of showing the house promo.
+    if (ads.length === 0) {
+      ads = await this.prisma.ad.findMany({
+        where: baseWhere,
+        orderBy: { sortOrder: 'asc' },
+      });
+    }
 
     return ads.map((a) => this.serialize(a));
   }

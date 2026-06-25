@@ -4,7 +4,7 @@ import * as bcrypt from 'bcryptjs';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { PushService } from 'src/push/push.service';
 import { RealtimeBus } from 'src/realtime/realtime.bus';
-import { AdminUserQueryDto, CreateUserDto } from './dto';
+import { AdminUpdateUserDto, AdminUserQueryDto, CreateUserDto } from './dto';
 
 // Practice label → prayerFrequency values it maps to (see practiceLabel()).
 const PRACTICE_FREQUENCIES: Record<string, string[]> = {
@@ -145,7 +145,7 @@ export class AdminUsersService {
         status,
         isActive: status === 'active' || status === 'pending',
         isEmailVerified: true,
-        profile: { create: {} },
+        profile: { create: { ...(dto.gender && { gender: dto.gender }) } },
       },
       include: { profile: true },
     });
@@ -156,6 +156,85 @@ export class AdminUsersService {
       { userId: user.id },
     );
     return this.serialize(user);
+  }
+
+  /// Full admin update of a user's account + profile details.
+  async updateUser(id: string, dto: AdminUpdateUserDto) {
+    const user = await this.prisma.user.findUnique({
+      where: { id },
+      select: { id: true },
+    });
+    if (!user) throw new NotFoundException('User not found');
+
+    // Guard email uniqueness when it changes.
+    if (dto.email) {
+      const clash = await this.prisma.user.findFirst({
+        where: { email: dto.email, NOT: { id } },
+        select: { id: true },
+      });
+      if (clash) throw new ConflictException('Email already registered');
+    }
+
+    const userData: Prisma.UserUpdateInput = {};
+    if (dto.name !== undefined) userData.name = dto.name;
+    if (dto.email !== undefined) userData.email = dto.email;
+    if (dto.password) userData.password = await bcrypt.hash(dto.password, 10);
+    if (dto.role !== undefined) userData.role = dto.role as Role;
+    if (dto.status !== undefined) {
+      userData.status = dto.status as UserStatus;
+      userData.isActive = dto.status === 'active' || dto.status === 'pending';
+    }
+
+    // Profile fields are upserted so a user without a profile row still works.
+    // Plain scalar object so the same shape satisfies both update and create.
+    const profileData: Record<string, unknown> = {};
+    if (dto.gender !== undefined) profileData.gender = dto.gender;
+    if (dto.city !== undefined) profileData.city = dto.city;
+    if (dto.country !== undefined) profileData.country = dto.country;
+    if (dto.profession !== undefined) profileData.profession = dto.profession;
+    if (dto.bio !== undefined) profileData.bio = dto.bio;
+    if (dto.dateOfBirth !== undefined) {
+      profileData.dateOfBirth = dto.dateOfBirth ? new Date(dto.dateOfBirth) : null;
+    }
+    // Setting a gender makes the profile discover-eligible.
+    if (dto.gender !== undefined) profileData.isComplete = !!dto.gender;
+
+    const updated = await this.prisma.user.update({
+      where: { id },
+      data: {
+        ...userData,
+        ...(Object.keys(profileData).length > 0 && {
+          profile: {
+            upsert: {
+              update: profileData as Prisma.ProfileUpdateWithoutUserInput,
+              create: profileData as Prisma.ProfileCreateWithoutUserInput,
+            },
+          },
+        }),
+      },
+      include: { profile: true },
+    });
+
+    if (dto.status && !(dto.status === 'active' || dto.status === 'pending')) {
+      this.realtime.emitToUser(id, 'account:banned', { status: dto.status });
+    }
+    this.realtime.emitAdminEvent('moderation', `${updated.name} updated`, { userId: id });
+    return this.serialize(updated);
+  }
+
+  /// Clears every like/pass the user has made so their discovery deck
+  /// repopulates with profiles they'd already swiped on.
+  async resetSwipes(id: string) {
+    const user = await this.prisma.user.findUnique({
+      where: { id },
+      select: { id: true, name: true },
+    });
+    if (!user) throw new NotFoundException('User not found');
+    const { count } = await this.prisma.like.deleteMany({ where: { fromUserId: id } });
+    this.realtime.emitAdminEvent('moderation', `${user.name}'s discovery deck reset`, {
+      userId: id,
+    });
+    return { id, cleared: count };
   }
 
   async getOne(id: string) {

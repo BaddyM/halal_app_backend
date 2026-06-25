@@ -244,6 +244,7 @@ async function seedDemoUser() {
     create: {
       email,
       password: hashed,
+      role: 'admin',
       name: 'Arnold Henry',
       isEmailVerified: true,
       profile: {
@@ -520,9 +521,9 @@ async function seedIncomingLikesToDemo() {
 
 async function main() {
   await seedDemoUser();
-//   for (const s of seeds) await seedProfile(s);
-//   await seedConversations();
-//   await seedIncomingLikesToDemo();
+  //   for (const s of seeds) await seedProfile(s);
+  //   await seedConversations();
+  //   await seedIncomingLikesToDemo();
   console.log(
     `\n✅ Seed complete. Demo login: arnoldhenry958@gmail.com / demo1234\n`,
   );

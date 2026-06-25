@@ -63,6 +63,21 @@ export class UsersService {
         return ids;
     }
 
+    /// Collapse an absolute asset URL to its host-relative path so stored
+    /// references survive an API host change. Relative paths and null pass
+    /// through unchanged.
+    private toRelativeAssetPath(url: string | null | undefined): string | null {
+        if (!url) return url ?? null;
+        if (/^https?:\/\//i.test(url)) {
+            try {
+                return new URL(url).pathname;
+            } catch {
+                return url;
+            }
+        }
+        return url;
+    }
+
     private serializeProfile(
         user: any,
         viewer: { id: string; plan: SubscriptionPlan } | null,
@@ -446,7 +461,10 @@ export class UsersService {
             ...(dto.profession !== undefined && { profession: dto.profession }),
             ...(dto.bio !== undefined && { bio: dto.bio }),
             ...(dto.primaryImageUrl !== undefined && {
-                primaryImageUrl: dto.primaryImageUrl,
+                // Store a host-relative path. Clients sometimes echo back an
+                // absolute URL (e.g. http://<lan-ip>:3001/uploads/...) which
+                // breaks when the API host changes; collapse it to the path.
+                primaryImageUrl: this.toRelativeAssetPath(dto.primaryImageUrl),
             }),
             ...(dto.prayerFrequency !== undefined && {
                 prayerFrequency: dto.prayerFrequency,
