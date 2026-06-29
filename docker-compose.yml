@@ -16,8 +16,13 @@ services:
       - SYSTEM_SECRET=MYAUTHSECRETISVERYSTRONG
       - MODE=Prod
       - REDIS_URL=redis://redis:6379
-      - EMAIL_USER=
-      - EMAIL_PASS=
+      - MAIL_HOST=smtp.gmail.com
+      - MAIL_PORT=587
+      - MAIL_SECURE=false
+      - MAIL_USER=halalconnectug@gmail.com
+      - MAIL_PASS=ffktmxikcyspvkws
+      - MAIL_FROM=halalconnectug@gmail.com
+      - MAIL_FROM_NAME=Halalconnect
     volumes:
       - /root/halal/halal-assets:/app/uploads
       - /root/halal/assets:/app/src/assets

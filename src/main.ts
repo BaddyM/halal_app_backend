@@ -5,11 +5,12 @@ import { json, urlencoded } from 'express';
 import { AppModule } from './app.module';
 
 async function bootstrap() {
-    // Disable Nest's default 100kb body parser so we can raise the limit —
-    // ad images arrive as base64 data URLs (up to ~7MB encoded).
+    // Keep uploads practical: large media should be streamed or stored as files,
+    // not forced through oversized JSON bodies. The app still accepts normal
+    // profile and form payloads without wasting memory on huge requests.
     const app = await NestFactory.create(AppModule, { bodyParser: false });
-    app.use(json({ limit: '12mb' }));
-    app.use(urlencoded({ extended: true, limit: '12mb' }));
+    app.use(json({ limit: '2mb' }));
+    app.use(urlencoded({ extended: true, limit: '2mb' }));
 
     app.setGlobalPrefix('api');
     app.enableCors();

@@ -1,4 +1,6 @@
 import { Module } from '@nestjs/common';
+import { APP_GUARD } from '@nestjs/core';
+import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import { ConfigModule } from '@nestjs/config';
 import { ServeStaticModule } from '@nestjs/serve-static';
 import { join } from 'path';
@@ -18,9 +20,12 @@ import { InboxModule } from './inbox/inbox.module';
 import { MatchesModule } from './matches/matches.module';
 import { WebhooksModule } from './webhooks/webhooks.module';
 import { AdminModule } from './admin/admin.module';
+import { MailModule } from './mail/mail.module';
 
 @Module({
     imports: [
+        // Global request throttling to protect likes/messages and other endpoints
+        ThrottlerModule.forRoot({ ttl: 60, limit: 30 }),
         ConfigModule.forRoot({ isGlobal: true }),
         ServeStaticModule.forRoot({
             rootPath: join(process.cwd(), 'uploads'),
@@ -42,6 +47,10 @@ import { AdminModule } from './admin/admin.module';
         MatchesModule,
         WebhooksModule,
         AdminModule,
+        MailModule,
+    ],
+    providers: [
+        { provide: APP_GUARD, useClass: ThrottlerGuard },
     ],
 })
 export class AppModule {}

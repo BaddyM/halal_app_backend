@@ -25,6 +25,14 @@ const ONLINE_WINDOW_MS = 5 * 60 * 1000; // 5 min
 
 @Injectable()
 export class UsersService {
+    // Simple in-memory TTL cache for matchesSummary to improve first-reply
+    // latency. Keyed by userId. TTL in ms.
+    private matchesSummaryCache = new Map<
+        string,
+        { expiresAt: number; value: { pendingCount: number; acceptedCount: number; pending: any[]; accepted: any[] } }
+    >();
+    private readonly matchesSummaryTtl = 5000; // 5s
+
     private readonly logger = new Logger(UsersService.name);
 
     constructor(
@@ -85,12 +93,15 @@ export class UsersService {
         matchReasons: string[] = [],
         // 'granted' unlocks the owner's private photos for this viewer.
         privateAccess: 'none' | 'pending' | 'granted' = 'none',
+        options?: { mode?: 'summary' | 'full'; maxPhotos?: number },
     ) {
         const profile = user.profile;
         const allPhotos: Array<{ id: string; url: string; isPrimary?: boolean; isPrivate?: boolean }> =
             user.photos ?? [];
         const isSelf = viewer?.id === user.id;
         const canSeePrivate = isSelf || privateAccess === 'granted';
+        const mode = options?.mode ?? 'full';
+        const maxPhotos = Math.max(1, options?.maxPhotos ?? (mode === 'summary' ? 3 : 10));
 
         const publicPhotos = allPhotos.filter((p) => !p.isPrivate);
         const privatePhotos = allPhotos.filter((p) => p.isPrivate);
@@ -98,33 +109,47 @@ export class UsersService {
         // Detailed photo list. The owner sees everything (with privacy flags);
         // a viewer sees public photos plus, only if granted, the private ones.
         const visiblePhotos = canSeePrivate ? allPhotos : publicPhotos;
-        const photos = visiblePhotos.map((p) => ({
+        const visibleSlice = visiblePhotos.slice(0, maxPhotos);
+        const photos = visibleSlice.map((p) => ({
             id: p.id,
-            url: p.url,
+            url: this.toRelativeAssetPath(p.url),
             isPrimary: p.isPrimary ?? false,
             isPrivate: p.isPrivate ?? false,
         }));
+        const galleryImages = visibleSlice.map((p) => this.toRelativeAssetPath(p.url));
+        const primaryImage = this.toRelativeAssetPath(
+            profile?.primaryImageUrl ?? publicPhotos[0]?.url ?? null,
+        );
 
-        return {
+        const basePayload = {
             id: user.id,
             name: user.name,
-            phone: isSelf ? user.phone : undefined,
-            email: isSelf ? user.email : undefined,
             age: this.calcAge(profile?.dateOfBirth),
             city: profile?.city,
             country: profile?.country,
             location: [profile?.city, profile?.country].filter(Boolean).join(', '),
             profession: profile?.profession,
             bio: profile?.bio,
-            imageUrl: profile?.primaryImageUrl ?? publicPhotos[0]?.url ?? null,
-            galleryImages: visiblePhotos.map((p) => p.url),
+            imageUrl: primaryImage,
+            galleryImages,
             photos,
-            // Private-photo metadata so the client can render a lock + request CTA.
             privatePhotoCount: privatePhotos.length,
             privatePhotoAccess: isSelf ? 'owner' : privateAccess,
             isVerified: profile?.isVerified ?? false,
             isOnline: this.isOnline(user.lastSeenAt),
             lastSeenAt: user.lastSeenAt,
+            compatibilityScore,
+            matchReasons,
+        };
+
+        if (mode === 'summary') {
+            return basePayload;
+        }
+
+        return {
+            ...basePayload,
+            phone: isSelf ? user.phone : undefined,
+            email: isSelf ? user.email : undefined,
             gender: profile?.gender,
             prayerFrequency: profile?.prayerFrequency,
             sect: profile?.sect,
@@ -139,8 +164,6 @@ export class UsersService {
             values: profile?.values ?? [],
             interests: profile?.interests ?? [],
             completeness: profile?.completeness ?? 0,
-            compatibilityScore,
-            matchReasons,
             // Self-only fields
             plan: isSelf ? user.plan : undefined,
             isEmailVerified: isSelf ? user.isEmailVerified : undefined,
@@ -838,6 +861,8 @@ export class UsersService {
                     { id: viewerId, plan: viewer.plan },
                     s.score,
                     s.reasons,
+                    'none',
+                    { mode: 'summary', maxPhotos: 2 },
                 ),
             ),
         };
@@ -1059,6 +1084,8 @@ export class UsersService {
                     viewer ? { id: viewerId, plan: viewer.plan } : null,
                     details.score,
                     details.reasons,
+                    'none',
+                    { mode: 'summary', maxPhotos: 2 },
                 ),
             };
         });
@@ -1101,6 +1128,8 @@ export class UsersService {
                     viewer ? { id: viewerId, plan: viewer.plan } : null,
                     details.score,
                     details.reasons,
+                    'none',
+                    { mode: 'summary', maxPhotos: 2 },
                 ),
             };
         });
@@ -1112,6 +1141,35 @@ export class UsersService {
     async matchesByStatus(userId: string, status?: string) {
         if (status === 'pending') return this.listIncomingLikes(userId);
         return this.listMatches(userId);
+    }
+
+    /// Convenience summary used by the dedicated matching API so the app can
+    /// render pending and accepted matches in one round trip.
+    async matchesSummary(userId: string) {
+        const now = Date.now();
+        const cached = this.matchesSummaryCache.get(userId);
+        if (cached && cached.expiresAt > now) {
+            return cached.value;
+        }
+
+        const [pending, accepted] = await Promise.all([
+            this.listIncomingLikes(userId),
+            this.listMatches(userId),
+        ]);
+
+        const result = {
+            pendingCount: pending.length,
+            acceptedCount: accepted.length,
+            pending,
+            accepted,
+        } as const;
+
+        this.matchesSummaryCache.set(userId, {
+            expiresAt: now + this.matchesSummaryTtl,
+            value: result,
+        });
+
+        return result;
     }
 
     /// Accept an incoming interest = like the person back (forms a match if it

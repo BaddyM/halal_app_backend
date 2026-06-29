@@ -55,6 +55,7 @@
         "uuid": "^13.0.0"
     },
     "devDependencies": {
+        "socket.io-client": "^4.8.1",
         "@eslint/eslintrc": "^3.2.0",
         "@eslint/js": "^9.18.0",
         "@nestjs/cli": "^11.0.0",
@@ -97,6 +98,9 @@
         "testRegex": ".*\\.spec\\.ts$",
         "transform": {
             "^.+\\.(t|j)s$": "ts-jest"
+        },
+        "moduleNameMapper": {
+            "^src/(.*)$": "<rootDir>/$1"
         },
         "collectCoverageFrom": [
             "**/*.(t|j)s"

@@ -26,16 +26,29 @@ export class NotificationsService {
         const city = profile.city as string | null;
         const country = profile.country as string | null;
         const photos: Array<{ url: string }> = u.photos ?? [];
+        const imageUrl = this.toRelativeAssetPath(profile.primaryImageUrl ?? photos[0]?.url ?? null);
         return {
             id: u.id,
             name: u.name,
             // Fall back to the first gallery photo if no primary is set.
-            imageUrl: profile.primaryImageUrl ?? photos[0]?.url ?? null,
+            imageUrl,
             isOnline: this.isOnline(u.lastSeenAt),
             isVerified: profile.isVerified ?? false,
             age: this.calcAge(profile.dateOfBirth),
             location: [city, country].filter(Boolean).join(', '),
         };
+    }
+
+    private toRelativeAssetPath(url: string | null | undefined): string | null {
+        if (!url) return url ?? null;
+        if (/^https?:\/\//i.test(url)) {
+            try {
+                return new URL(url).pathname;
+            } catch {
+                return url;
+            }
+        }
+        return url;
     }
 
     /// Return a chronologically-merged feed of two types:

@@ -29,7 +29,20 @@
 
 ```bash
 $ npm install
+$ cp .env.example .env
 ```
+
+Set the SMTP values in `.env` before running the app in non-dev mode:
+
+- `MAIL_HOST`
+- `MAIL_PORT`
+- `MAIL_SECURE`
+- `MAIL_USER`
+- `MAIL_PASS`
+- `MAIL_FROM`
+- `MAIL_FROM_NAME`
+
+The project is now preconfigured to use the Gmail account `halalconnectug@gmail.com` with the provided app password.
 
 ## Compile and run the project
 

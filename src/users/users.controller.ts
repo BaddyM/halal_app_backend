@@ -120,8 +120,8 @@ export class UsersController {
     }
 
     @Get('matches')
-    matches(@Req() req: AuthedRequest) {
-        return this.users.listMatches(req.user.userId);
+    matches(@Req() req: AuthedRequest, @Query('status') status?: string) {
+        return this.users.matchesByStatus(req.user.userId, status);
     }
 
     // ── Safety ───────────────────────────────────────────────────

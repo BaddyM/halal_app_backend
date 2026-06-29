@@ -72,7 +72,12 @@ export class ChatService {
         }
         const other = await this.prisma.user.findUnique({
             where: { id: otherUserId },
-            include: { profile: true },
+            select: {
+                id: true,
+                name: true,
+                lastSeenAt: true,
+                profile: { select: { primaryImageUrl: true, isVerified: true } },
+            },
         });
         if (!other) throw new NotFoundException('User not found');
 
@@ -152,12 +157,43 @@ export class ChatService {
         const allConversations = await this.prisma.conversation.findMany({
             where: { OR: [{ userAId: userId }, { userBId: userId }] },
             orderBy: { lastMessageAt: 'desc' },
-            include: {
-                userA: { include: { profile: true } },
-                userB: { include: { profile: true } },
+            select: {
+                id: true,
+                createdAt: true,
+                lastMessageAt: true,
+                waliInvolved: true,
+                userAId: true,
+                userBId: true,
+                userA: {
+                    select: {
+                        id: true,
+                        name: true,
+                        lastSeenAt: true,
+                        profile: { select: { primaryImageUrl: true, isVerified: true } },
+                    },
+                },
+                userB: {
+                    select: {
+                        id: true,
+                        name: true,
+                        lastSeenAt: true,
+                        profile: { select: { primaryImageUrl: true, isVerified: true } },
+                    },
+                },
                 messages: {
                     orderBy: { createdAt: 'desc' },
                     take: 1,
+                    select: {
+                        id: true,
+                        conversationId: true,
+                        senderId: true,
+                        text: true,
+                        type: true,
+                        mediaUrl: true,
+                        flagged: true,
+                        createdAt: true,
+                        readAt: true,
+                    },
                 },
             },
         });

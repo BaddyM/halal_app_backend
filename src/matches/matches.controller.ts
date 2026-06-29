@@ -15,6 +15,21 @@ export class MatchesController {
     return this.users.matchesByStatus(req.user.userId, status);
   }
 
+  @Get('summary')
+  summary(@Req() req: AuthedRequest) {
+    return this.users.matchesSummary(req.user.userId);
+  }
+
+  @Get('pending')
+  pending(@Req() req: AuthedRequest) {
+    return this.users.matchesByStatus(req.user.userId, 'pending');
+  }
+
+  @Get('accepted')
+  accepted(@Req() req: AuthedRequest) {
+    return this.users.matchesByStatus(req.user.userId, 'accepted');
+  }
+
   @Get(':id/compatibility')
   compatibility(@Req() req: AuthedRequest, @Param('id') id: string) {
     return this.users.compatibilityWith(req.user.userId, id);
@@ -28,5 +43,16 @@ export class MatchesController {
   @Post(':id/reject')
   reject(@Req() req: AuthedRequest, @Param('id') id: string) {
     return this.users.rejectInterest(req.user.userId, id);
+  }
+
+  // Adapter endpoints for alternate client expectations (backwards-compatibility)
+  @Post(':id/like')
+  like(@Req() req: AuthedRequest, @Param('id') id: string) {
+    return this.users.likeProfile(req.user.userId, { toUserId: id, type: 'like' });
+  }
+
+  @Post(':id/pass')
+  pass(@Req() req: AuthedRequest, @Param('id') id: string) {
+    return this.users.likeProfile(req.user.userId, { toUserId: id, type: 'pass' });
   }
 }

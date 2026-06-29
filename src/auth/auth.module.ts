@@ -5,6 +5,7 @@ import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
 import { AuthGuard } from './auth.guard';
 import { OAuthService } from './oauth.service';
+import { MailModule } from '../mail/mail.module';
 
 @Module({
     imports: [
@@ -16,6 +17,7 @@ import { OAuthService } from './oauth.service';
             }),
             inject: [ConfigService],
         }),
+        MailModule,
     ],
     controllers: [AuthController],
     providers: [AuthService, AuthGuard, OAuthService],

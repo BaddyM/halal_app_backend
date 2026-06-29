@@ -12,6 +12,7 @@ import * as bcrypt from 'bcryptjs';
 import { v4 as uuid } from 'uuid';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { RealtimeBus } from 'src/realtime/realtime.bus';
+import { MailService } from '../mail/mail.service';
 import { OAuthService } from './oauth.service';
 
 @Injectable()
@@ -24,6 +25,7 @@ export class AuthService {
         private readonly config: ConfigService,
         private readonly oauth: OAuthService,
         private readonly realtime: RealtimeBus,
+        private readonly mail: MailService,
     ) {}
 
     private logCode(kind: 'verify' | 'reset' | 'otp', email: string, code: string) {
@@ -98,6 +100,9 @@ export class AuthService {
             },
         });
         this.logCode('verify', user.email, code);
+        await this.mail.sendCodeEmail(user.email, code, 'verify').catch((error) => {
+            this.logger.warn(`Failed to send verification email to ${user.email}: ${error.message}`);
+        });
 
         // Live admin feed.
         this.realtime.emitAdminEvent('signup', `${user.name} joined`, { userId: user.id });
@@ -189,6 +194,9 @@ export class AuthService {
             },
         });
         this.logCode('verify', user.email, code);
+        await this.mail.sendCodeEmail(user.email, code, 'verify').catch((error) => {
+            this.logger.warn(`Failed to resend verification email to ${user.email}: ${error.message}`);
+        });
 
         return {
             success: true,
@@ -211,6 +219,9 @@ export class AuthService {
             },
         });
         this.logCode('reset', user.email, code);
+        await this.mail.sendCodeEmail(user.email, code, 'reset').catch((error) => {
+            this.logger.warn(`Failed to send reset email to ${user.email}: ${error.message}`);
+        });
 
         return {
             success: true,
