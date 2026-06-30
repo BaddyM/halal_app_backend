@@ -777,6 +777,30 @@ export class UsersService {
                         { country: { contains: q.location } },
                     ],
                 }),
+                ...(q.minAge != null || q.maxAge != null
+                    ? {
+                          dateOfBirth: {
+                              ...(q.minAge != null
+                                  ? {
+                                        lte: new Date(
+                                            new Date().getFullYear() - q.minAge,
+                                            new Date().getMonth(),
+                                            new Date().getDate(),
+                                        ),
+                                    }
+                                  : {}),
+                              ...(q.maxAge != null
+                                  ? {
+                                        gte: new Date(
+                                            new Date().getFullYear() - q.maxAge,
+                                            new Date().getMonth(),
+                                            new Date().getDate(),
+                                        ),
+                                    }
+                                  : {}),
+                          },
+                      }
+                    : undefined),
             },
             ...(q.search && {
                 OR: [
@@ -791,7 +815,6 @@ export class UsersService {
             }),
         };
 
-        // Age filter — applied in-memory because dob is stored
         const page = q.page ?? 1;
         const limit = q.limit ?? 20;
 

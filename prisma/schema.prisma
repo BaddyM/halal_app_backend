@@ -592,6 +592,7 @@ model IslamicSetting {
   prayerTimesEnabled  Boolean  @default(true)
   qiblaEnabled        Boolean  @default(true)
   dailyContentEnabled Boolean  @default(true)
+  tasbihEnabled       Boolean  @default(true)
   ramadanMode         Boolean  @default(false)
   // Default calculation method for prayer times (MWL | ISNA | Egypt | Makkah | Karachi)
   calcMethod          String   @default("MWL") @db.VarChar(16)

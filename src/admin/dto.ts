@@ -181,6 +181,7 @@ export class UpdateIslamicSettingsDto {
   @IsOptional() @IsBoolean() prayerTimesEnabled?: boolean;
   @IsOptional() @IsBoolean() qiblaEnabled?: boolean;
   @IsOptional() @IsBoolean() dailyContentEnabled?: boolean;
+  @IsOptional() @IsBoolean() tasbihEnabled?: boolean;
   @IsOptional() @IsBoolean() ramadanMode?: boolean;
   @IsOptional() @IsIn(['MWL', 'ISNA', 'Egypt', 'Makkah', 'Karachi']) calcMethod?: string;
 }

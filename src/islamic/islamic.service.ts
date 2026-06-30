@@ -25,6 +25,7 @@ export class IslamicService {
       prayerTimesEnabled: settings.prayerTimesEnabled,
       qiblaEnabled: settings.qiblaEnabled,
       dailyContentEnabled: settings.dailyContentEnabled,
+      tasbihEnabled: settings.tasbihEnabled,
       ramadanMode: settings.ramadanMode,
       calcMethod: settings.calcMethod,
     };
