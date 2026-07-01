@@ -89,6 +89,20 @@ enum LikeType {
   pass
 }
 
+enum TasbihVisibility {
+  private
+  matchesOnly
+  public
+}
+
+enum BadgeType {
+  milestone     // e.g., 1k, 10k, 100k
+  streak        // e.g., 7 days, 30 days
+  consistency   // e.g., completed daily for N days
+  special       // limited time or special events
+  achievement   // unlocked via specific conditions
+}
+
 // ─────────────────────────────────────────────────────────────
 //  USER & AUTH
 // ─────────────────────────────────────────────────────────────
@@ -164,6 +178,13 @@ model User {
   blocksReceived    Block[]  @relation("BlocksReceived")
   reportsGiven      Report[] @relation("ReportsGiven")
   reportsReceived   Report[] @relation("ReportsReceived")
+
+  // Tasbih
+  tasbihSessions    TasbihSession[]
+  tasbihDailyStats  TasbihDaily[]
+  tasbihStreaks     TasbihStreak[]
+  userBadges        UserBadge[]
+  tasbihSettings    TasbihUserSettings?
 
   @@index([email])
 }
@@ -635,3 +656,212 @@ model Broadcast {
 
   @@index([createdAt])
 }
+
+// ─────────────────────────────────────────────────────────────
+//  TASBIH — Islamic counter system
+// ─────────────────────────────────────────────────────────────
+
+// Badge definitions managed by admins
+model TasbihBadge {
+  id          String      @id @default(uuid())
+  name        String      @unique
+  description String?     @db.Text
+  badgeType   BadgeType
+  // Badge unlocks at this count (for milestone type)
+  threshold   Int?
+  // Badge unlocks after N consecutive days (for streak type)
+  streakDays  Int?
+  // Badge icon URL
+  iconUrl     String?
+  // Badge color (hex code)
+  color       String?     @db.VarChar(7)
+  isActive    Boolean     @default(true)
+  sortOrder   Int         @default(0)
+  
+  // Only award badge to premium users (null = all users)
+  requiresPremium Boolean  @default(false)
+  
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+  
+  userBadges  UserBadge[]
+
+  @@index([badgeType, isActive])
+}
+
+// Individual Tasbih count entry
+model TasbihSession {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  // Count in this session
+  count     Int      @default(0)
+  
+  // When session was created (local time for daily aggregation)
+  sessionDate DateTime @default(now())
+  
+  // Optional: prayer name or intention
+  intention String?  @db.VarChar(255)
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  @@index([userId, sessionDate])
+  @@index([createdAt])
+}
+
+// Daily aggregation (to avoid expensive queries)
+model TasbihDaily {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  // Date of the day (stored as date only, no time)
+  date      DateTime @db.Date
+  
+  // Total Tasbih count for this day
+  count     Int      @default(0)
+  
+  // Did user meet daily goal on this day?
+  metGoal   Boolean  @default(false)
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  @@unique([userId, date])
+  @@index([userId, date])
+}
+
+// Streak tracking
+model TasbihStreak {
+  id            String   @id @default(uuid())
+  userId        String
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  // Current consecutive days
+  currentStreak Int      @default(0)
+  
+  // Longest streak ever achieved
+  longestStreak Int      @default(0)
+  
+  // When the current streak started
+  streakStartDate DateTime?
+  
+  // When the current streak ended (null if ongoing)
+  streakEndDate DateTime?
+  
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  
+  @@unique([userId])
+  @@index([userId])
+}
+
+// User Tasbih badges (earned/progress)
+model UserBadge {
+  id          String   @id @default(uuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  badgeId     String
+  badge       TasbihBadge @relation(fields: [badgeId], references: [id], onDelete: Cascade)
+  
+  // When the badge was earned/awarded
+  earnedAt    DateTime?
+  
+  // Current progress towards badge (0-100%)
+  progress    Int      @default(0)
+  
+  // Locked, in_progress, earned
+  status      String   @default("locked") @db.VarChar(16)
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  @@unique([userId, badgeId])
+  @@index([userId, status])
+  @@index([earnedAt])
+}
+
+// User-specific Tasbih settings
+model TasbihUserSettings {
+  id                  String          @id @default(uuid())
+  userId              String          @unique
+  user                User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  // Privacy: private, matchesOnly, public
+  visibility          TasbihVisibility @default(private)
+  
+  // Daily goal (number of tasbihs to reach)
+  dailyGoal           Int             @default(100)
+  
+  // Enable notifications for milestones
+  notificationsEnabled Boolean        @default(true)
+  
+  // Enable sound/haptic feedback
+  soundEnabled        Boolean         @default(true)
+  hapticEnabled       Boolean         @default(true)
+  
+  // Lifetime Tasbih count (cached for fast queries)
+  lifetimeTotal       Int             @default(0)
+  
+  createdAt           DateTime        @default(now())
+  updatedAt           DateTime        @updatedAt
+  
+  @@index([userId])
+}
+
+// Admin Tasbih feature settings (singleton-like, keyed by feature)
+model TasbihSettings {
+  id                      String  @id @default(uuid())
+  
+  // Enable/disable features
+  badgesEnabled           Boolean @default(true)
+  streaksEnabled          Boolean @default(true)
+  leaderboardEnabled      Boolean @default(true)
+  dailyGoalEnabled        Boolean @default(true)
+  encouragementEnabled    Boolean @default(true)
+  
+  // Default daily goal for new users
+  defaultDailyGoal        Int     @default(100)
+  
+  // Min days for streak achievement
+  minStreakDays           Int     @default(7)
+  
+  // Leaderboard scope: global | country | city | matches
+  leaderboardScope        String  @default("global") @db.VarChar(32)
+  
+  // Encouragement messages (JSON array)
+  encouragementMessages   Json?
+  
+  updatedAt               DateTime @updatedAt
+}
+
+// Leaderboard cache (updated periodically)
+model TasbihLeaderboard {
+  id            String   @id @default(uuid())
+  userId        String
+  
+  // Ranking scope (global, country, etc.)
+  scope         String   @db.VarChar(32)
+  
+  // Rank in this scope
+  rank          Int
+  
+  // User's lifetime count
+  lifetimeCount Int
+  
+  // User's current streak
+  currentStreak Int
+  
+  // For sorting/pagination
+  score         Int
+  
+  updatedAt     DateTime @updatedAt
+  
+  @@unique([userId, scope])
+  @@index([scope, rank])
+  @@index([updatedAt])
+}
+
