@@ -117,7 +117,7 @@ export class TasbihSessionDto {
   id: string;
   userId: string;
   count: number;
-  intention?: string;
+  intention?: string | null;
   sessionDate: Date;
   createdAt: Date;
   updatedAt: Date;
@@ -167,11 +167,11 @@ export class TasbihLifetimeDto {
 export class UserBadgeDto {
   id: string;
   name: string;
-  description?: string;
+  description?: string | null;
   badgeType: string;
-  iconUrl?: string;
-  color?: string;
-  earnedAt?: Date;
+  iconUrl?: string | null;
+  color?: string | null;
+  earnedAt?: Date | null;
   progress: number;
   status: string;
 }

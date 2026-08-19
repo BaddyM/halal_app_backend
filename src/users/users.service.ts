@@ -1071,6 +1071,29 @@ export class UsersService {
             };
         }
 
+        // Not a mutual match yet — let the recipient know someone liked them.
+        // Super-likes are called out explicitly since they're the paid signal.
+        if (dto.type === 'like' || dto.type === 'superLike') {
+            void (async () => {
+                try {
+                    const liker = await this.prisma.user.findUnique({
+                        where: { id: viewerId },
+                        select: { name: true },
+                    });
+                    const isSuper = dto.type === 'superLike';
+                    await this.push.sendToUser(dto.toUserId, {
+                        title: isSuper ? 'You got a Super Like! ⭐' : 'Someone likes you 💚',
+                        body: isSuper
+                            ? `${liker?.name ?? 'Someone'} super liked your profile`
+                            : 'Open Halal Connect to see who it is',
+                        data: { type: 'likeRequest', fromUserId: viewerId },
+                    });
+                } catch {
+                    // Push failures must never fail the like itself.
+                }
+            })();
+        }
+
         return { success: true, matched };
     }
 

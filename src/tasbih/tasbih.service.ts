@@ -10,40 +10,23 @@ import {
   TasbihDaily,
   TasbihStreak,
   UserBadge,
+  TasbihBadge,
   TasbihUserSettings,
 } from '@prisma/client';
 import { InjectQueue } from '@nestjs/bull';
 import { Queue } from 'bull';
 import { startOfDay, endOfDay, subDays, startOfWeek, endOfWeek, startOfMonth, endOfMonth } from 'date-fns';
+import {
+  UserBadgeDto,
+  TasbihStatisticsDto,
+  TasbihWeeklyDto,
+  TasbihMonthlyDto,
+  TasbihLifetimeDto,
+} from './tasbih.dto';
 
 interface TasbihCountRequest {
   count: number;
   intention?: string;
-}
-
-interface TasbihStatistics {
-  todayCount: number;
-  dailyGoal: number;
-  lifetimeCount: number;
-  currentStreak: number;
-  longestStreak: number;
-  earnedBadges: number;
-  nextMilestone: number;
-}
-
-interface TasbihWeeklyStats {
-  week: string;
-  total: number;
-  days: { date: string; count: number; metGoal: boolean }[];
-  avgDaily: number;
-}
-
-interface TasbihMonthlyStats {
-  month: string;
-  total: number;
-  weeks: TasbihWeeklyStats[];
-  avgDaily: number;
-  consistency: number; // percentage of days with goal met
 }
 
 @Injectable()
@@ -468,7 +451,7 @@ export class TasbihService {
   /**
    * Get today's statistics
    */
-  async getTodayStatistics(userId: string): Promise<TasbihStatistics> {
+  async getTodayStatistics(userId: string): Promise<TasbihStatisticsDto> {
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
     if (!user) {
       throw new NotFoundException('User not found');
@@ -517,7 +500,7 @@ export class TasbihService {
   async getWeeklyStatistics(
     userId: string,
     weeksBack: number = 0,
-  ): Promise<TasbihWeeklyStats> {
+  ): Promise<TasbihWeeklyDto> {
     const weekStart = startOfWeek(
       subDays(new Date(), weeksBack * 7),
       { weekStartsOn: 1 },
@@ -556,7 +539,7 @@ export class TasbihService {
   async getMonthlyStatistics(
     userId: string,
     monthsBack: number = 0,
-  ): Promise<TasbihMonthlyStats> {
+  ): Promise<TasbihMonthlyDto> {
     const today = new Date();
     const targetMonth = subDays(today, monthsBack * 30);
     const monthStart = startOfMonth(targetMonth);
@@ -585,7 +568,7 @@ export class TasbihService {
     const avgDaily = Math.round(total / records.length) || 0;
 
     // Break into weeks
-    const weeks: TasbihWeeklyStats[] = [];
+    const weeks: TasbihWeeklyDto[] = [];
     let weekStart = monthStart;
     while (weekStart <= monthEnd) {
       const weekEnd = endOfWeek(weekStart, { weekStartsOn: 1 });
@@ -622,7 +605,7 @@ export class TasbihService {
   /**
    * Get lifetime statistics
    */
-  async getLifetimeStatistics(userId: string) {
+  async getLifetimeStatistics(userId: string): Promise<TasbihLifetimeDto> {
     const settings = await this.getUserSettings(userId);
     const streak = await this.prisma.tasbihStreak.findUnique({
       where: { userId },
@@ -731,8 +714,8 @@ export class TasbihService {
   /**
    * Get user's earned badges
    */
-  async getUserBadges(userId: string) {
-    return this.prisma.userBadge.findMany({
+  async getUserBadges(userId: string): Promise<UserBadgeDto[]> {
+    const rows = await this.prisma.userBadge.findMany({
       where: {
         userId,
         status: 'earned',
@@ -744,13 +727,31 @@ export class TasbihService {
         earnedAt: 'desc',
       },
     });
+    return rows.map((r) => this.toUserBadgeDto(r));
+  }
+
+  /// Flattens a UserBadge + its TasbihBadge into the wire shape the app reads.
+  private toUserBadgeDto(
+    row: UserBadge & { badge: TasbihBadge },
+  ): UserBadgeDto {
+    return {
+      id: row.id,
+      name: row.badge.name,
+      description: row.badge.description,
+      badgeType: row.badge.badgeType,
+      iconUrl: row.badge.iconUrl,
+      color: row.badge.color,
+      earnedAt: row.earnedAt,
+      progress: row.progress,
+      status: row.status,
+    };
   }
 
   /**
    * Get badge progress
    */
-  async getBadgeProgress(userId: string) {
-    return this.prisma.userBadge.findMany({
+  async getBadgeProgress(userId: string): Promise<UserBadgeDto[]> {
+    const rows = await this.prisma.userBadge.findMany({
       where: { userId },
       include: {
         badge: true,
@@ -759,6 +760,7 @@ export class TasbihService {
         progress: 'desc',
       },
     });
+    return rows.map((r) => this.toUserBadgeDto(r));
   }
 
   // ────────────────────────────────────────────────────────────────

@@ -23,9 +23,14 @@ services:
       - MAIL_PASS=ffktmxikcyspvkws
       - MAIL_FROM=halalconnectug@gmail.com
       - MAIL_FROM_NAME=Halalconnect
+      # Firebase Cloud Messaging. The key is mounted (below), never baked into
+      # the image. Alternative for managed hosts: set FIREBASE_SERVICE_ACCOUNT
+      # to the JSON inline and drop the volume.
+      - FIREBASE_SERVICE_ACCOUNT_PATH=./config/halal-connect-6504d.json
     volumes:
       - /root/halal/halal-assets:/app/uploads
       - /root/halal/assets:/app/src/assets
+      - /root/halal/config:/app/config:ro
     depends_on:
       mysql:
         condition: service_healthy

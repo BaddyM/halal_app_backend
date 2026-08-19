@@ -7,6 +7,7 @@ import {
 import { Prisma } from '@prisma/client';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { RealtimeBus } from 'src/realtime/realtime.bus';
+import { PushService } from 'src/push/push.service';
 import { containsFlaggedWord } from './moderation';
 
 const ONLINE_WINDOW_MS = 5 * 60 * 1000;
@@ -16,6 +17,7 @@ export class ChatService {
     constructor(
         private readonly prisma: PrismaService,
         private readonly bus: RealtimeBus,
+        private readonly push: PushService,
     ) {}
 
     // Sort a pair so we always store/lookup with userA < userB.
@@ -344,6 +346,11 @@ export class ChatService {
         this.bus.emitToConversation(conversationId, 'message:new', payload);
         this.bus.emitToUser(other, 'conversation:bump', { conversationId });
         this.bus.emitToUser(other, 'notification:new', { kind: 'message', conversationId });
+
+        // Push the peer a notification (best-effort, no-op if Firebase is
+        // unconfigured). The app suppresses it while that chat is on screen.
+        void this.notifyPeerOfMessage(other, userId, conversationId, type, clean);
+
         if (flagged) {
             // Surfaced to moderation tooling; the peer still receives the message.
             this.bus.emitToConversation(conversationId, 'message:flagged', {
@@ -358,6 +365,43 @@ export class ChatService {
         }
 
         return { ...this.serializeMessage(msg), isMine: true };
+    }
+
+    /// Builds and sends the "new message" push. Media messages get a generic
+    /// body so photo/voice content never leaks onto a lock screen.
+    private async notifyPeerOfMessage(
+        recipientId: string,
+        senderId: string,
+        conversationId: string,
+        type: string,
+        text: string,
+    ) {
+        try {
+            const sender = await this.prisma.user.findUnique({
+                where: { id: senderId },
+                select: { name: true },
+            });
+            const preview =
+                type === 'text'
+                    ? text.length > 120
+                        ? `${text.slice(0, 117)}…`
+                        : text
+                    : type === 'image'
+                      ? '📷 Sent a photo'
+                      : '🎤 Sent a voice message';
+
+            await this.push.sendToUser(recipientId, {
+                title: sender?.name ?? 'New message',
+                body: preview,
+                data: {
+                    type: 'message',
+                    conversationId,
+                    senderId,
+                },
+            });
+        } catch {
+            // Never let a push failure break message delivery.
+        }
     }
 
     // ── Read receipts ───────────────────────────────────────────

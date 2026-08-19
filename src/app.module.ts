@@ -26,7 +26,7 @@ import { TasbihModule } from './tasbih/tasbih.module';
 @Module({
     imports: [
         // Global request throttling to protect likes/messages and other endpoints
-        ThrottlerModule.forRoot({ ttl: 60, limit: 30 }),
+        ThrottlerModule.forRoot({ throttlers: [{ ttl: 60_000, limit: 30 }] }),
         ConfigModule.forRoot({ isGlobal: true }),
         ServeStaticModule.forRoot({
             rootPath: join(process.cwd(), 'uploads'),

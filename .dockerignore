@@ -14,6 +14,9 @@ README.md
 # local runtime data — never bake into the image
 uploads
 src/assets
-# never ship credentials
+# never ship credentials — the whole dir, since service-account files get
+# renamed to the project id (e.g. halal-connect-6504d.json) and slip past
+# name-based patterns. Mounted at runtime instead.
+config
 *firebase-adminsdk*.json
 *service-account*.json
