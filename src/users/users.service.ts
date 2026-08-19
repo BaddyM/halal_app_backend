@@ -148,6 +148,9 @@ export class UsersService {
 
         return {
             ...basePayload,
+            hasBeard: profile?.hasBeard,
+            prefersBeard: profile?.prefersBeard,
+            prefersHijab: profile?.prefersHijab,
             phone: isSelf ? user.phone : undefined,
             email: isSelf ? user.email : undefined,
             gender: profile?.gender,
@@ -199,7 +202,8 @@ export class UsersService {
             { key: 'photo', label: 'A photo', weight: 2, done: photoCount > 0 || !!p.primaryImageUrl },
             { key: 'prayerFrequency', label: 'Prayer practice', weight: 1, done: !!p.prayerFrequency },
             { key: 'sect', label: 'Madhab / sect', weight: 1, done: !!p.sect },
-            { key: 'hijabPreference', label: 'Hijab/appearance', weight: 1, done: !!p.hijabPreference },
+            // For completeness: if gender is female, hijab matters; if male, beard presence is asked.
+            { key: 'hijabPreference', label: 'Hijab/appearance', weight: 1, done: !!(p.gender === 'female' ? p.hijabPreference : p.hasBeard) },
             { key: 'maritalTimeline', label: 'Marriage timeline', weight: 1, done: !!p.maritalTimeline },
             { key: 'childrenPref', label: 'Children preference', weight: 1, done: !!p.childrenPref },
             { key: 'interests', label: 'Interests', weight: 1, done: Array.isArray(p.interests) && p.interests.length > 0 },
@@ -324,6 +328,17 @@ export class UsersService {
             add(false, 1);
         }
 
+        // Partner appearance preferences: beard and hijab
+        if (v.prefersBeard !== undefined) {
+            add(v.prefersBeard === !!c.hasBeard, 1);
+            if (v.prefersBeard && c.hasBeard) reasons.push('Prefers bearded partners');
+        }
+        if (v.prefersHijab !== undefined) {
+            const candidateWearsHijab = c.hijabPreference === 'hijab' || c.hijabPreference === 'niqab';
+            add(v.prefersHijab === candidateWearsHijab, 1);
+            if (v.prefersHijab && candidateWearsHijab) reasons.push('Prefers partners who wear hijab');
+        }
+
         // ── Marriage timeline ─────────────────────────────────────
         if (v.maritalTimeline && c.maritalTimeline) {
             const sim = this.timelineSimilarity(v.maritalTimeline, c.maritalTimeline);
@@ -439,6 +454,8 @@ export class UsersService {
 
     // ── profile ────────────────────────────────────────────────
     async updateProfile(userId: string, dto: UpdateProfileDto) {
+        // Load current profile gender to enforce gender-specific fields
+        const cur = await this.prisma.profile.findUnique({ where: { userId }, select: { gender: true } });
         if (dto.name !== undefined) {
             await this.prisma.user.update({
                 where: { id: userId },
@@ -493,9 +510,14 @@ export class UsersService {
                 prayerFrequency: dto.prayerFrequency,
             }),
             ...(dto.sect !== undefined && { sect: dto.sect }),
-            ...(dto.hijabPreference !== undefined && {
-                hijabPreference: dto.hijabPreference,
-            }),
+            // Only allow hijabPreference when the profile is female (either
+            // the incoming DTO sets gender=female, or the existing profile is female).
+            ...(
+                dto.hijabPreference !== undefined &&
+                (dto.gender === 'female' || (dto.gender === undefined && cur?.gender === 'female'))
+                    ? { hijabPreference: dto.hijabPreference }
+                    : {}
+            ),
             ...(dto.ethnicity !== undefined && { ethnicity: dto.ethnicity }),
             ...(dto.maritalTimeline !== undefined && {
                 maritalTimeline: dto.maritalTimeline,
@@ -611,6 +633,21 @@ export class UsersService {
             else profileUpdate.hijabPreference = 'preferNotToSay';
         }
 
+        // Beard presence for brothers and partner beard preference
+        const beard = map.get('beard');
+        if (typeof beard === 'string') {
+            const b = beard.toLowerCase();
+            if (b.includes('yes') || b.includes('have') || b.includes('beard')) profileUpdate.hasBeard = true;
+            else if (b.includes('no') || b.includes('clean')) profileUpdate.hasBeard = false;
+        }
+
+        const prefersBeard = map.get('prefers_beard') || map.get('prefersBeard');
+        if (typeof prefersBeard === 'string') {
+            const pb = prefersBeard.toLowerCase();
+            if (pb.includes('yes') || pb.includes('prefer')) profileUpdate.prefersBeard = true;
+            else if (pb.includes('no') || pb.includes('not')) profileUpdate.prefersBeard = false;
+        }
+
         const timeline = map.get('marriage_timeline');
         if (typeof timeline === 'string') {
             const t = timeline.toLowerCase();
@@ -655,6 +692,14 @@ export class UsersService {
         }
 
         if (Object.keys(profileUpdate).length > 0) {
+            // Ensure gender-specific fields aren't set for the opposite gender
+            if (profileUpdate.gender === 'male') {
+                delete (profileUpdate as any).hijabPreference;
+            }
+            if (profileUpdate.gender === 'female') {
+                delete (profileUpdate as any).hasBeard;
+            }
+
             await this.prisma.profile.upsert({
                 where: { userId },
                 update: profileUpdate,

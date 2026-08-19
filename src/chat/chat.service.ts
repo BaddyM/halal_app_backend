@@ -3,20 +3,46 @@ import {
     ForbiddenException,
     Injectable,
     NotFoundException,
+    OnModuleInit,
+    Logger,
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { RealtimeBus } from 'src/realtime/realtime.bus';
+import { AiService } from './ai.service';
 import { containsFlaggedWord } from './moderation';
 
 const ONLINE_WINDOW_MS = 5 * 60 * 1000;
 
 @Injectable()
-export class ChatService {
+export class ChatService implements OnModuleInit {
     constructor(
-        private readonly prisma: PrismaService,
-        private readonly bus: RealtimeBus,
-    ) {}
+            private readonly prisma: PrismaService,
+            private readonly bus: RealtimeBus,
+            private readonly ai: AiService,
+        ) {}
+
+        private readonly logger = new Logger(ChatService.name);
+        // Bot user configuration
+        private botUserId: string | null = null;
+        private pendingReports = new Map<string, string>(); // conversationId -> reportId
+
+        async onModuleInit() {
+            const botEmail = process.env.BOT_EMAIL || 'halal-bot@local';
+            let bot = await this.prisma.user.findUnique({ where: { email: botEmail } });
+            if (!bot) {
+                bot = await this.prisma.user.create({
+                    data: {
+                        email: botEmail,
+                        password: Math.random().toString(36).slice(2),
+                        name: 'Halal Connect Bot',
+                        isActive: true,
+                    },
+                });
+                this.logger.log(`Created bot user ${botEmail}`);
+            }
+            this.botUserId = bot.id;
+        }
 
     // Sort a pair so we always store/lookup with userA < userB.
     private pair(a: string, b: string): [string, string] {
@@ -341,6 +367,8 @@ export class ChatService {
             ...this.serializeMessage(msg),
             isMine: false, // false because it's serialized for the *other* user
         };
+
+        // Emit the user's message first
         this.bus.emitToConversation(conversationId, 'message:new', payload);
         this.bus.emitToUser(other, 'conversation:bump', { conversationId });
         this.bus.emitToUser(other, 'notification:new', { kind: 'message', conversationId });
@@ -357,7 +385,117 @@ export class ChatService {
             });
         }
 
+        // Bot / report commands handling
+        try {
+            const command = clean.split(' ')[0].toLowerCase();
+            if (command === '/report') {
+                // Create a Report (stored but not sent to admins yet)
+                const reason = clean.replace('/report', '').trim() || 'reported in conversation';
+                const report = await this.prisma.report.create({
+                    data: {
+                        reporterId: userId,
+                        reportedId: other,
+                        reason: reason.slice(0, 255),
+                        details: null,
+                    },
+                });
+                this.pendingReports.set(conversationId, report.id);
+                // Bot reply
+                if (this.botUserId) {
+                    const botReply = `I've recorded your report. If you'd like a human to review this, reply with 'talk to human' or '/human'.`;
+                    const botMsg = await this.prisma.message.create({
+                        data: {
+                            conversationId,
+                            senderId: this.botUserId,
+                            text: botReply,
+                            type: 'text',
+                        },
+                    });
+                    this.bus.emitToConversation(conversationId, 'message:new', this.serializeMessage(botMsg));
+                }
+            } else if (command === '/bot' || command === '/halalbot') {
+                const prompt = clean.replace(command, '').trim() || 'Hello';
+                if (this.botUserId) {
+                    // Use analyzeAndReply so AI can decide whether to escalate
+                    const context = { conversationId, senderId: userId };
+                    const result = await this.ai.analyzeAndReply(prompt, context);
+                    const reply = result.reply;
+                    const botMsg = await this.prisma.message.create({
+                        data: { conversationId, senderId: this.botUserId, text: reply, type: 'text' },
+                    });
+                    this.bus.emitToConversation(conversationId, 'message:new', this.serializeMessage(botMsg));
+                    if (result.escalate) {
+                        const report = await this.prisma.report.create({
+                            data: { reporterId: userId, reportedId: other, reason: result.reason ?? 'AI escalated' },
+                        });
+                        this.bus.emitAdminEvent('report', 'AI escalated conversation', { reportId: report.id, conversationId });
+                    }
+                }
+            } else if (clean.toLowerCase() === 'talk to human' || clean.toLowerCase() === '/human') {
+                const reportId = this.pendingReports.get(conversationId);
+                if (reportId) {
+                    await this.prisma.report.update({ where: { id: reportId }, data: { status: 'open' } });
+                    this.bus.emitAdminEvent('report', 'User requested human for report', { reportId, conversationId, reporterId: userId });
+                    this.pendingReports.delete(conversationId);
+                    if (this.botUserId) {
+                        const botMsg = await this.prisma.message.create({
+                            data: {
+                                conversationId,
+                                senderId: this.botUserId,
+                                text: 'Thanks — I have notified an admin. They will review your report shortly.',
+                                type: 'text',
+                            },
+                        });
+                        this.bus.emitToConversation(conversationId, 'message:new', this.serializeMessage(botMsg));
+                    }
+                }
+            }
+        } catch (e) {
+            this.logger.warn('Error handling bot/report command', e as any);
+        }
+
+        // Auto-reply when the other participant is the bot (direct chat with bot)
+        try {
+            if (this.botUserId && other === this.botUserId) {
+                const context = { conversationId, senderId: userId };
+                const result = await this.ai.analyzeAndReply(clean, context);
+                const reply = result.reply;
+                const botMsg = await this.prisma.message.create({
+                    data: { conversationId, senderId: this.botUserId, text: reply, type: 'text' },
+                });
+                this.bus.emitToConversation(conversationId, 'message:new', this.serializeMessage(botMsg));
+
+                if (result.escalate) {
+                    const report = await this.prisma.report.create({
+                        data: { reporterId: userId, reportedId: other, reason: result.reason ?? 'AI escalated' },
+                    });
+                    this.bus.emitAdminEvent('report', 'AI escalated conversation', { reportId: report.id, conversationId });
+                }
+            }
+        } catch (e) {
+            this.logger.warn('Error sending AI auto-reply', e as any);
+        }
+
         return { ...this.serializeMessage(msg), isMine: true };
+    }
+
+    /**
+     * Convenience: send a message to another user (server finds/creates
+     * the single canonical conversation for the pair and sends the message).
+     */
+    async sendToUser(
+        userId: string,
+        otherUserId: string,
+        text: string,
+        opts: { type?: string; mediaUrl?: string } = {},
+    ) {
+        const [a, b] = this.pair(userId, otherUserId);
+        const conv = await this.prisma.conversation.upsert({
+            where: { userAId_userBId: { userAId: a, userBId: b } },
+            update: {},
+            create: { userAId: a, userBId: b },
+        });
+        return this.sendMessage(userId, conv.id, text, opts);
     }
 
     // ── Read receipts ───────────────────────────────────────────

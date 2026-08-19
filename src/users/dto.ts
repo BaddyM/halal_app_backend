@@ -38,6 +38,9 @@ export class UpdateProfileDto {
     @IsOptional() @IsEnum(PrayerFrequency) prayerFrequency?: PrayerFrequency;
     @IsOptional() @IsEnum(IslamicSect) sect?: IslamicSect;
     @IsOptional() @IsEnum(HijabPreference) hijabPreference?: HijabPreference;
+    @IsOptional() @Type(() => Boolean) @IsBoolean() hasBeard?: boolean;
+    @IsOptional() @Type(() => Boolean) @IsBoolean() prefersBeard?: boolean;
+    @IsOptional() @Type(() => Boolean) @IsBoolean() prefersHijab?: boolean;
 
     @IsOptional() @IsString() ethnicity?: string;
     @IsOptional() @IsEnum(MarriageTimeline) maritalTimeline?: MarriageTimeline;

@@ -21,6 +21,8 @@ import {
   TasbihStatisticsDto,
   TasbihSessionDto,
   UserBadgeDto,
+  TasbihWeeklyDto,
+  TasbihMonthlyDto,
   TasbihUserSettingsDto,
   LeaderboardEntryDto,
 } from './tasbih.dto';
@@ -53,7 +55,11 @@ export class TasbihController {
     @Request() req: any,
     @Body() data: AddTasbihDto,
   ): Promise<TasbihSessionDto> {
-    return this.tasbihService.addTasbih(req.user.id, data);
+    const session = await this.tasbihService.addTasbih(req.user.id, data);
+    return {
+      ...session,
+      intention: session.intention ?? undefined,
+    } as TasbihSessionDto;
   }
 
   /**
@@ -65,7 +71,11 @@ export class TasbihController {
   @Post('undo')
   @UseGuards(AuthGuard)
   async undoLastSession(@Request() req: any): Promise<TasbihSessionDto> {
-    return this.tasbihService.undoLastSession(req.user.id);
+    const session = await this.tasbihService.undoLastSession(req.user.id);
+    return {
+      ...session,
+      intention: session.intention ?? undefined,
+    } as TasbihSessionDto;
   }
 
   /**
@@ -93,7 +103,7 @@ export class TasbihController {
     @Query('limit') limit: string = '50',
   ) {
     const limitNum = Math.min(parseInt(limit) || 50, 500);
-    return; // Return from service
+    return this.tasbihService.getSessions(req.user.id, limitNum);
   }
 
   // ────────────────────────────────────────────────────────────────
@@ -128,9 +138,10 @@ export class TasbihController {
   async getWeeklyStats(
     @Request() req: any,
     @Query('weeksBack') weeksBack: string = '0',
-  ) {
+  ): Promise<TasbihWeeklyDto> {
     const weeks = Math.min(parseInt(weeksBack) || 0, 52);
-    return this.tasbihService.getWeeklyStatistics(req.user.id, weeks);
+    const stats = await this.tasbihService.getWeeklyStatistics(req.user.id, weeks);
+    return stats as unknown as TasbihWeeklyDto;
   }
 
   /**
@@ -144,9 +155,10 @@ export class TasbihController {
   async getMonthlyStats(
     @Request() req: any,
     @Query('monthsBack') monthsBack: string = '0',
-  ) {
+  ): Promise<TasbihMonthlyDto> {
     const months = Math.min(parseInt(monthsBack) || 0, 12);
-    return this.tasbihService.getMonthlyStatistics(req.user.id, months);
+    const stats = await this.tasbihService.getMonthlyStatistics(req.user.id, months);
+    return stats as unknown as TasbihMonthlyDto;
   }
 
   /**
@@ -172,7 +184,18 @@ export class TasbihController {
   @Get('badges/earned')
   @UseGuards(AuthGuard)
   async getEarnedBadges(@Request() req: any): Promise<UserBadgeDto[]> {
-    return this.tasbihService.getUserBadges(req.user.id);
+    const badges = await this.tasbihService.getUserBadges(req.user.id);
+    return badges.map((b: any) => ({
+      id: b.id,
+      name: b.badge?.name || '',
+      description: b.badge?.description ?? undefined,
+      badgeType: b.badge?.badgeType || '',
+      iconUrl: b.badge?.iconUrl ?? undefined,
+      color: b.badge?.color ?? undefined,
+      earnedAt: b.earnedAt ?? undefined,
+      progress: b.progress ?? 0,
+      status: b.status ?? 'unknown',
+    }));
   }
 
   /**
@@ -331,8 +354,9 @@ export class TasbihController {
    */
   @Get('admin/users/:userId/stats')
   @UseGuards(AuthGuard, AdminGuard)
-  async getUserStats(@Param('userId') userId: string) {
-    return this.tasbihService.getTodayStatistics(userId);
+  async getUserStats(@Param('userId') userId: string): Promise<TasbihStatisticsDto> {
+    const s = await this.tasbihService.getTodayStatistics(userId);
+    return s as unknown as TasbihStatisticsDto;
   }
 
   /**

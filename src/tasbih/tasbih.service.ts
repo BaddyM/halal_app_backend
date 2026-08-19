@@ -254,6 +254,19 @@ export class TasbihService {
   }
 
   /**
+   * Get recent sessions for a user
+   */
+  async getSessions(userId: string, limit: number = 50) {
+    const sessions = await this.prisma.tasbihSession.findMany({
+      where: { userId },
+      orderBy: { createdAt: 'desc' },
+      take: Math.min(limit, 500),
+    });
+
+    return sessions.map((s) => ({ ...s, intention: s.intention ?? undefined }));
+  }
+
+  /**
    * Update lifetime total (cached in settings)
    */
   private async updateLifetimeTotal(userId: string): Promise<number> {

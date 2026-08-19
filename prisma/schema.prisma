@@ -55,6 +55,12 @@ enum HijabPreference {
   preferNotToSay
 }
 
+enum BeardPreference {
+  beard
+  cleanShaven
+  preferNotToSay
+}
+
 enum MarriageTimeline {
   asap
   withinYear
@@ -222,6 +228,11 @@ model Profile {
   waliEmail         String?
   waliPhone         String?
   waliRelation      String? // e.g. father, brother, uncle
+
+  // Appearance & partner preferences
+  hasBeard          Boolean?
+  prefersBeard      Boolean?
+  prefersHijab      Boolean?
 
   // Verification & visibility
   isVerified        Boolean  @default(false)

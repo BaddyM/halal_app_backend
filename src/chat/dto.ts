@@ -35,3 +35,21 @@ export class MessagesQueryDto {
     @Min(1)
     limit?: number;
 }
+
+export class SendToUserDto {
+    @IsString()
+    @IsNotEmpty()
+    otherUserId!: string;
+
+    @IsString()
+    @MaxLength(2000)
+    text!: string;
+
+    @IsOptional()
+    @IsIn(['text', 'image', 'voice'])
+    type?: 'text' | 'image' | 'voice';
+
+    @IsOptional()
+    @IsString()
+    mediaUrl?: string;
+}

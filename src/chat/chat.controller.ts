@@ -10,7 +10,7 @@ import {
 } from '@nestjs/common';
 import { AuthGuard, AuthedRequest } from 'src/auth/auth.guard';
 import { ChatService } from './chat.service';
-import { MessagesQueryDto, SendMessageDto, StartConversationDto } from './dto';
+import { MessagesQueryDto, SendMessageDto, StartConversationDto, SendToUserDto } from './dto';
 
 @UseGuards(AuthGuard)
 @Controller('chat')
@@ -25,6 +25,11 @@ export class ChatController {
     @Post('conversations')
     start(@Req() req: AuthedRequest, @Body() dto: StartConversationDto) {
         return this.chat.findOrCreate(req.user.userId, dto.otherUserId);
+    }
+
+    @Post('send')
+    sendToUser(@Req() req: AuthedRequest, @Body() dto: SendToUserDto) {
+        return this.chat.sendToUser(req.user.userId, dto.otherUserId, dto.text, { type: dto.type, mediaUrl: dto.mediaUrl });
     }
 
     @Get('conversations/:id/messages')
