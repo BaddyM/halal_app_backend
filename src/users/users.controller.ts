@@ -26,6 +26,7 @@ import {
     SubmitOnboardingDto,
     UpdatePhotoDto,
     UpdateProfileDto,
+    DeleteAccountDto,
 } from './dto';
 
 @UseGuards(AuthGuard)
@@ -36,6 +37,16 @@ export class UsersController {
     @Get('me')
     me(@Req() req: AuthedRequest) {
         return this.users.getMe(req.user.userId);
+    }
+
+    @Get('me/export')
+    exportData(@Req() req: AuthedRequest) {
+        return this.users.exportData(req.user.userId);
+    }
+
+    @Delete('me')
+    deleteAccount(@Req() req: AuthedRequest, @Body() dto: DeleteAccountDto) {
+        return this.users.deleteAccount(req.user.userId, dto);
     }
 
     @Patch('me/profile')

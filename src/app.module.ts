@@ -22,6 +22,7 @@ import { WebhooksModule } from './webhooks/webhooks.module';
 import { AdminModule } from './admin/admin.module';
 import { MailModule } from './mail/mail.module';
 import { TasbihModule } from './tasbih/tasbih.module';
+import { SupportModule } from './support/support.module';
 
 @Module({
     imports: [
@@ -50,6 +51,7 @@ import { TasbihModule } from './tasbih/tasbih.module';
         AdminModule,
         MailModule,
         TasbihModule,
+        SupportModule,
     ],
     providers: [
         { provide: APP_GUARD, useClass: ThrottlerGuard },

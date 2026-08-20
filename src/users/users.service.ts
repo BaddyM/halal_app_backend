@@ -7,6 +7,7 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Prisma, SubscriptionPlan } from '@prisma/client';
+import * as bcrypt from 'bcryptjs';
 import { PrismaService } from 'src/prisma/prisma.service';
 import {
     UpdateProfileDto,
@@ -15,6 +16,7 @@ import {
     LikeProfileDto,
     SetWaliDto,
     UpdatePhotoDto,
+    DeleteAccountDto,
 } from './dto';
 import { join } from 'path';
 import { existsSync, unlinkSync } from 'fs';
@@ -41,6 +43,45 @@ export class UsersService {
         private readonly push: PushService,
         private readonly realtime: RealtimeBus,
     ) {}
+
+    async exportData(userId: string) {
+        const user = await this.prisma.user.findUnique({
+            where: { id: userId },
+            include: {
+                profile: true,
+                photos: true,
+                onboardingAnswers: true,
+                likesGiven: true,
+                likesReceived: true,
+                matchesAsA: true,
+                matchesAsB: true,
+                inboxMessages: true,
+                supportTickets: { include: { messages: true } },
+                devices: true,
+                transactions: true,
+                subscription: true,
+                tasbihSessions: true,
+                tasbihDailyStats: true,
+                tasbihStreaks: true,
+                userBadges: true,
+            },
+        });
+        if (!user) throw new NotFoundException('User not found');
+        const { password, ...account } = user;
+        return { exportedAt: new Date().toISOString(), account };
+    }
+
+    async deleteAccount(userId: string, dto: DeleteAccountDto) {
+        if (!dto.confirm) throw new BadRequestException('Account deletion must be confirmed');
+        const user = await this.prisma.user.findUnique({ where: { id: userId }, select: { password: true } });
+        if (!user) throw new NotFoundException('User not found');
+        if (!(await bcrypt.compare(dto.password, user.password))) {
+            throw new BadRequestException('Incorrect password');
+        }
+        await this.prisma.user.delete({ where: { id: userId } });
+        this.matchesSummaryCache.delete(userId);
+        return { success: true };
+    }
 
     // ── helpers ─────────────────────────────────────────────────
     private calcAge(dob: Date | null | undefined): number | null {
@@ -175,6 +216,11 @@ export class UsersService {
             activeChatsCount: isSelf ? user.activeChatsCount : undefined,
             prayerTimesEnabled: isSelf ? user.prayerTimesEnabled : undefined,
             readReceiptsEnabled: isSelf ? user.readReceiptsEnabled : undefined,
+            showOnlineStatus: isSelf ? user.showOnlineStatus : undefined,
+            showLastSeen: isSelf ? user.showLastSeen : undefined,
+            showDistance: isSelf ? user.showDistance : undefined,
+            incognitoMode: isSelf ? user.incognitoMode : undefined,
+            profileVisibility: isSelf ? user.profileVisibility : undefined,
             halalVerificationSubmitted: isSelf ? user.halalVerificationSubmitted : undefined,
             wali: isSelf && profile?.waliName
                 ? {
@@ -473,7 +519,12 @@ export class UsersService {
         if (
             dto.prayerTimesEnabled !== undefined ||
             dto.halalVerificationSubmitted !== undefined ||
-            dto.readReceiptsEnabled !== undefined
+            dto.readReceiptsEnabled !== undefined ||
+            dto.showOnlineStatus !== undefined ||
+            dto.showLastSeen !== undefined ||
+            dto.showDistance !== undefined ||
+            dto.incognitoMode !== undefined ||
+            dto.profileVisibility !== undefined
         ) {
             await this.prisma.user.update({
                 where: { id: userId },
@@ -487,6 +538,11 @@ export class UsersService {
                     ...(dto.readReceiptsEnabled !== undefined && {
                         readReceiptsEnabled: dto.readReceiptsEnabled,
                     }),
+                    ...(dto.showOnlineStatus !== undefined && { showOnlineStatus: dto.showOnlineStatus }),
+                    ...(dto.showLastSeen !== undefined && { showLastSeen: dto.showLastSeen }),
+                    ...(dto.showDistance !== undefined && { showDistance: dto.showDistance }),
+                    ...(dto.incognitoMode !== undefined && { incognitoMode: dto.incognitoMode }),
+                    ...(dto.profileVisibility !== undefined && { profileVisibility: dto.profileVisibility }),
                 },
             });
         }

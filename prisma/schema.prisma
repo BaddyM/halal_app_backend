@@ -143,6 +143,11 @@ model User {
   halalVerificationSubmitted Boolean  @default(false)
   // Read receipts are a premium feature with a user toggle (Module C).
   readReceiptsEnabled       Boolean  @default(true)
+  showOnlineStatus          Boolean  @default(true)
+  showLastSeen              Boolean  @default(false)
+  showDistance              Boolean  @default(true)
+  incognitoMode             Boolean  @default(false)
+  profileVisibility         String   @default("everyone")
 
   // Usage tracking (Basic plan limits)
   likesUsedToday    Int      @default(0)
@@ -170,6 +175,7 @@ model User {
 
   devices           Device[]
   inboxMessages     InboxMessage[]
+  supportTickets    SupportTicket[]
 
   likesGiven        Like[] @relation("LikesGiven")
   likesReceived     Like[] @relation("LikesReceived")
@@ -614,6 +620,35 @@ model InboxMessage {
 
   @@index([userId, createdAt])
   @@index([parentId])
+}
+
+// ─────────────────────────────────────────────────────────────
+//  SUPPORT — structured support requests separate from inbox chat
+// ─────────────────────────────────────────────────────────────
+model SupportTicket {
+  id          String   @id @default(uuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  subject     String
+  category    String   @default("general")
+  priority    String   @default("normal")
+  status      String   @default("open")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  messages    SupportTicketMessage[]
+
+  @@index([userId, status, updatedAt])
+}
+
+model SupportTicketMessage {
+  id        String        @id @default(uuid())
+  ticketId  String
+  ticket    SupportTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  body      String        @db.Text
+  fromAdmin Boolean       @default(false)
+  createdAt DateTime      @default(now())
+
+  @@index([ticketId, createdAt])
 }
 
 // ─────────────────────────────────────────────────────────────

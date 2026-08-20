@@ -50,6 +50,11 @@ export class UpdateProfileDto {
     @IsOptional() @Type(() => Boolean) @IsBoolean() prayerTimesEnabled?: boolean;
     @IsOptional() @Type(() => Boolean) @IsBoolean() halalVerificationSubmitted?: boolean;
     @IsOptional() @Type(() => Boolean) @IsBoolean() readReceiptsEnabled?: boolean;
+    @IsOptional() @Type(() => Boolean) @IsBoolean() showOnlineStatus?: boolean;
+    @IsOptional() @Type(() => Boolean) @IsBoolean() showLastSeen?: boolean;
+    @IsOptional() @Type(() => Boolean) @IsBoolean() showDistance?: boolean;
+    @IsOptional() @Type(() => Boolean) @IsBoolean() incognitoMode?: boolean;
+    @IsOptional() @IsString() profileVisibility?: string;
 
     @IsOptional() @IsArray() values?: string[];
     @IsOptional() @IsArray() interests?: string[];
@@ -112,4 +117,9 @@ export class SetWaliDto {
 export class UpdatePhotoDto {
     @IsOptional() @Type(() => Boolean) @IsBoolean() isPrivate?: boolean;
     @IsOptional() @Type(() => Boolean) @IsBoolean() isPrimary?: boolean;
+}
+
+export class DeleteAccountDto {
+    @IsString() password!: string;
+    @Type(() => Boolean) @IsBoolean() confirm!: boolean;
 }
