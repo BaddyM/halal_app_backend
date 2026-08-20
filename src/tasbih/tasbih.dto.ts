@@ -129,6 +129,7 @@ export class TasbihStatisticsDto {
   lifetimeCount: number;
   currentStreak: number;
   longestStreak: number;
+  graceDays: number;
   earnedBadges: number;
   nextMilestone: number;
 }

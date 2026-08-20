@@ -55,7 +55,8 @@ export class TasbihController {
     @Request() req: any,
     @Body() data: AddTasbihDto,
   ): Promise<TasbihSessionDto> {
-    const session = await this.tasbihService.addTasbih(req.user.id, data);
+    const timezone = typeof req.headers['x-timezone'] === 'string' ? req.headers['x-timezone'] : 'UTC';
+    const session = await this.tasbihService.addTasbih(req.user.id, data, timezone);
     return {
       ...session,
       intention: session.intention ?? undefined,
@@ -87,7 +88,8 @@ export class TasbihController {
   @Post('reset')
   @UseGuards(AuthGuard)
   async resetCounter(@Request() req: any): Promise<void> {
-    return this.tasbihService.resetCounter(req.user.id);
+    const timezone = typeof req.headers['x-timezone'] === 'string' ? req.headers['x-timezone'] : 'UTC';
+    return this.tasbihService.resetCounter(req.user.id, undefined, timezone);
   }
 
   /**
@@ -124,7 +126,7 @@ export class TasbihController {
   @Get('stats/today')
   @UseGuards(AuthGuard)
   async getTodayStats(@Request() req: any): Promise<TasbihStatisticsDto> {
-    return this.tasbihService.getTodayStatistics(req.user.id);
+    return this.tasbihService.getTodayStatistics(req.user.id, req.headers['x-timezone'] ?? 'UTC');
   }
 
   /**

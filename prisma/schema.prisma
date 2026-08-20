@@ -790,6 +790,8 @@ model TasbihStreak {
   
   // Longest streak ever achieved
   longestStreak Int      @default(0)
+  graceDaysRemaining Int  @default(2)
+  graceMonth        String @default("")
   
   // When the current streak started
   streakStartDate DateTime?

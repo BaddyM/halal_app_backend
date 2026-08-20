@@ -27,6 +27,7 @@ interface TasbihStatistics {
   lifetimeCount: number;
   currentStreak: number;
   longestStreak: number;
+  graceDays: number;
   earnedBadges: number;
   nextMilestone: number;
 }
@@ -44,6 +45,24 @@ interface TasbihMonthlyStats {
   weeks: TasbihWeeklyStats[];
   avgDaily: number;
   consistency: number; // percentage of days with goal met
+}
+
+function timezoneDayStart(date: Date, timezone = 'UTC'): Date {
+  try {
+    const parts = new Intl.DateTimeFormat('en-CA', {
+      timeZone: timezone,
+      year: 'numeric', month: '2-digit', day: '2-digit',
+      hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23',
+    }).formatToParts(date).reduce<Record<string, number>>((result, part) => {
+      if (['year', 'month', 'day', 'hour', 'minute', 'second'].includes(part.type)) result[part.type] = Number(part.value);
+      return result;
+    }, {});
+    const localAsUtc = Date.UTC(parts.year, parts.month - 1, parts.day, parts.hour, parts.minute, parts.second);
+    const offset = localAsUtc - date.getTime();
+    return new Date(Date.UTC(parts.year, parts.month - 1, parts.day) - offset);
+  } catch {
+    return startOfDay(date);
+  }
 }
 
 @Injectable()
@@ -65,6 +84,7 @@ export class TasbihService {
   async addTasbih(
     userId: string,
     data: TasbihCountRequest,
+    timezone = 'UTC',
   ): Promise<TasbihSession> {
     // Validate input
     if (!data.count || data.count <= 0) {
@@ -96,7 +116,7 @@ export class TasbihService {
     // Queue async tasks (don't wait)
     this.aggregationQueue.add(
       'aggregate-daily',
-      { userId, date: new Date() },
+      { userId, date: new Date(), timezone },
       { removeOnComplete: true },
     );
     this.badgeQueue.add(
@@ -152,7 +172,7 @@ export class TasbihService {
   /**
    * Reset daily counter with confirmation
    */
-  async resetCounter(userId: string, confirmCode?: string): Promise<void> {
+  async resetCounter(userId: string, confirmCode?: string, timezone = 'UTC'): Promise<void> {
     // Verify user exists
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
     if (!user) {
@@ -160,7 +180,7 @@ export class TasbihService {
     }
 
     // Delete today's sessions
-    const today = startOfDay(new Date());
+    const today = timezoneDayStart(new Date(), timezone);
     await this.prisma.tasbihSession.deleteMany({
       where: {
         userId,
@@ -188,7 +208,7 @@ export class TasbihService {
     // Queue aggregation refresh
     this.aggregationQueue.add(
       'aggregate-daily',
-      { userId, date: new Date() },
+      { userId, date: new Date(), timezone },
       { removeOnComplete: true },
     );
   }
@@ -200,9 +220,9 @@ export class TasbihService {
   /**
    * Aggregate daily count (called by queue processor)
    */
-  async aggregateDaily(userId: string, date: Date): Promise<TasbihDaily> {
-    const dayStart = startOfDay(date);
-    const dayEnd = endOfDay(date);
+  async aggregateDaily(userId: string, date: Date, timezone = 'UTC'): Promise<TasbihDaily> {
+    const dayStart = timezoneDayStart(date, timezone);
+    const dayEnd = new Date(dayStart.getTime() + 24 * 60 * 60 * 1000 - 1);
 
     // Get user settings to check daily goal
     const settings = await this.getUserSettings(userId);
@@ -247,7 +267,7 @@ export class TasbihService {
 
     // Check streak
     if (metGoal) {
-      await this.updateStreak(userId, true);
+      await this.updateStreak(userId, true, timezone);
     }
 
     return daily;
@@ -292,7 +312,7 @@ export class TasbihService {
   /**
    * Update streak on daily goal achievement
    */
-  private async updateStreak(userId: string, metGoal: boolean): Promise<void> {
+  private async updateStreak(userId: string, metGoal: boolean, timezone = 'UTC'): Promise<void> {
     const streak = await this.prisma.tasbihStreak.findUnique({
       where: { userId },
     });
@@ -312,7 +332,7 @@ export class TasbihService {
 
     if (metGoal) {
       // Check if streak continues (yesterday also met goal)
-      const yesterday = startOfDay(subDays(new Date(), 1));
+      const yesterday = timezoneDayStart(subDays(new Date(), 1), timezone);
       const yesterdayRecord = await this.prisma.tasbihDaily.findUnique({
         where: {
           userId_date: {
@@ -322,8 +342,14 @@ export class TasbihService {
         },
       });
 
-      const newStreak =
-        yesterdayRecord?.metGoal ? streak.currentStreak + 1 : 1;
+      const currentMonth = new Intl.DateTimeFormat('en-CA', { timeZone: timezone, year: 'numeric', month: '2-digit' }).format(new Date());
+      let graceDaysRemaining = streak.graceMonth === currentMonth ? streak.graceDaysRemaining : 2;
+      const missedYesterday = !yesterdayRecord?.metGoal && streak.currentStreak > 0;
+      const canUseGrace = missedYesterday && graceDaysRemaining > 0;
+      if (canUseGrace) graceDaysRemaining -= 1;
+      const newStreak = yesterdayRecord?.metGoal || canUseGrace
+        ? streak.currentStreak + 1
+        : 1;
       const longestStreak = Math.max(newStreak, streak.longestStreak);
 
       await this.prisma.tasbihStreak.update({
@@ -334,6 +360,8 @@ export class TasbihService {
           streakStartDate:
             newStreak === 1 ? new Date() : streak.streakStartDate,
           streakEndDate: null,
+          graceDaysRemaining,
+          graceMonth: currentMonth,
         },
       });
 
@@ -481,7 +509,7 @@ export class TasbihService {
   /**
    * Get today's statistics
    */
-  async getTodayStatistics(userId: string): Promise<TasbihStatistics> {
+  async getTodayStatistics(userId: string, timezone = 'UTC'): Promise<TasbihStatistics> {
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
     if (!user) {
       throw new NotFoundException('User not found');
@@ -492,7 +520,7 @@ export class TasbihService {
       where: { userId },
     });
 
-    const today = startOfDay(new Date());
+    const today = timezoneDayStart(new Date(), timezone);
     const todayStats = await this.prisma.tasbihDaily.findUnique({
       where: {
         userId_date: {
@@ -519,6 +547,7 @@ export class TasbihService {
       lifetimeCount: settings.lifetimeTotal,
       currentStreak: streak?.currentStreak || 0,
       longestStreak: streak?.longestStreak || 0,
+      graceDays: streak?.graceDaysRemaining ?? 2,
       earnedBadges: badges.length,
       nextMilestone,
     };
@@ -811,6 +840,32 @@ export class TasbihService {
     }
 
     return settings;
+  }
+
+  async getAllBadges() {
+    return this.prisma.tasbihBadge.findMany({ orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }] });
+  }
+
+  async getAdminStats() {
+    const [users, sessions, totals, badges] = await Promise.all([
+      this.prisma.tasbihUserSettings.count(),
+      this.prisma.tasbihSession.count(),
+      this.prisma.tasbihDaily.aggregate({ _sum: { count: true } }),
+      this.prisma.userBadge.count({ where: { status: 'earned' } }),
+    ]);
+    return { users, sessions, totalCount: totals._sum.count ?? 0, badgesEarned: badges };
+  }
+
+  async getAdminWeeklyStats() {
+    const start = startOfWeek(new Date(), { weekStartsOn: 1 });
+    const rows = await this.prisma.tasbihDaily.findMany({ where: { date: { gte: start } }, orderBy: { date: 'asc' } });
+    return rows.reduce<Record<string, { total: number; users: number }>>((result, row) => {
+      const key = row.date.toISOString().slice(0, 10);
+      result[key] ??= { total: 0, users: 0 };
+      result[key].total += row.count;
+      result[key].users += 1;
+      return result;
+    }, {});
   }
 
   /**

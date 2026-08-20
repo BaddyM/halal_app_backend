@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { BullModule } from '@nestjs/bull';
 import { TasbihService } from './tasbih.service';
 import { TasbihController } from './tasbih.controller';
+import { TasbihAdminAliasController } from './tasbih-admin-alias.controller';
 import { TasbihAggregationProcessor } from './processors/tasbih-aggregation.processor';
 import { TasbihBadgesProcessor } from './processors/tasbih-badges.processor';
 import { TasbihLeaderboardProcessor } from './processors/tasbih-leaderboard.processor';
@@ -22,7 +23,7 @@ import { AuthModule } from 'src/auth/auth.module';
     TasbihBadgesProcessor,
     TasbihLeaderboardProcessor,
   ],
-  controllers: [TasbihController],
+  controllers: [TasbihController, TasbihAdminAliasController],
   exports: [TasbihService],
 })
 export class TasbihModule {}

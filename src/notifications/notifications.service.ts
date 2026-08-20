@@ -32,7 +32,7 @@ export class NotificationsService {
             name: u.name,
             // Fall back to the first gallery photo if no primary is set.
             imageUrl,
-            isOnline: this.isOnline(u.lastSeenAt),
+            isOnline: u.incognitoMode === true || u.showOnlineStatus === false ? false : this.isOnline(u.lastSeenAt),
             isVerified: profile.isVerified ?? false,
             age: this.calcAge(profile.dateOfBirth),
             location: [city, country].filter(Boolean).join(', '),

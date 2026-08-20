@@ -177,8 +177,8 @@ export class UsersService {
             privatePhotoCount: privatePhotos.length,
             privatePhotoAccess: isSelf ? 'owner' : privateAccess,
             isVerified: profile?.isVerified ?? false,
-            isOnline: this.isOnline(user.lastSeenAt),
-            lastSeenAt: user.lastSeenAt,
+            isOnline: isSelf || (user.incognitoMode !== true && user.showOnlineStatus !== false && this.isOnline(user.lastSeenAt)),
+            lastSeenAt: isSelf || (user.incognitoMode !== true && user.showLastSeen === true) ? user.lastSeenAt : undefined,
             compatibilityScore,
             matchReasons,
         };
@@ -957,11 +957,6 @@ export class UsersService {
                 return true;
             });
 
-        // Apply basic plan visibility filter
-        if (viewer.plan === 'basic') {
-            scored = scored.filter((c) => c.score >= 0.85);
-        }
-
         // Sort
         const sortBy = q.sortBy ?? 'compatibility';
         if (sortBy === 'compatibility') {
@@ -1604,6 +1599,12 @@ export class UsersService {
             update: { status: 'pending' },
             create: { requesterId, ownerId, status: 'pending' },
         });
+        this.realtime.emitToUser(ownerId, 'notification:new', { kind: 'photoRequest', requesterId });
+        void this.push.sendToUser(ownerId, {
+            title: 'Private photo request',
+            body: 'Someone requested access to your private photos.',
+            data: { type: 'photoRequest', requesterId },
+        });
         return { success: true, status: req.status };
     }
 
@@ -1617,6 +1618,12 @@ export class UsersService {
         const updated = await this.prisma.photoAccessRequest.update({
             where: { id: req.id },
             data: { status: grant ? 'granted' : 'denied' },
+        });
+        this.realtime.emitToUser(requesterId, 'notification:new', { kind: grant ? 'photoGranted' : 'photoDenied', ownerId });
+        void this.push.sendToUser(requesterId, {
+            title: grant ? 'Private photos unlocked' : 'Private photo request declined',
+            body: grant ? 'You can now view the permitted private photos.' : 'Your private photo request was declined.',
+            data: { type: grant ? 'photoGranted' : 'photoDenied', ownerId },
         });
         return { success: true, status: updated.status };
     }

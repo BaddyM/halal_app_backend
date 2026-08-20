@@ -8,7 +8,7 @@ export class TasbihAggregationProcessor {
 
   @Process('aggregate-daily')
   async aggregateDaily(job: Job) {
-    const { userId, date } = job.data;
-    await this.tasbihService.aggregateDaily(userId, new Date(date));
+    const { userId, date, timezone } = job.data;
+    await this.tasbihService.aggregateDaily(userId, new Date(date), timezone ?? 'UTC');
   }
 }
