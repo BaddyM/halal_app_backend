@@ -27,6 +27,7 @@ import {
     UpdatePhotoDto,
     UpdateProfileDto,
     DeleteAccountDto,
+    SubmitIdentityVerificationDto,
 } from './dto';
 
 @UseGuards(AuthGuard)
@@ -52,6 +53,21 @@ export class UsersController {
     @Patch('me/profile')
     updateProfile(@Req() req: AuthedRequest, @Body() dto: UpdateProfileDto) {
         return this.users.updateProfile(req.user.userId, dto);
+    }
+
+    @Get('me/verification')
+    verification(@Req() req: AuthedRequest) {
+        return this.users.getVerification(req.user.userId);
+    }
+
+    @Post('me/verification/phone')
+    submitPhone(@Req() req: AuthedRequest, @Body() body: { phone: string }) {
+        return this.users.submitPhoneForVerification(req.user.userId, body.phone);
+    }
+
+    @Post('me/verification/identity')
+    submitIdentity(@Req() req: AuthedRequest, @Body() dto: SubmitIdentityVerificationDto) {
+        return this.users.submitIdentityVerification(req.user.userId, dto.submission);
     }
 
     @Post('me/onboarding')

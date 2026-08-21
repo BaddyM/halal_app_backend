@@ -112,14 +112,6 @@ export class NotificationsService {
             convByPair.set(key, c.id);
         }
 
-        // Outgoing likes from me → used to suppress "likeRequest" for people
-        // I've already responded to (the other half of the match flow).
-        const outgoing = await this.prisma.like.findMany({
-            where: { fromUserId: userId },
-            select: { toUserId: true },
-        });
-        const outgoingIds = new Set(outgoing.map((l) => l.toUserId));
-
         const matchItems = matches.map((m) => {
             const partner = m.userAId === userId ? m.userB : m.userA;
             const key = [m.userAId, m.userBId].sort().join(':');
@@ -142,8 +134,6 @@ export class NotificationsService {
             .filter((l) => {
                 // Hide likes that have already become matches (rendered above)
                 if (matchedPartnerIds.has(l.fromUserId)) return false;
-                // Hide likes from people I've already swiped on
-                if (outgoingIds.has(l.fromUserId)) return false;
                 return true;
             })
             .map((l) => ({

@@ -1,5 +1,7 @@
 import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
-import { Prisma, Role, UserStatus } from '@prisma/client';
+import { existsSync, readdirSync } from 'fs';
+import { join } from 'path';
+import { ManualVerificationStatus, Prisma, Role, UserStatus } from '@prisma/client';
 import * as bcrypt from 'bcryptjs';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { PushService } from 'src/push/push.service';
@@ -287,6 +289,79 @@ export class AdminUsersService {
       { userId: id },
     );
     return { id, verified };
+  }
+
+  async getVerification(id: string) {
+    const user = await this.prisma.user.findUnique({
+      where: { id },
+      include: { profile: true, identityVerification: true },
+    });
+    if (!user) throw new NotFoundException('User not found');
+    return {
+      userId: id,
+      phone: {
+        number: user.phone,
+        status: user.phoneVerificationStatus,
+        reason: user.phoneVerificationReason,
+      },
+      identity: user.identityVerification,
+    };
+  }
+
+  async reviewPhoneVerification(id: string, status: string, reason?: string) {
+    const mapped = status as ManualVerificationStatus;
+    const verified = mapped === ManualVerificationStatus.verified;
+    const user = await this.prisma.user.update({
+      where: { id },
+      data: {
+        phoneVerificationStatus: mapped,
+        phoneVerificationReason: reason ?? null,
+        isPhoneVerified: verified,
+      },
+      select: { id: true, name: true },
+    });
+    await this.notifyVerification(id, 'phone', mapped, user.name);
+    return { userId: id, status: mapped, reason: reason ?? null };
+  }
+
+  async reviewIdentityVerification(id: string, status: string, reason?: string) {
+    const mapped = status as ManualVerificationStatus;
+    const verification = await this.prisma.identityVerification.update({
+      where: { userId: id },
+      data: { status: mapped, reason: reason ?? null, reviewedAt: new Date() },
+    });
+    const user = await this.prisma.user.findUnique({ where: { id }, select: { name: true } });
+    if (!user) throw new NotFoundException('User not found');
+    const phone = await this.prisma.user.findUnique({ where: { id }, select: { isPhoneVerified: true } });
+    const complete = mapped === ManualVerificationStatus.verified && phone?.isPhoneVerified === true;
+    if (complete) await this.prisma.profile.update({ where: { userId: id }, data: { isVerified: true } });
+    await this.notifyVerification(id, 'identity', mapped, user.name);
+    return { userId: id, status: verification.status, reason: verification.reason, badgeVerified: complete };
+  }
+
+  private async notifyVerification(id: string, kind: 'phone' | 'identity', status: ManualVerificationStatus, name: string) {
+    const title = kind === 'phone' ? 'Phone verification updated' : 'Identity verification updated';
+    const body = status === ManualVerificationStatus.verified
+      ? `${kind === 'phone' ? 'Your phone number' : 'Your identity'} has been verified.`
+      : status === ManualVerificationStatus.resubmissionRequired
+        ? 'Additional information is required for your verification.'
+        : `Your ${kind} verification status is ${status}.`;
+    void this.push.sendToUser(id, { title, body, data: { type: 'verification', kind, status } });
+    this.realtime.emitToUser(id, 'notification:new', { kind: 'verification', type: kind, status });
+    this.realtime.emitAdminEvent('moderation', `${name} ${kind} verification changed to ${status}`, { userId: id, kind, status });
+  }
+
+  async getVerificationDocumentPath(id: string, documentId: string) {
+    const verification = await this.prisma.identityVerification.findUnique({ where: { userId: id } });
+    if (!verification) throw new NotFoundException('Verification submission not found');
+    const documents = (verification.submission as any)?.documents ?? {};
+    const document = Object.values(documents).find((value: any) => value?.documentId === documentId) as any;
+    if (!document) throw new NotFoundException('Verification document not found');
+    const userDir = join(process.cwd(), 'uploads', 'verification', id);
+    const files = readdirSync(userDir);
+    const filename = files.find((file) => file.startsWith(documentId));
+    if (!filename || !existsSync(join(userDir, filename))) throw new NotFoundException('Verification file not found');
+    return { path: join(userDir, filename), originalName: document.originalName ?? filename };
   }
 
   /// Send an admin message → lands in the user's /inbox + push notification.

@@ -6,6 +6,7 @@ import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import { OAuthService } from './oauth.service';
 import { RealtimeBus } from '../realtime/realtime.bus';
+import { SmsService } from '../mail/sms.service';
 
 describe('AuthService', () => {
   let service: AuthService;
@@ -41,6 +42,7 @@ describe('AuthService', () => {
         { provide: OAuthService, useValue: {} },
         { provide: RealtimeBus, useValue: { emitAdminEvent: jest.fn() } },
         { provide: MailService, useValue: mailService },
+        { provide: SmsService, useValue: { sendCode: jest.fn(), sendMessage: jest.fn() } },
       ],
     }).compile();
 

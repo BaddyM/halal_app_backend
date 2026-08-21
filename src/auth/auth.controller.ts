@@ -9,8 +9,6 @@ import {
     ForgotPasswordDto,
     ResetPasswordDto,
     RefreshTokenDto,
-    SendOtpDto,
-    VerifyOtpDto,
     OAuthLoginDto,
 } from './dto';
 
@@ -46,16 +44,6 @@ export class AuthController {
     @Post('reset-password')
     resetPassword(@Body() dto: ResetPasswordDto) {
         return this.auth.resetPassword(dto.email, dto.code, dto.newPassword);
-    }
-
-    @Post('otp/send')
-    sendOtp(@Body() dto: SendOtpDto) {
-        return this.auth.sendOtp(dto.phone);
-    }
-
-    @Post('otp/verify')
-    verifyOtp(@Body() dto: VerifyOtpDto) {
-        return this.auth.verifyOtp(dto.phone, dto.code);
     }
 
     @Post('oauth/google')

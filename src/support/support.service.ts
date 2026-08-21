@@ -113,9 +113,35 @@ export class SupportService {
     }
     await this.prisma.supportTicketMessage.create({ data: { ticketId: ticket.id, body, fromAdmin: false } });
     const history = await this.prisma.supportTicketMessage.findMany({ where: { ticketId: ticket.id }, orderBy: { createdAt: 'asc' }, take: 12 });
-    const result = await this.ai.analyzeAndReply(body, { supportTicketId: ticket.id, history: history.map((item) => ({ fromAdmin: item.fromAdmin, body: item.body })) });
-    await this.prisma.supportTicketMessage.create({ data: { ticketId: ticket.id, body: result.reply, fromAdmin: true } });
-    await this.prisma.supportTicket.update({ where: { id: ticket.id }, data: { status: result.escalate ? 'waitingForUser' : 'open' } });
+    const userQuestionCount = history.filter((item) => !item.fromAdmin).length;
+    const greeting = /^(hi|hello|hey|salam|assalamu alaikum)\b/i.test(body.trim());
+    const result = greeting
+      ? {
+          reply: 'Wa alaikum assalam. Welcome to Halal Connect support. How can I help you today?',
+          escalate: false,
+        }
+      : userQuestionCount > 6
+          ? {
+              reply: 'I have shared this conversation with our support handler. They will reply soon, so there is no need to send more messages for now.',
+              escalate: true,
+            }
+          : await this.ai.analyzeAndReply(body, {
+              supportTicketId: ticket.id,
+              history: history.map((item) => ({ fromAdmin: item.fromAdmin, body: item.body })),
+            });
+    const unavailable = result.reply.toLowerCase().includes('ai is not configured') ||
+      result.reply.toLowerCase().includes('ai is temporarily unavailable') ||
+      result.reply.toLowerCase().includes('ai is unavailable');
+    const finalResult = unavailable
+      ? {
+          reply: greeting
+            ? 'Wa alaikum assalam. Welcome to Halal Connect support. Please tell us what you need help with. A support handler will reply soon.'
+            : 'Thanks for contacting Halal Connect support. I could not answer that automatically, so a support handler will review this conversation and reply soon.',
+          escalate: true,
+        }
+      : result;
+    await this.prisma.supportTicketMessage.create({ data: { ticketId: ticket.id, body: finalResult.reply, fromAdmin: true } });
+    await this.prisma.supportTicket.update({ where: { id: ticket.id }, data: { status: finalResult.escalate ? 'waitingForUser' : 'open' } });
     return this.getForUser(userId, ticket.id);
   }
 }

@@ -108,6 +108,13 @@ enum BadgeType {
   special       // limited time or special events
   achievement   // unlocked via specific conditions
 }
+enum ManualVerificationStatus {
+  notSubmitted
+  pending
+  verified
+  rejected
+  resubmissionRequired
+}
 
 // ─────────────────────────────────────────────────────────────
 //  USER & AUTH
@@ -120,6 +127,8 @@ model User {
   phone             String?
   isEmailVerified   Boolean  @default(false)
   isPhoneVerified   Boolean  @default(false)
+  phoneVerificationStatus ManualVerificationStatus @default(notSubmitted)
+  phoneVerificationReason String?
   isActive          Boolean  @default(true)
 
   // Admin / moderation
@@ -159,6 +168,7 @@ model User {
 
   // Relations
   profile           Profile?
+  identityVerification IdentityVerification?
   onboardingAnswers OnboardingAnswer[]
   photos            Photo[]
 
@@ -197,6 +207,13 @@ model User {
   tasbihStreaks     TasbihStreak[]
   userBadges        UserBadge[]
   tasbihSettings    TasbihUserSettings?
+  // Wali (Guardian)
+  waliLinksAsGuardian WaliLink[]    @relation("WaliGuardian")
+  waliLinksAsUser     WaliLink[]    @relation("UserWali")
+  waliDigests         WaliDigest[]  @relation("WaliDigests")
+  waliApprovalsAsWali WaliApproval[] @relation("WaliApprovals")
+  waliApprovalsAsUser WaliApproval[] @relation("UserApprovals")
+
 
   @@index([email])
 }
@@ -265,6 +282,18 @@ model OnboardingAnswer {
 
   @@unique([userId, questionId])
   @@index([userId])
+}
+
+model IdentityVerification {
+  id          String   @id @default(uuid())
+  userId      String   @unique
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  status      ManualVerificationStatus @default(notSubmitted)
+  reason      String?  @db.Text
+  submission  Json
+  reviewedAt  DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -912,5 +941,100 @@ model TasbihLeaderboard {
   @@unique([userId, scope])
   @@index([scope, rank])
   @@index([updatedAt])
+}
+
+// ─────────────────────────────────────────────────────────────
+//  WALI — Guardian Oversight System
+// ─────────────────────────────────────────────────────────────
+
+// Wali (Guardian) link between a protégé and their guardian
+model WaliLink {
+  id            String   @id @default(uuid())
+  
+  // Guardian side
+  waliId        String
+  wali          User     @relation("WaliGuardian", fields: [waliId], references: [id], onDelete: Cascade)
+  
+  // User being guided
+  userId        String
+  user          User     @relation("UserWali", fields: [userId], references: [id], onDelete: Cascade)
+  
+  // Approval state: pending | active | rejected | revoked
+  status        String   @default("pending") @db.VarChar(32)
+  
+  // Permissions
+  seeProfiles   Boolean @default(true)   // Can view who you're matched with
+  seeChats      Boolean @default(false)  // Can view chat messages
+  approveLikes  Boolean @default(false)  // Must approve before you like someone
+  approveMatches Boolean @default(false) // Must approve before accepting a match
+  
+  // Invitation tracking
+  inviteSentAt  DateTime?
+  acceptedAt    DateTime?
+  rejectedAt    DateTime?
+  revokedAt     DateTime?
+  
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  
+  @@unique([waliId, userId])
+  @@index([userId, status])
+  @@index([waliId, status])
+}
+
+// Wali digest summary (weekly/monthly)
+model WaliDigest {
+  id            String   @id @default(uuid())
+  waliId        String
+  wali          User     @relation("WaliDigests", fields: [waliId], references: [id], onDelete: Cascade)
+  
+  // Summary period: weekly | monthly
+  period        String   @db.VarChar(32)
+  startDate     DateTime
+  endDate       DateTime
+  
+  // Events summary
+  newMatches    Int      @default(0)
+  newLikes      Int      @default(0)
+  newMessages   Int      @default(0)
+  
+  // Protected users summary
+  usersLinked   Int      @default(0)
+  
+  // Digest sent status
+  sentAt        DateTime?
+  
+  createdAt     DateTime @default(now())
+  
+  @@unique([waliId, period, startDate])
+}
+
+// Approval request for actions requiring wali sign-off
+model WaliApproval {
+  id            String   @id @default(uuid())
+  waliId        String
+  wali          User     @relation("WaliApprovals", fields: [waliId], references: [id], onDelete: Cascade)
+  
+  userId        String
+  user          User     @relation("UserApprovals", fields: [userId], references: [id], onDelete: Cascade)
+  
+  // Type of action: like | match_accept | match_reject
+  actionType    String   @db.VarChar(32)
+  
+  // The user being liked/matched with
+  targetUserId  String
+  
+  // Action details (JSON)
+  actionDetails Json?
+  
+  // Approval state: pending | approved | rejected
+  status        String   @default("pending") @db.VarChar(32)
+  approvedAt    DateTime?
+  
+  createdAt     DateTime @default(now())
+  expiresAt     DateTime // Approval requests expire after 7 days
+  
+  @@index([waliId, status])
+  @@index([userId, actionType])
 }
 

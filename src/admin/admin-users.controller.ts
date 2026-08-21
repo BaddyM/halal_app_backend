@@ -6,9 +6,11 @@ import {
   Patch,
   Post,
   Query,
+  Res,
   UseGuards,
   UseInterceptors,
 } from '@nestjs/common';
+import type { Response } from 'express';
 import { UserStatus } from '@prisma/client';
 import { AuthGuard } from 'src/auth/auth.guard';
 import { AdminGuard } from './admin.guard';
@@ -21,6 +23,7 @@ import {
   CreateUserDto,
   SetUserStatusDto,
   VerifyUserDto,
+  VerificationReviewDto,
 } from './dto';
 
 @UseGuards(AuthGuard, AdminGuard)
@@ -59,6 +62,21 @@ export class AdminUsersController {
     return this.users.setVerified(id, dto.verified);
   }
 
+  @Get(':id/verification')
+  verification(@Param('id') id: string) {
+    return this.users.getVerification(id);
+  }
+
+  @Patch(':id/verification/phone')
+  reviewPhone(@Param('id') id: string, @Body() dto: VerificationReviewDto) {
+    return this.users.reviewPhoneVerification(id, dto.status, dto.reason);
+  }
+
+  @Patch(':id/verification/identity')
+  reviewIdentity(@Param('id') id: string, @Body() dto: VerificationReviewDto) {
+    return this.users.reviewIdentityVerification(id, dto.status, dto.reason);
+  }
+
   @Post(':id/message')
   message(@Param('id') id: string, @Body() dto: AdminMessageDto) {
     return this.users.sendMessage(id, dto.subject, dto.body);
@@ -67,5 +85,15 @@ export class AdminUsersController {
   @Post(':id/reset-swipes')
   resetSwipes(@Param('id') id: string) {
     return this.users.resetSwipes(id);
+  }
+
+  @Get(':id/verification/documents/:documentId')
+  async verificationDocument(
+    @Param('id') id: string,
+    @Param('documentId') documentId: string,
+    @Res() res: Response,
+  ) {
+    const document = await this.users.getVerificationDocumentPath(id, documentId);
+    return res.download(document.path, document.originalName);
   }
 }

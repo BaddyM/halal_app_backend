@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  Body,
   ForbiddenException,
   Controller,
   Post,
@@ -17,7 +18,17 @@ import { AuthGuard, AuthedRequest } from 'src/auth/auth.guard';
 import { PrismaService } from 'src/prisma/prisma.service';
 
 const ALLOWED_MIME = ['image/jpeg', 'image/png', 'image/webp', 'image/jpg'];
+import { randomUUID } from 'crypto';
 const MAX_SIZE = 5 * 1024 * 1024;
+const VERIFICATION_MAX_SIZE = 50 * 1024 * 1024;
+const VERIFICATION_MIME = [
+  'image/jpeg',
+  'image/png',
+  'image/webp',
+  'video/mp4',
+  'video/quicktime',
+  'video/webm',
+];
 
 @ApiBearerAuth()
 @UseGuards(AuthGuard)
@@ -126,5 +137,66 @@ export class UploadController {
       throw new ForbiddenException('Photo and voice messages are a Premium feature.');
     }
     return { url: `/uploads/photos/chat/${file.filename}` };
+  }
+
+  @Post('verification-document')
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({
+    schema: {
+      type: 'object',
+      required: ['file', 'kind'],
+      properties: {
+        kind: { type: 'string', enum: ['front', 'back', 'selfie', 'video'] },
+        file: { type: 'string', format: 'binary' },
+      },
+    },
+  })
+  @UseInterceptors(
+    FileInterceptor('file', {
+      storage: diskStorage({
+        destination: (req: any, _file, cb) => {
+          const dest = `./uploads/verification/${req.user.userId}`;
+          if (!existsSync(dest)) mkdirSync(dest, { recursive: true });
+          cb(null, dest);
+        },
+        filename: (_req, file, cb) => {
+          cb(null, `${randomUUID()}${extname(file.originalname).toLowerCase()}`);
+        },
+      }),
+      fileFilter: (_req, file, cb) => {
+        if (!VERIFICATION_MIME.includes(file.mimetype)) {
+          return cb(new BadRequestException('Verification files must be JPG, PNG, WEBP, MP4, MOV or WEBM'), false);
+        }
+        cb(null, true);
+      },
+      limits: { fileSize: VERIFICATION_MAX_SIZE },
+    }),
+  )
+  async uploadVerificationDocument(
+    @Req() req: AuthedRequest,
+    @UploadedFile() file: Express.Multer.File,
+    @Body('kind') kind: string,
+  ) {
+    if (!['front', 'back', 'selfie', 'video'].includes(kind)) {
+      if (file?.path) try { unlinkSync(file.path); } catch (_) {}
+      throw new BadRequestException('Invalid verification document kind');
+    }
+    if (!file) throw new BadRequestException('No verification file uploaded');
+    const isVideo = file.mimetype.startsWith('video/');
+    if ((kind === 'front' || kind === 'back' || kind === 'selfie') && isVideo) {
+      try { unlinkSync(file.path); } catch (_) {}
+      throw new BadRequestException(`${kind} must be an image`);
+    }
+    if (kind === 'video' && !isVideo) {
+      try { unlinkSync(file.path); } catch (_) {}
+      throw new BadRequestException('Holding-document proof must be a video');
+    }
+    return {
+      documentId: file.filename.split('.')[0],
+      kind,
+      mimeType: file.mimetype,
+      size: file.size,
+      originalName: file.originalname,
+    };
   }
 }

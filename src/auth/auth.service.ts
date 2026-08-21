@@ -194,9 +194,7 @@ export class AuthService {
             },
         });
         this.logCode('verify', user.email, code);
-        await this.mail.sendCodeEmail(user.email, code, 'verify').catch((error) => {
-            this.logger.warn(`Failed to resend verification email to ${user.email}: ${error.message}`);
-        });
+        await this.mail.sendCodeEmail(user.email, code, 'verify');
 
         return {
             success: true,
@@ -219,9 +217,7 @@ export class AuthService {
             },
         });
         this.logCode('reset', user.email, code);
-        await this.mail.sendCodeEmail(user.email, code, 'reset').catch((error) => {
-            this.logger.warn(`Failed to send reset email to ${user.email}: ${error.message}`);
-        });
+        await this.mail.sendCodeEmail(user.email, code, 'reset');
 
         return {
             success: true,
@@ -291,68 +287,6 @@ export class AuthService {
             data: { revokedAt: new Date() },
         });
         return { success: true };
-    }
-
-    // ── phone OTP ───────────────────────────────────────────────
-    /// Send a 6-digit code to a phone number. The phone must already belong to
-    /// an account (the user sets it during onboarding/profile). On success the
-    /// code is texted via the SMS provider; in Dev it is logged and returned.
-    async sendOtp(phone: string) {
-        const user = await this.prisma.user.findFirst({ where: { phone } });
-        if (!user) {
-            // Don't leak which phones exist; pretend success.
-            return { success: true };
-        }
-
-        const code = this.generateCode();
-        await this.prisma.phoneVerificationToken.create({
-            data: {
-                userId: user.id,
-                phone,
-                code,
-                expiresAt: new Date(Date.now() + 10 * 60 * 1000),
-            },
-        });
-        this.logCode('otp', phone, code);
-        // TODO: integrate an SMS provider (Twilio/SNS) for production delivery.
-
-        return {
-            success: true,
-            otpCode: this.config.get('MODE') === 'Dev' ? code : undefined,
-        };
-    }
-
-    /// Verify a phone OTP. Marks the phone verified and logs the user in
-    /// (passwordless) by issuing a fresh token pair.
-    async verifyOtp(phone: string, code: string) {
-        const token = await this.prisma.phoneVerificationToken.findFirst({
-            where: {
-                phone,
-                code,
-                consumedAt: null,
-                expiresAt: { gt: new Date() },
-            },
-            orderBy: { createdAt: 'desc' },
-            include: { user: { include: { profile: true } } },
-        });
-        if (!token) throw new BadRequestException('Invalid or expired code');
-
-        await this.prisma.$transaction([
-            this.prisma.phoneVerificationToken.update({
-                where: { id: token.id },
-                data: { consumedAt: new Date() },
-            }),
-            this.prisma.user.update({
-                where: { id: token.userId },
-                data: { isPhoneVerified: true, lastSeenAt: new Date() },
-            }),
-        ]);
-
-        const tokens = await this.issueTokens(token.user.id, token.user.email);
-        return {
-            user: this.sanitizeUser({ ...token.user, isPhoneVerified: true }),
-            ...tokens,
-        };
     }
 
     // ── OAuth (Google / Apple) ──────────────────────────────────

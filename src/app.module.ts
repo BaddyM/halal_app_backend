@@ -24,6 +24,8 @@ import { MailModule } from './mail/mail.module';
 import { TasbihModule } from './tasbih/tasbih.module';
 import { SupportModule } from './support/support.module';
 
+import { WaliModule } from './wali/wali.module';
+
 @Module({
     imports: [
         // Global request throttling to protect likes/messages and other endpoints
@@ -52,6 +54,7 @@ import { SupportModule } from './support/support.module';
         MailModule,
         TasbihModule,
         SupportModule,
+        WaliModule,
     ],
     providers: [
         { provide: APP_GUARD, useClass: ThrottlerGuard },

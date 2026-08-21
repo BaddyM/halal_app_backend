@@ -10,10 +10,13 @@ export class AiService {
 
   private perMinuteLimit: number;
   private dailyLimit: number;
+  private readonly model: string;
+  private readonly requestTimeoutMs = 12_000;
 
   constructor() {
     this.perMinuteLimit = parseInt(process.env.GEMINI_PER_MINUTE_LIMIT || '') || 60;
     this.dailyLimit = parseInt(process.env.GEMINI_DAILY_LIMIT || '') || 1000;
+    this.model = process.env.GEMINI_MODEL || 'gemini-2.0-flash';
     this.resetIfNeeded();
   }
 
@@ -53,19 +56,24 @@ export class AiService {
 
     try {
       const res = await fetch(
-        'https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key=' + apiKey,
+        `https://generativelanguage.googleapis.com/v1beta/models/${this.model}:generateContent?key=${encodeURIComponent(apiKey)}`,
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] }),
+          signal: AbortSignal.timeout(this.requestTimeoutMs),
         },
       );
       const data = await res.json();
+      if (!res.ok) {
+        this.logger.error(`Gemini generate failed (${res.status}): ${JSON.stringify(data)}`);
+        return 'Sorry, AI is temporarily unavailable.';
+      }
       const text = data?.candidates?.[0]?.content?.[0]?.text || data?.output?.[0]?.content?.[0]?.text || JSON.stringify(data);
       return String(text);
     } catch (err) {
       this.logger.error('AI generate failed', err as any);
-      throw err;
+      return 'Sorry, AI is temporarily unavailable.';
     }
   }
 
@@ -93,10 +101,19 @@ export class AiService {
 
     try {
       const res = await fetch(
-        'https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key=' + apiKey,
-        { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) },
+        `https://generativelanguage.googleapis.com/v1beta/models/${this.model}:generateContent?key=${encodeURIComponent(apiKey)}`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+          signal: AbortSignal.timeout(this.requestTimeoutMs),
+        },
       );
       const data = await res.json();
+      if (!res.ok) {
+        this.logger.error(`Gemini analysis failed (${res.status}): ${JSON.stringify(data)}`);
+        return { reply: 'Sorry, AI is temporarily unavailable.', escalate: false };
+      }
       const text = data?.candidates?.[0]?.content?.[0]?.text || data?.output?.[0]?.content?.[0]?.text || JSON.stringify(data);
       // Try to extract JSON object from the text
       const jsonStart = text.indexOf('{');

@@ -73,6 +73,12 @@ export class VerifyUserDto {
   @IsBoolean() verified!: boolean;
 }
 
+export class VerificationReviewDto {
+  @IsIn(['pending', 'verified', 'rejected', 'resubmissionRequired'])
+  status!: 'pending' | 'verified' | 'rejected' | 'resubmissionRequired';
+  @IsOptional() @IsString() @MaxLength(2000) reason?: string;
+}
+
 export class AdminMessageDto {
   @IsOptional() @IsString() @MaxLength(160) subject?: string;
   @IsString() @IsNotEmpty() @MaxLength(4000) body!: string;

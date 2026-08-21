@@ -10,6 +10,8 @@ import { Prisma } from '@prisma/client';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { RealtimeBus } from 'src/realtime/realtime.bus';
 import { PushService } from 'src/push/push.service';
+import { MailService } from 'src/mail/mail.service';
+import { SmsService } from 'src/mail/sms.service';
 import { AiService } from './ai.service';
 import { containsFlaggedWord } from './moderation';
 
@@ -22,6 +24,8 @@ export class ChatService implements OnModuleInit {
             private readonly bus: RealtimeBus,
             private readonly ai: AiService,
             private readonly push: PushService,
+            private readonly mail: MailService,
+            private readonly sms: SmsService,
         ) {}
 
         private readonly logger = new Logger(ChatService.name);
@@ -568,20 +572,48 @@ export class ChatService implements OnModuleInit {
             );
         }
 
-        const recentCount = await this.prisma.message.count({
-            where: { conversationId },
+        const conversation = await this.prisma.conversation.findUnique({
+            where: { id: conversationId },
+            include: {
+                userA: { select: { name: true } },
+                userB: { select: { name: true } },
+                messages: {
+                    orderBy: { createdAt: 'desc' },
+                    take: 20,
+                    select: { text: true, createdAt: true },
+                },
+            },
         });
+        if (!conversation) throw new NotFoundException('Conversation not found');
+
+        const recentMessages = conversation.messages.reverse();
+        const participantNames = `${conversation.userA.name} and ${conversation.userB.name}`;
+        const summary = recentMessages.length
+            ? recentMessages
+                  .map((message) => `${message.createdAt.toISOString()} - ${message.text}`)
+                  .join('\n')
+            : 'No messages yet.';
 
         await this.prisma.conversation.update({
             where: { id: conversationId },
             data: { waliInvolved: true, waliInvolvedAt: new Date() },
         });
 
-        // eslint-disable-next-line no-console
-        console.log(
-            `📧 [wali] Summary for conversation ${conversationId} (${recentCount} messages) ` +
-                `CC'd to ${profile.waliName} <${profile.waliEmail ?? profile.waliPhone}>`,
-        );
+        const subject = `Conversation update for ${participantNames}`;
+        if (profile.waliEmail) {
+            await this.mail.sendMail({
+                to: profile.waliEmail,
+                subject,
+                text: `Recent messages between ${participantNames}:\n\n${summary}`,
+                html: `<h2>${subject}</h2><p>Recent messages:</p><pre>${summary}</pre>`,
+            });
+        }
+        if (profile.waliPhone) {
+            await this.sms.sendMessage(
+                profile.waliPhone,
+                `${subject}. ${recentMessages.length} recent message(s) are available in the app.`,
+            );
+        }
 
         this.bus.emitToConversation(conversationId, 'wali:involved', {
             conversationId,

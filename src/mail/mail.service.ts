@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, ServiceUnavailableException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import * as nodemailer from 'nodemailer';
 import type { Transporter } from 'nodemailer';
@@ -42,6 +42,9 @@ export class MailService {
   async sendMail(args: { to: string; subject: string; html: string; text?: string }) {
     if (!this.transporter) {
       this.logger.warn(`Email not sent. SMTP not configured. To: ${args.to} Subject: ${args.subject}`);
+      if (this.config.get<string>('MODE') !== 'Dev') {
+        throw new ServiceUnavailableException('Email delivery is not configured');
+      }
       return { accepted: [args.to], rejected: [], messageId: null };
     }
 

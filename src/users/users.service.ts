@@ -503,6 +503,92 @@ export class UsersService {
         return this.serializeProfile(user, { id: userId, plan: user.plan });
     }
 
+    async getVerification(userId: string) {
+        const user = await this.prisma.user.findUnique({
+            where: { id: userId },
+            include: { profile: true, identityVerification: true },
+        });
+        if (!user) throw new NotFoundException('User not found');
+        return {
+            phone: {
+                number: user.phone,
+                status: user.phoneVerificationStatus,
+                reason: user.phoneVerificationReason,
+            },
+            wali: user.profile?.waliPhone
+                ? { number: user.profile.waliPhone, status: 'notSubmitted', reason: null }
+                : null,
+            identity: user.identityVerification
+                ? {
+                      status: user.identityVerification.status,
+                      reason: user.identityVerification.reason,
+                      submission: user.identityVerification.submission,
+                      submittedAt: user.identityVerification.createdAt,
+                      reviewedAt: user.identityVerification.reviewedAt,
+                  }
+                : { status: 'notSubmitted', reason: null, submission: null },
+            badge: { verified: user.profile?.isVerified === true },
+        };
+    }
+
+    async submitPhoneForVerification(userId: string, phone: string) {
+        const normalized = this.normalizePhone(phone);
+        if (!normalized) throw new BadRequestException('Phone number is required');
+        const updated = await this.prisma.user.update({
+            where: { id: userId },
+            data: {
+                phone: normalized,
+                isPhoneVerified: false,
+                phoneVerificationStatus: 'pending',
+                phoneVerificationReason: null,
+            },
+        });
+        this.realtime.emitToUser(userId, 'verification:updated', { kind: 'phone', status: 'pending' });
+        return {
+            number: updated.phone,
+            status: updated.phoneVerificationStatus,
+            reason: updated.phoneVerificationReason,
+        };
+    }
+
+    async submitIdentityVerification(userId: string, submission: Record<string, unknown>) {
+        const documentType = submission?.documentType;
+        const documents = submission?.documents;
+        if (documentType !== 'nationalId' && documentType !== 'passport') {
+            throw new BadRequestException('Choose national ID or passport');
+        }
+        if (!documents || typeof documents !== 'object' || Array.isArray(documents)) {
+            throw new BadRequestException('Verification documents are required');
+        }
+        const requiredKinds = ['front', 'back', 'holdingProof'];
+        for (const kind of requiredKinds) {
+            const item = (documents as any)[kind];
+            if (!item?.documentId || item.kind !== kind) {
+                throw new BadRequestException(`Missing verification document: ${kind}`);
+            }
+        }
+        const verification = await this.prisma.identityVerification.upsert({
+            where: { userId },
+            update: {
+                submission: submission as any,
+                status: 'pending',
+                reason: null,
+                reviewedAt: null,
+            },
+            create: { userId, submission: submission as any, status: 'pending' },
+        });
+        await this.prisma.user.update({
+            where: { id: userId },
+            data: { halalVerificationSubmitted: true },
+        });
+        this.realtime.emitToUser(userId, 'verification:updated', { kind: 'identity', status: 'pending' });
+        return {
+            status: verification.status,
+            reason: verification.reason,
+            submittedAt: verification.createdAt,
+        };
+    }
+
     async touchLastSeen(userId: string) {
         await this.prisma.user.update({
             where: { id: userId },
@@ -524,7 +610,12 @@ export class UsersService {
         if (dto.phone !== undefined) {
             await this.prisma.user.update({
                 where: { id: userId },
-                data: { phone: this.normalizePhone(dto.phone) },
+                data: {
+                    phone: this.normalizePhone(dto.phone),
+                    isPhoneVerified: false,
+                    phoneVerificationStatus: 'pending',
+                    phoneVerificationReason: null,
+                },
             });
         }
 

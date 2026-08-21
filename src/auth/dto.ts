@@ -69,25 +69,6 @@ export class RefreshTokenDto {
     refreshToken!: string;
 }
 
-// E.164-ish phone: optional leading +, 7–15 digits.
-const PHONE_REGEX = /^\+?[0-9]{7,15}$/;
-
-export class SendOtpDto {
-    @IsString()
-    @Matches(PHONE_REGEX, { message: 'Invalid phone number' })
-    phone!: string;
-}
-
-export class VerifyOtpDto {
-    @IsString()
-    @Matches(PHONE_REGEX, { message: 'Invalid phone number' })
-    phone!: string;
-
-    @IsString()
-    @Length(6, 6)
-    code!: string;
-}
-
 export class OAuthLoginDto {
     // The provider ID token / credential obtained on-device.
     @IsString()

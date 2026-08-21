@@ -7,6 +7,7 @@ import {
     IsEnum,
     IsInt,
     IsOptional,
+    IsObject,
     IsString,
     Max,
     MaxLength,
@@ -113,6 +114,11 @@ export class SetWaliDto {
     @IsOptional() @IsString() @MaxLength(120) waliEmail?: string;
     @IsOptional() @IsString() @MaxLength(32) waliPhone?: string;
     @IsOptional() @IsString() @MaxLength(60) waliRelation?: string;
+}
+
+export class SubmitIdentityVerificationDto {
+    @IsObject()
+    submission!: Record<string, unknown>;
 }
 
 export class UpdatePhotoDto {
