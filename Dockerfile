@@ -74,7 +74,7 @@ COPY --from=builder /app/prisma ./prisma
 COPY package.json ./
 
 # Ensure these exist even before the prod bind-mounts attach
-RUN mkdir -p uploads src/assets
+RUN mkdir -p uploads src/assets config
 
 EXPOSE 3000
 

@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { PushService } from 'src/push/push.service';
@@ -18,23 +18,29 @@ export class AdminMessagingService {
     audience: string | undefined,
   ): Promise<string[]> {
     const ids = new Set(userIds ?? []);
-    if (audience && audience !== 'all') {
-      const where: Prisma.UserWhereInput =
-        audience === 'free'
-          ? { plan: 'basic' }
-          : audience === 'premium'
-            ? { plan: { not: 'basic' } }
-            : audience === 'banned'
-              ? { status: 'banned' }
-              : audience === 'verified'
-                ? { profile: { is: { isVerified: true } } }
-                : {};
-      const users = await this.prisma.user.findMany({ where, select: { id: true } });
-      users.forEach((u) => ids.add(u.id));
-    } else if (audience === 'all') {
-      const users = await this.prisma.user.findMany({ select: { id: true } });
-      users.forEach((u) => ids.add(u.id));
+
+    // Explicit recipients only — never widen a targeted send into a segment.
+    if (!audience) return [...ids];
+
+    const DAY = 24 * 60 * 60 * 1000;
+    const filters: Record<string, Prisma.UserWhereInput> = {
+      all: {},
+      free: { plan: 'basic' },
+      premium: { plan: { not: 'basic' } },
+      banned: { status: 'banned' },
+      verified: { profile: { is: { isVerified: true } } },
+      active: { lastSeenAt: { gt: new Date(Date.now() - 30 * DAY) } },
+      new: { createdAt: { gt: new Date(Date.now() - 7 * DAY) } },
+    };
+
+    const where = filters[audience];
+    if (where === undefined) {
+      // Unknown segment: send to nobody rather than silently to everybody.
+      throw new BadRequestException(`Unknown audience "${audience}"`);
     }
+
+    const users = await this.prisma.user.findMany({ where, select: { id: true } });
+    users.forEach((u) => ids.add(u.id));
     return [...ids];
   }
 
@@ -70,11 +76,29 @@ export class AdminMessagingService {
 
   /// Broadcast an announcement: live in-app banner (admin:broadcast) for
   /// connected clients + inbox record + push for the targeted audience.
-  async broadcast(title: string, message: string, audience?: string) {
-    // Live banner to everyone currently connected.
-    this.realtime.broadcast('admin:broadcast', { title, message });
+  async broadcast(
+    title: string,
+    message: string,
+    audience?: string,
+    userIds?: string[],
+  ) {
+    // Explicit recipients win: a targeted announcement must not also resolve a
+    // segment, or "message these 3 users" becomes "message everyone".
+    const direct = !!userIds?.length;
+    const segment = direct ? undefined : (audience ?? 'all');
+    const targets = await this.resolveTargets(userIds, segment);
 
-    const targets = await this.resolveTargets(undefined, audience ?? 'all');
+    if (segment === 'all') {
+      // Whole-population send — one cheap fan-out to every open socket.
+      this.realtime.broadcast('admin:broadcast', { title, message });
+    } else {
+      // Targeted send: only the recipients get the in-app banner. Broadcasting
+      // to every socket would show a "premium members only" notice to free users.
+      for (const userId of targets) {
+        this.realtime.emitToUser(userId, 'admin:broadcast', { title, message });
+      }
+    }
+
     if (targets.length > 0) {
       await this.prisma.inboxMessage.createMany({
         data: targets.map((userId) => ({
@@ -92,7 +116,12 @@ export class AdminMessagingService {
 
     // Persist to the broadcast history shown in the dashboard.
     await this.prisma.broadcast.create({
-      data: { title, message, audience: audience ?? 'all', reach: targets.length },
+      data: {
+        title,
+        message,
+        audience: direct ? `direct:${targets.length}` : (audience ?? 'all'),
+        reach: targets.length,
+      },
     });
 
     return { sent: targets.length };

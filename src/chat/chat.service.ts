@@ -9,6 +9,7 @@ import {
 import { Prisma } from '@prisma/client';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { RealtimeBus } from 'src/realtime/realtime.bus';
+import { PushService } from 'src/push/push.service';
 import { AiService } from './ai.service';
 import { containsFlaggedWord } from './moderation';
 
@@ -20,6 +21,7 @@ export class ChatService implements OnModuleInit {
             private readonly prisma: PrismaService,
             private readonly bus: RealtimeBus,
             private readonly ai: AiService,
+            private readonly push: PushService,
         ) {}
 
         private readonly logger = new Logger(ChatService.name);
@@ -372,6 +374,7 @@ export class ChatService implements OnModuleInit {
         this.bus.emitToConversation(conversationId, 'message:new', payload);
         this.bus.emitToUser(other, 'conversation:bump', { conversationId });
         this.bus.emitToUser(other, 'notification:new', { kind: 'message', conversationId });
+        void this.notifyPeerOfMessage(other, userId, conversationId, type, clean);
         if (flagged) {
             // Surfaced to moderation tooling; the peer still receives the message.
             this.bus.emitToConversation(conversationId, 'message:flagged', {
@@ -496,6 +499,24 @@ export class ChatService implements OnModuleInit {
             create: { userAId: a, userBId: b },
         });
         return this.sendMessage(userId, conv.id, text, opts);
+    }
+
+    private async notifyPeerOfMessage(
+        recipientId: string,
+        senderId: string,
+        conversationId: string,
+        type: string,
+        text: string,
+    ) {
+        const sender = await this.prisma.user.findUnique({ where: { id: senderId }, select: { name: true } });
+        const body = type === 'text'
+            ? (text.length > 120 ? `${text.slice(0, 117)}...` : text)
+            : type === 'image' ? 'Sent a photo' : 'Sent a voice message';
+        await this.push.sendToUser(recipientId, {
+            title: sender?.name ?? 'New message',
+            body,
+            data: { type: 'message', conversationId, senderId },
+        });
     }
 
     // ── Read receipts ───────────────────────────────────────────

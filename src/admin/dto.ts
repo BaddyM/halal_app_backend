@@ -1,5 +1,6 @@
 import { Type } from 'class-transformer';
 import {
+  ArrayMaxSize,
   IsArray,
   IsBoolean,
   IsDateString,
@@ -77,17 +78,37 @@ export class AdminMessageDto {
   @IsString() @IsNotEmpty() @MaxLength(4000) body!: string;
 }
 
+/// Segments the dashboard can target. Every value here must be handled by
+/// AdminMessagingService.resolveTargets — an unhandled one silently falls
+/// through to "everybody", which is the worst possible failure for a
+/// mass-messaging tool.
+export const MESSAGE_AUDIENCES = [
+  'all',
+  'free',
+  'premium',
+  'verified',
+  'banned',
+  'active',
+  'new',
+] as const;
+
 export class BroadcastDto {
   @IsString() @IsNotEmpty() @MaxLength(160) title!: string;
   @IsString() @IsNotEmpty() @MaxLength(1000) message!: string;
-  // all | free | premium
-  @IsOptional() @IsIn(['all', 'free', 'premium']) audience?: string;
+  @IsOptional() @IsIn(MESSAGE_AUDIENCES as unknown as string[]) audience?: string;
+  // Explicit recipients. When present the announcement goes only to these
+  // users and the audience segment is ignored.
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(1000)
+  @IsString({ each: true })
+  userIds?: string[];
 }
 
 export class SendBulkMessageDto {
   // Either explicit user ids, an audience segment, or both.
-  @IsOptional() @IsArray() userIds?: string[];
-  @IsOptional() @IsIn(['all', 'free', 'premium', 'banned', 'verified']) audience?: string;
+  @IsOptional() @IsArray() @ArrayMaxSize(1000) @IsString({ each: true }) userIds?: string[];
+  @IsOptional() @IsIn(MESSAGE_AUDIENCES as unknown as string[]) audience?: string;
   @IsOptional() @IsString() @MaxLength(160) subject?: string;
   @IsString() @IsNotEmpty() @MaxLength(4000) body!: string;
 }

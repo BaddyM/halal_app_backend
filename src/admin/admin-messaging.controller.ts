@@ -20,7 +20,12 @@ export class AdminMessagingController {
   // Broadcast announcement (dashboard "Notifications").
   @Post('notifications/broadcast')
   broadcast(@Body() dto: BroadcastDto) {
-    return this.messaging.broadcast(dto.title, dto.message, dto.audience);
+    return this.messaging.broadcast(
+      dto.title,
+      dto.message,
+      dto.audience,
+      dto.userIds,
+    );
   }
 
   // Recent broadcast history for the dashboard "Notifications" panel.
