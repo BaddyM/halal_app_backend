@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ForbiddenException,
   Controller,
   Post,
   Req,
@@ -10,7 +11,7 @@ import {
 import { FileInterceptor } from '@nestjs/platform-express';
 import { diskStorage } from 'multer';
 import { extname } from 'path';
-import { existsSync, mkdirSync } from 'fs';
+import { existsSync, mkdirSync, unlinkSync } from 'fs';
 import { ApiBearerAuth, ApiBody, ApiConsumes } from '@nestjs/swagger';
 import { AuthGuard, AuthedRequest } from 'src/auth/auth.guard';
 import { PrismaService } from 'src/prisma/prisma.service';
@@ -117,8 +118,13 @@ export class UploadController {
       limits: { fileSize: MAX_SIZE },
     }),
   )
-  async uploadChatMedia(@UploadedFile() file: Express.Multer.File) {
+  async uploadChatMedia(@Req() req: AuthedRequest, @UploadedFile() file: Express.Multer.File) {
     if (!file) throw new BadRequestException('No file uploaded');
+    const user = await this.prisma.user.findUnique({ where: { id: req.user.userId }, select: { plan: true } });
+    if (!user || user.plan === 'basic') {
+      try { unlinkSync(file.path); } catch (_) {}
+      throw new ForbiddenException('Photo and voice messages are a Premium feature.');
+    }
     return { url: `/uploads/photos/chat/${file.filename}` };
   }
 }

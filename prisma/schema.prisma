@@ -228,6 +228,7 @@ model Profile {
   locationPref      LocationPreference?
   values            Json? // up to 3 strings
   interests         Json? // array of strings (tags)
+  socialLinks       Json? // map of platform -> {url, isPublic}
 
   // Guardian / Wali (optional) — CC'd on chat summaries, involved on request
   waliName          String?

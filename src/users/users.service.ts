@@ -127,6 +127,15 @@ export class UsersService {
         return url;
     }
 
+    private publicSocialLinks(raw: unknown): Record<string, { url: string; isPublic: boolean }> {
+        if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {};
+        return Object.fromEntries(
+            Object.entries(raw as Record<string, unknown>).filter(([, value]) => {
+                return !!value && typeof value === 'object' && (value as any).isPublic === true && typeof (value as any).url === 'string';
+            }),
+        ) as Record<string, { url: string; isPublic: boolean }>;
+    }
+
     private serializeProfile(
         user: any,
         viewer: { id: string; plan: SubscriptionPlan } | null,
@@ -181,6 +190,9 @@ export class UsersService {
             lastSeenAt: isSelf || (user.incognitoMode !== true && user.showLastSeen === true) ? user.lastSeenAt : undefined,
             compatibilityScore,
             matchReasons,
+            socialLinks: isSelf
+                ? profile?.socialLinks ?? {}
+                : this.publicSocialLinks(profile?.socialLinks),
         };
 
         if (mode === 'summary') {
@@ -512,7 +524,7 @@ export class UsersService {
         if (dto.phone !== undefined) {
             await this.prisma.user.update({
                 where: { id: userId },
-                data: { phone: dto.phone },
+                data: { phone: this.normalizePhone(dto.phone) },
             });
         }
 
@@ -586,6 +598,7 @@ export class UsersService {
             }),
             ...(dto.values !== undefined && { values: dto.values as any }),
             ...(dto.interests !== undefined && { interests: dto.interests as any }),
+            ...(dto.socialLinks !== undefined && { socialLinks: dto.socialLinks as any }),
         };
 
         await this.prisma.profile.upsert({
@@ -596,6 +609,14 @@ export class UsersService {
 
         await this.refreshIsComplete(userId);
         return this.getMe(userId);
+    }
+
+    private normalizePhone(raw: string): string {
+        const value = raw.trim().replace(/[\s().-]/g, '');
+        if (!/^\+[1-9]\d{7,14}$/.test(value)) {
+            throw new BadRequestException('Phone number must use international format, for example +256757919472');
+        }
+        return value;
     }
 
     /// A profile is "complete enough" to appear in discover once gender is
@@ -1007,13 +1028,17 @@ export class UsersService {
 
         const details = this.compatibilityDetails(viewer, target);
         const access = await this.privateAccessFor(viewerId, profileUserId);
-        return this.serializeProfile(
+        const payload: any = this.serializeProfile(
             target,
             { id: viewerId, plan: viewer.plan },
             details.score,
             details.reasons,
             access,
         );
+        const [a, b] = [viewerId, profileUserId].sort();
+        const matched = await this.prisma.match.findUnique({ where: { userAId_userBId: { userAId: a, userBId: b } } });
+        if (matched && target.phone) payload.phone = target.phone;
+        return payload;
     }
 
     // ── likes ───────────────────────────────────────────────────
@@ -1231,7 +1256,7 @@ export class UsersService {
             where: { id: viewerId },
             include: { profile: true },
         });
-
+        if (!viewer) throw new NotFoundException('Viewer not found');
         const blocked = await this.blockedIdsFor(viewerId);
 
         return likes

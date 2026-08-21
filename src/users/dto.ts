@@ -58,6 +58,7 @@ export class UpdateProfileDto {
 
     @IsOptional() @IsArray() values?: string[];
     @IsOptional() @IsArray() interests?: string[];
+    @IsOptional() @Allow() socialLinks?: Record<string, { url: string; isPublic: boolean }>;
 }
 
 export class OnboardingAnswerDto {
