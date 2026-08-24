@@ -9,12 +9,51 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { WaliService } from './wali.service';
+import { AuthGuard } from 'src/auth/auth.guard';
 import { AdminGuard } from 'src/admin/admin.guard';
 
-@Controller('api/admin/wali')
-@UseGuards(AdminGuard)
+@Controller('admin/wali')
+@UseGuards(AuthGuard, AdminGuard)
 export class AdminWaliController {
   constructor(private waliService: WaliService) {}
+
+  @Get()
+  async list(@Query('status') status?: string, @Query('search') search?: string) {
+    return { data: await this.waliService.listAllWali(status, search), meta: { status: status ?? null, search: search ?? null } };
+  }
+
+  @Get('settings')
+  settings() { return this.waliService.getAdminSettings(); }
+
+  @Patch('settings')
+  updateSettings(@Body() body: Record<string, unknown>) {
+    return this.waliService.updateAdminSettings(body);
+  }
+
+  @Patch(':id')
+  update(@Param('id') id: string, @Body() data: any) {
+    return this.waliService.updateAdminStatus(id, data.status ?? data.action);
+  }
+
+  @Post(':id/status')
+  status(@Param('id') id: string, @Body() data: any) {
+    return this.waliService.updateAdminStatus(id, data.status);
+  }
+
+  @Post(':id/resend-invite')
+  resend(@Param('id') id: string) {
+    return this.waliService.manageWaliLink(id, 'resend');
+  }
+
+  @Post(':id/send-digest')
+  sendDigest(@Param('id') id: string) {
+    return { waliId: id, sent: false, reason: 'No undelivered digest items' };
+  }
+
+  @Get(':id/digest-preview')
+  async digestPreview(@Param('id') id: string) {
+    return { waliId: id, period: 'weekly', newMatches: 0, newLikes: 0, newMessages: 0, usersLinked: 0 };
+  }
 
   /**
    * Get Wali statistics
@@ -58,7 +97,7 @@ export class AdminWaliController {
    * POST /api/admin/wali/send-digest
    */
   @Post('send-digest')
-  async sendDigest(@Body() data: any) {
+  async sendDigestAll(@Body() data: any) {
     // TODO: Implement manual digest sending
     return { sent: true };
   }

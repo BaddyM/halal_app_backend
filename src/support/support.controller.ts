@@ -16,6 +16,16 @@ export class SupportController {
     return this.support.create(req.user.userId, dto);
   }
 
+  @Get('ticket')
+  listTicketAlias(@Req() req: AuthedRequest) {
+    return this.support.listForUser(req.user.userId);
+  }
+
+  @Post('ticket')
+  createTicketAlias(@Req() req: AuthedRequest, @Body() dto: CreateSupportTicketDto) {
+    return this.support.create(req.user.userId, dto);
+  }
+
   @Get(':id')
   get(@Req() req: AuthedRequest, @Param('id') id: string) {
     return this.support.getForUser(req.user.userId, id);

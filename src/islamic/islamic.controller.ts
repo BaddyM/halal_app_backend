@@ -27,4 +27,9 @@ export class IslamicController {
   daily() {
     return this.islamic.getDaily();
   }
+
+  @Get('adhkar')
+  adhkar(@Query('period') period?: string) {
+    return this.islamic.getAdhkar(period);
+  }
 }

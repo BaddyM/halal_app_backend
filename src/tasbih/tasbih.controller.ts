@@ -34,7 +34,7 @@ import { AdminGuard } from 'src/admin/admin.guard';
  * This API manages Tasbih (Islamic counter) sessions, statistics, badges,
  * and user preferences. All endpoints require authentication except where noted.
  */
-@Controller('api/tasbih')
+@Controller('tasbih')
 export class TasbihController {
   constructor(private readonly tasbihService: TasbihService) {}
 

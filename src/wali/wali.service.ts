@@ -14,7 +14,10 @@ import { MailService } from 'src/mail/mail.service';
 // ────────────────────────────────────────────────────────────────
 
 export interface WaliInviteRequest {
+  waliName?: string;
   waliEmail: string;
+  waliPhone?: string;
+  relationship?: string;
   message?: string;
 }
 
@@ -58,20 +61,28 @@ export class WaliService {
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
     if (!user) throw new NotFoundException('User not found');
 
-    // Check if wali email exists
+    if (!data.waliEmail) throw new BadRequestException('Wali email is required');
+
+    // Walis act through email links. Reuse an existing account or create an
+    // email-only guardian identity for the invitation flow.
     const wali = await this.prisma.user.findUnique({
       where: { email: data.waliEmail },
     });
-
-    if (!wali) {
-      throw new NotFoundException('Wali user not found');
-    }
+    const waliAccount = wali ?? await this.prisma.user.create({
+      data: {
+        email: data.waliEmail,
+        name: data.waliName ?? 'Wali',
+        password: `wali-${Math.random().toString(36).slice(2)}`,
+        isActive: true,
+        isEmailVerified: true,
+      },
+    });
 
     // Check for existing link
     const existing = await this.prisma.waliLink.findUnique({
       where: {
         waliId_userId: {
-          waliId: wali.id,
+          waliId: waliAccount.id,
           userId: user.id,
         },
       },
@@ -85,12 +96,12 @@ export class WaliService {
     const link = await this.prisma.waliLink.upsert({
       where: {
         waliId_userId: {
-          waliId: wali.id,
+          waliId: waliAccount.id,
           userId: user.id,
         },
       },
       create: {
-        waliId: wali.id,
+        waliId: waliAccount.id,
         userId: user.id,
         status: 'pending',
         inviteSentAt: new Date(),
@@ -101,21 +112,24 @@ export class WaliService {
       },
     });
 
-    // Send email to wali
+    const frontendUrl = process.env.FRONTEND_URL ?? 'http://localhost:3000';
+
+    // Send email to wali. Acceptance happens through this token link; no app
+    // login is required on the guardian side.
     await this.mail.sendMail({
-      to: wali.email,
+      to: waliAccount.email,
       subject: `${user.name} has invited you as their Wali (Guardian)`,
       html: `
-        <p>Hello ${wali.name},</p>
+        <p>Hello ${waliAccount.name},</p>
         <p>${user.name} has invited you to be their Wali (Guardian).</p>
         ${data.message ? `<p>Message: ${data.message}</p>` : ''}
-        <p><a href="https://app.example.com/wali/accept/${link.id}">Accept invitation</a></p>
+        <p><a href="${frontendUrl}/api/wali/accept?token=${link.id}">Accept invitation</a></p>
       `,
       text: `${user.name} invited you to be their Wali. ${data.message || ''}`,
     });
 
     // Emit event
-    this.realtime.emitToUser(wali.id, 'wali:invitation-received', {
+    this.realtime.emitToUser(waliAccount.id, 'wali:invitation-received', {
       linkId: link.id,
       userName: user.name,
       message: data.message,
@@ -127,6 +141,26 @@ export class WaliService {
       status: 'pending',
       inviteSentAt: link.inviteSentAt,
     };
+  }
+
+  async resendInvite(userId: string) {
+    const link = await this.prisma.waliLink.findFirst({
+      where: { userId, status: 'pending' },
+      orderBy: { updatedAt: 'desc' },
+      include: { user: true, wali: true },
+    });
+    if (!link) throw new NotFoundException('No pending Wali invitation');
+    const frontendUrl = process.env.FRONTEND_URL ?? 'http://localhost:3000';
+    await this.mail.sendMail({
+      to: link.wali.email,
+      subject: `${link.user.name} has invited you as their Wali (Guardian)`,
+      html: `<p>Hello ${link.wali.name},</p><p>Please confirm the Wali invitation for ${link.user.name}.</p><p><a href="${frontendUrl}/api/wali/confirm?token=${link.id}">Confirm invitation</a></p>`,
+      text: `${link.user.name} invited you to be their Wali. Confirm: ${frontendUrl}/api/wali/confirm?token=${link.id}`,
+    });
+    return this.prisma.waliLink.update({
+      where: { id: link.id },
+      data: { inviteSentAt: new Date() },
+    });
   }
 
   /**
@@ -165,6 +199,21 @@ export class WaliService {
       permissions: data.action === 'accept' ? data.permissions : undefined,
       acceptedAt: updatedLink.acceptedAt,
     };
+  }
+
+  async respondToToken(token: string, action: 'accept' | 'reject') {
+    const link = await this.prisma.waliLink.findUnique({ where: { id: token } });
+    if (!link) throw new NotFoundException('Invitation not found');
+    return this.respondToInvitation(link.waliId, link.id, { action });
+  }
+
+  async unsubscribeByToken(token: string) {
+    const link = await this.prisma.waliLink.findUnique({ where: { id: token } });
+    if (!link) throw new NotFoundException('Wali link not found');
+    return this.prisma.waliLink.update({
+      where: { id: link.id },
+      data: { status: 'revoked', revokedAt: new Date() },
+    });
   }
 
   /**
@@ -445,6 +494,48 @@ export class WaliService {
         }),
       },
     };
+  }
+
+  async listAllWali(status?: string, search?: string) {
+    const links = await this.prisma.waliLink.findMany({
+      where: {
+        ...(status ? { status } : {}),
+        ...(search
+          ? { OR: [{ user: { name: { contains: search } } }, { wali: { name: { contains: search } } }] }
+          : {}),
+      },
+      orderBy: { updatedAt: 'desc' },
+      include: {
+        user: { select: { id: true, name: true, email: true } },
+        wali: { select: { id: true, name: true, email: true } },
+      },
+    });
+    return links;
+  }
+
+  async updateAdminStatus(linkId: string, status: string) {
+    if (!['pending', 'active', 'rejected', 'revoked'].includes(status)) {
+      throw new BadRequestException('Invalid Wali status');
+    }
+    return this.prisma.waliLink.update({ where: { id: linkId }, data: { status } });
+  }
+
+  async getAdminSettings() {
+    const rows = await this.prisma.appSetting.findMany({
+      where: { key: { startsWith: 'wali.' } },
+    });
+    return Object.fromEntries(rows.map((row) => [row.key.slice(5), row.value]));
+  }
+
+  async updateAdminSettings(values: Record<string, unknown>) {
+    for (const [key, value] of Object.entries(values)) {
+      await this.prisma.appSetting.upsert({
+        where: { key: `wali.${key}` },
+        update: { value: value as any },
+        create: { key: `wali.${key}`, value: value as any },
+      });
+    }
+    return this.getAdminSettings();
   }
 
   /**

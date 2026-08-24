@@ -11,10 +11,11 @@ import {
 } from '@nestjs/common';
 import { TasbihCompleteService } from './tasbih-complete.service';
 import { AdminGuard } from 'src/admin/admin.guard';
+import { AuthGuard } from 'src/auth/auth.guard';
 import { PrismaService } from 'src/prisma/prisma.service';
 
-@Controller('api/admin/tasbih')
-@UseGuards(AdminGuard)
+@Controller('admin/tasbih')
+@UseGuards(AuthGuard, AdminGuard)
 export class AdminTasbihController {
   constructor(
     private tasbihService: TasbihCompleteService,

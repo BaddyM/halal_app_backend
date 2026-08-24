@@ -96,4 +96,11 @@ export class IslamicService {
       hadith: HADITHS[idx % HADITHS.length],
     };
   }
+
+  getAdhkar(period?: string) {
+    const idx = dayOfYear(new Date());
+    const dua = DUAS[(idx + (period?.length ?? 0)) % DUAS.length];
+    const hadith = HADITHS[(idx + 1) % HADITHS.length];
+    return { period: period ?? 'general', dua, hadith };
+  }
 }

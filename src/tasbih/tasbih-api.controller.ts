@@ -16,9 +16,24 @@ import { AuthGuard } from 'src/auth/auth.guard';
  * Tasbih (Dhikr Counter) API
  * Complete mobile and web API endpoints
  */
-@Controller('api/tasbih')
+@Controller('tasbih')
 export class TasbihApiController {
   constructor(private readonly tasbihService: TasbihCompleteService) {}
+
+  @Post('session')
+  @UseGuards(AuthGuard)
+  async recordSession(@Request() req: any, @Body() data: any) {
+    return this.tasbihService.startSession(req.user.id, {
+      deviceId: data.idempotencyKey,
+      appVersion: data.dhikrType,
+    });
+  }
+
+  @Get('me')
+  @UseGuards(AuthGuard)
+  async me(@Request() req: any) {
+    return this.tasbihService.getTodayStats(req.user.id);
+  }
 
   // ────────────────────────────────────────────────────────────────
   // SESSION MANAGEMENT

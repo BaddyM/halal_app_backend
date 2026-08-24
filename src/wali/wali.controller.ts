@@ -9,14 +9,58 @@ import {
   UseGuards,
   Request,
   HttpCode,
+  Query,
+  NotFoundException,
 } from '@nestjs/common';
 import { WaliService } from './wali.service';
 import { AuthGuard } from 'src/auth/auth.guard';
 import { AdminGuard } from 'src/admin/admin.guard';
 
-@Controller('api/wali')
+@Controller('wali')
 export class WaliController {
   constructor(private readonly waliService: WaliService) {}
+
+  @Get('me')
+  @UseGuards(AuthGuard)
+  me(@Request() req: any) { return this.waliService.getMyWalis(req.user.id); }
+
+  @Patch('me')
+  @UseGuards(AuthGuard)
+  updateMe(@Request() req: any, @Body() data: any) {
+    return this.waliService.getMyWalis(req.user.id).then((links) => {
+      const link = links[0];
+      if (!link) throw new NotFoundException('No active Wali link');
+      return this.waliService.updateWaliPermissions(req.user.id, link.linkId, data);
+    });
+  }
+
+  @Delete('me')
+  @UseGuards(AuthGuard)
+  removeMe(@Request() req: any) {
+    return this.waliService.getMyWalis(req.user.id).then((links) => {
+      const link = links[0];
+      if (!link) throw new NotFoundException('No active Wali link');
+      return this.waliService.revokeWali(req.user.id, link.linkId);
+    });
+  }
+
+  @Post('resend-invite')
+  @UseGuards(AuthGuard)
+  resendInvite(@Request() req: any) {
+    return this.waliService.resendInvite(req.user.id);
+  }
+
+  @Get('confirm')
+  confirm(@Query('token') token: string) { return this.waliService.respondToToken(token, 'accept'); }
+
+  @Get('accept')
+  accept(@Query('token') token: string) { return this.waliService.respondToToken(token, 'accept'); }
+
+  @Get('decline')
+  decline(@Query('token') token: string) { return this.waliService.respondToToken(token, 'reject'); }
+
+  @Get('unsubscribe')
+  unsubscribe(@Query('token') token: string) { return this.waliService.unsubscribeByToken(token); }
 
   // ────────────────────────────────────────────────────────────────
   // WALI INVITATIONS & LINKS
@@ -144,7 +188,7 @@ export class WaliController {
    * GET /api/admin/wali/stats
    */
   @Get('/admin/stats')
-  @UseGuards(AdminGuard)
+  @UseGuards(AuthGuard, AdminGuard)
   async getWaliStats() {
     return this.waliService.getWaliStats();
   }
@@ -154,7 +198,7 @@ export class WaliController {
    * GET /api/admin/wali/users/:userId/links
    */
   @Get('admin/users/:userId/links')
-  @UseGuards(AdminGuard)
+  @UseGuards(AuthGuard, AdminGuard)
   async getUserWaliLinks(@Param('userId') userId: string) {
     return this.waliService.getUserWaliLinks(userId);
   }
@@ -164,7 +208,7 @@ export class WaliController {
    * PATCH /api/admin/wali/links/:linkId
    */
   @Patch('admin/links/:linkId')
-  @UseGuards(AdminGuard)
+  @UseGuards(AuthGuard, AdminGuard)
   async manageWaliLink(@Param('linkId') linkId: string, @Body() data: any) {
     return this.waliService.manageWaliLink(linkId, data.action);
   }

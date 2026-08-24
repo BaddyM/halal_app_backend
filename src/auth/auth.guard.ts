@@ -11,7 +11,7 @@ import { PrismaService } from 'src/prisma/prisma.service';
 import { RealtimeBus } from 'src/realtime/realtime.bus';
 
 export interface AuthedRequest extends Request {
-    user: { userId: string; email: string; role: string };
+    user: { userId: string; id: string; email: string; role: string };
 }
 
 @Injectable()
@@ -68,7 +68,7 @@ export class AuthGuard implements CanActivate {
             });
         }
 
-        req.user = { userId: payload.sub, email: payload.email, role: user.role };
+        req.user = { userId: payload.sub, id: payload.sub, email: payload.email, role: user.role };
         return true;
     }
 }
