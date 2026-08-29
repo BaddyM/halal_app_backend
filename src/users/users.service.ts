@@ -598,6 +598,15 @@ export class UsersService {
 
     // ── profile ────────────────────────────────────────────────
     async updateProfile(userId: string, dto: UpdateProfileDto) {
+        if (dto.readReceiptsEnabled === true) {
+            const user = await this.prisma.user.findUnique({
+                where: { id: userId },
+                select: { plan: true },
+            });
+            if (!user || user.plan === 'basic') {
+                throw new ForbiddenException('Read receipts are a Premium feature.');
+            }
+        }
         // Load current profile gender to enforce gender-specific fields
         const cur = await this.prisma.profile.findUnique({ where: { userId }, select: { gender: true } });
         if (dto.name !== undefined) {

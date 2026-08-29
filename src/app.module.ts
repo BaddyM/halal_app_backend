@@ -25,11 +25,13 @@ import { TasbihModule } from './tasbih/tasbih.module';
 import { SupportModule } from './support/support.module';
 
 import { WaliModule } from './wali/wali.module';
+import { ScheduleModule } from '@nestjs/schedule';
 
 @Module({
     imports: [
         // Global request throttling to protect likes/messages and other endpoints
         ThrottlerModule.forRoot({ throttlers: [{ ttl: 60_000, limit: 30 }] }),
+        ScheduleModule.forRoot(),
         ConfigModule.forRoot({ isGlobal: true }),
         ServeStaticModule.forRoot({
             rootPath: join(process.cwd(), 'uploads'),

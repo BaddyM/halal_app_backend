@@ -165,6 +165,7 @@ model User {
 
   // Notifications read-marker: anything newer than this is "unread".
   notificationsReadAt DateTime?
+  conversationRemindersEnabled Boolean @default(true)
 
   // Relations
   profile           Profile?
@@ -379,6 +380,7 @@ model Conversation {
   messages      Message[]
   createdAt     DateTime @default(now())
   lastMessageAt DateTime @default(now())
+  lastReminderAt DateTime?
 
   // "Involve wali": a guardian has been CC'd on this conversation summary.
   waliInvolved   Boolean   @default(false)

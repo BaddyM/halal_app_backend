@@ -1,11 +1,45 @@
 import { Injectable } from '@nestjs/common';
+import { Cron, CronExpression } from '@nestjs/schedule';
 import { PrismaService } from 'src/prisma/prisma.service';
+import { PushService } from 'src/push/push.service';
 
 const ONLINE_WINDOW_MS = 5 * 60 * 1000;
 
 @Injectable()
 export class NotificationsService {
-    constructor(private readonly prisma: PrismaService) {}
+    constructor(private readonly prisma: PrismaService, private readonly push: PushService) {}
+
+    async setConversationReminders(userId: string, enabled: boolean) {
+        await this.prisma.user.update({ where: { id: userId }, data: { conversationRemindersEnabled: enabled } });
+        return { enabled };
+    }
+
+    @Cron(CronExpression.EVERY_HOUR)
+    async sendConversationReminders() {
+        const cutoff = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+        const conversations = await this.prisma.conversation.findMany({
+            where: {
+                lastMessageAt: { lte: cutoff },
+                OR: [{ lastReminderAt: null }, { lastReminderAt: { lt: cutoff } }],
+            },
+            include: {
+                userA: { select: { id: true, name: true, conversationRemindersEnabled: true } },
+                userB: { select: { id: true, name: true, conversationRemindersEnabled: true } },
+            },
+        });
+        for (const conversation of conversations) {
+            const recipients = [conversation.userA, conversation.userB].filter((user) => user.conversationRemindersEnabled);
+            for (const recipient of recipients) {
+                const partner = recipient.id === conversation.userA.id ? conversation.userB : conversation.userA;
+                await this.push.sendToUser(recipient.id, {
+                    title: 'Checking in',
+                    body: `Your conversation with ${partner.name} has been quiet recently.`,
+                    data: { type: 'message', conversationId: conversation.id },
+                });
+            }
+            await this.prisma.conversation.update({ where: { id: conversation.id }, data: { lastReminderAt: new Date() } });
+        }
+    }
 
     private isOnline(lastSeenAt: Date | null | undefined): boolean {
         if (!lastSeenAt) return false;

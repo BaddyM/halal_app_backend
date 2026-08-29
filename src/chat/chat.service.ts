@@ -74,9 +74,20 @@ export class ChatService implements OnModuleInit {
     }
 
     private serializePartner(user: any) {
+        const dateOfBirth = user.profile?.dateOfBirth;
+        const now = new Date();
+        let age: number | null = null;
+        if (dateOfBirth) {
+            age = now.getFullYear() - dateOfBirth.getFullYear();
+            const month = now.getMonth() - dateOfBirth.getMonth();
+            if (month < 0 || (month === 0 && now.getDate() < dateOfBirth.getDate())) age--;
+        }
         return {
             id: user.id,
             name: user.name,
+            age,
+            location: [user.profile?.city, user.profile?.country].filter(Boolean).join(', '),
+            compatibilityScore: user.compatibilityScore ?? 0,
             imageUrl: user.profile?.primaryImageUrl ?? null,
             isOnline: this.isOnline(user.lastSeenAt),
             isVerified: user.profile?.isVerified ?? false,

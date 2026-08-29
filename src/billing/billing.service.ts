@@ -116,7 +116,12 @@ export class BillingService {
     });
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
-      select: { plan: true, planExpiresAt: true },
+      select: {
+        plan: true,
+        planExpiresAt: true,
+        likesUsedToday: true,
+        activeChatsCount: true,
+      },
     });
     if (!sub) {
       return {
@@ -126,6 +131,10 @@ export class BillingService {
         currentPeriodEnd: user?.planExpiresAt ?? null,
         cancelAtPeriodEnd: false,
         plan: null,
+        likesUsedToday: user?.likesUsedToday ?? 0,
+        activeChatsCount: user?.activeChatsCount ?? 0,
+        likesLimit: user?.plan === 'basic' ? 5 : null,
+        activeChatsLimit: user?.plan === 'basic' ? 5 : null,
       };
     }
     return {
@@ -135,6 +144,10 @@ export class BillingService {
       currentPeriodEnd: sub.currentPeriodEnd,
       cancelAtPeriodEnd: sub.cancelAtPeriodEnd,
       plan: this.serializePlan(sub.plan),
+      likesUsedToday: user?.likesUsedToday ?? 0,
+      activeChatsCount: user?.activeChatsCount ?? 0,
+      likesLimit: sub.plan.tier === 'basic' ? 5 : null,
+      activeChatsLimit: sub.plan.tier === 'basic' ? 5 : null,
     };
   }
 
