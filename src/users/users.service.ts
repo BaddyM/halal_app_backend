@@ -193,6 +193,12 @@ export class UsersService {
             socialLinks: isSelf
                 ? profile?.socialLinks ?? {}
                 : this.publicSocialLinks(profile?.socialLinks),
+            origin: this.answerText(
+                (user.onboardingAnswers ?? []).find((a: any) => a.questionId === 'cultural_background')?.answer,
+            ) || profile?.ethnicity,
+            tribe: this.answerText(
+                (user.onboardingAnswers ?? []).find((a: any) => a.questionId === 'ugandan_tribe')?.answer,
+            ),
         };
 
         if (mode === 'summary') {
@@ -201,6 +207,12 @@ export class UsersService {
 
         return {
             ...basePayload,
+            onboardingAnswers: Object.fromEntries(
+                (user.onboardingAnswers ?? []).map((answer: any) => [
+                    answer.questionId,
+                    answer.answer,
+                ]),
+            ),
             hasBeard: profile?.hasBeard,
             prefersBeard: profile?.prefersBeard,
             prefersHijab: profile?.prefersHijab,
@@ -260,6 +272,7 @@ export class UsersService {
             { key: 'photo', label: 'A photo', weight: 2, done: photoCount > 0 || !!p.primaryImageUrl },
             { key: 'prayerFrequency', label: 'Prayer practice', weight: 1, done: !!p.prayerFrequency },
             { key: 'sect', label: 'Madhab / sect', weight: 1, done: !!p.sect },
+            { key: 'ethnicity', label: 'Cultural background', weight: 1, done: !!p.ethnicity },
             // For completeness: if gender is female, hijab matters; if male, beard presence is asked.
             { key: 'hijabPreference', label: 'Hijab/appearance', weight: 1, done: !!(p.gender === 'female' ? p.hijabPreference : p.hasBeard) },
             { key: 'maritalTimeline', label: 'Marriage timeline', weight: 1, done: !!p.maritalTimeline },
@@ -344,6 +357,37 @@ export class UsersService {
         return (wantsKids(a) && refusesKids(b)) || (wantsKids(b) && refusesKids(a));
     }
 
+    private onboardingMap(user: any): Record<string, any> {
+        const answers = Array.isArray(user?.onboardingAnswers) ? user.onboardingAnswers : [];
+        const map: Record<string, any> = {};
+        for (const item of answers) {
+            const key = String(item?.questionId ?? '').trim();
+            if (!key) continue;
+            map[key] = item.answer;
+        }
+        return map;
+    }
+
+    private answerText(answer: any): string {
+        if (answer == null) return '';
+        if (Array.isArray(answer)) return answer.map((part) => String(part)).join(', ');
+        if (typeof answer === 'string') return answer.trim();
+        return String(answer).trim();
+    }
+
+    private matchesGroupedChoice(viewer: any, candidate: any, keys: string[]): boolean {
+        const viewerMap = this.onboardingMap(viewer);
+        const candidateMap = this.onboardingMap(candidate);
+        const viewerValues = keys
+            .map((key) => this.answerText(viewerMap[key]))
+            .filter(Boolean);
+        const candidateValues = keys
+            .map((key) => this.answerText(candidateMap[key]))
+            .filter(Boolean);
+        if (viewerValues.length === 0 || candidateValues.length === 0) return false;
+        return viewerValues.some((value) => candidateValues.includes(value));
+    }
+
     private compatibilityDetails(
         viewer: any,
         candidate: any,
@@ -354,6 +398,8 @@ export class UsersService {
 
         const v = viewer.profile;
         const c = candidate.profile;
+        const viewerAnswers = this.onboardingMap(viewer);
+        const candidateAnswers = this.onboardingMap(candidate);
 
         let score = 0;
         let weight = 0;
@@ -378,6 +424,53 @@ export class UsersService {
             reasons.push(`Both ${v.sect.charAt(0).toUpperCase()}${v.sect.slice(1)}`);
         } else {
             add(false, 2);
+        }
+
+        const professionA = this.answerText(viewerAnswers.profession || v.profession);
+        const professionB = this.answerText(candidateAnswers.profession || c.profession);
+        if (professionA && professionB && professionA === professionB) {
+            add(true, 1.5);
+            reasons.push(`Both in ${professionA}`);
+        } else {
+            add(false, 1.5);
+        }
+
+        const culturalBackgroundA = this.answerText(viewerAnswers.cultural_background || v.ethnicity);
+        const culturalBackgroundB = this.answerText(candidateAnswers.cultural_background || c.ethnicity);
+        if (culturalBackgroundA && culturalBackgroundB && culturalBackgroundA === culturalBackgroundB) {
+            add(true, 1);
+            reasons.push(`Shared cultural background: ${culturalBackgroundA}`);
+        } else {
+            add(false, 1);
+        }
+
+        if (this.matchesGroupedChoice(viewer, candidate, ['family_involvement', 'family_role'])) {
+            add(true, 1);
+            reasons.push('Similar family involvement preferences');
+        } else {
+            add(false, 1);
+        }
+
+        if (this.matchesGroupedChoice(viewer, candidate, ['cultural_compatibility', 'cultural_fit'])) {
+            add(true, 1);
+            reasons.push('Aligned on cultural compatibility');
+        } else {
+            add(false, 1);
+        }
+
+        if (this.matchesGroupedChoice(viewer, candidate, ['intercultural_marriage', 'intercultural'])) {
+            add(true, 1);
+            reasons.push('Open to compatible intercultural match');
+        } else {
+            add(false, 1);
+        }
+
+        const sharedChildrenValues = this.matchesGroupedChoice(viewer, candidate, ['children_values', 'childrenValues']);
+        if (sharedChildrenValues) {
+            add(true, 1);
+            reasons.push('Similar goals for future children');
+        } else {
+            add(false, 1);
         }
 
         if (v.hijabPreference && v.hijabPreference === c.hijabPreference) {
@@ -496,7 +589,11 @@ export class UsersService {
     async getMe(userId: string) {
         const user = await this.prisma.user.findUnique({
             where: { id: userId },
-            include: { profile: true, photos: { orderBy: { position: 'asc' } } },
+            include: {
+                profile: true,
+                onboardingAnswers: true,
+                photos: { orderBy: { position: 'asc' } },
+            },
         });
         if (!user) throw new NotFoundException('User not found');
         await this.touchLastSeen(userId);
@@ -786,7 +883,7 @@ export class UsersService {
         const prayer = map.get('prayer');
         if (typeof prayer === 'string') {
             const p = prayer.toLowerCase();
-            if (p.startsWith('5')) profileUpdate.prayerFrequency = 'fiveTimes';
+            if (p.startsWith('five') || p.startsWith('5')) profileUpdate.prayerFrequency = 'fiveTimes';
             else if (p.startsWith('most')) profileUpdate.prayerFrequency = 'mostPrayers';
             else if (p.startsWith("jumu")) profileUpdate.prayerFrequency = 'jumuahOnly';
             else profileUpdate.prayerFrequency = 'workingOnIt';
@@ -830,12 +927,21 @@ export class UsersService {
             const t = timeline.toLowerCase();
             if (t.includes('soon')) profileUpdate.maritalTimeline = 'asap';
             else if (t.includes('within 1 year')) profileUpdate.maritalTimeline = 'withinYear';
+            else if (t.includes('within 6 months')) profileUpdate.maritalTimeline = 'asap';
             else if (t.includes('1–2') || t.includes('1-2')) profileUpdate.maritalTimeline = 'oneToTwoYears';
             else profileUpdate.maritalTimeline = 'openTimeline';
         }
 
         const ethnicity = map.get('ethnicity');
-        if (typeof ethnicity === 'string') profileUpdate.ethnicity = ethnicity;
+        const culturalBackground = map.get('cultural_background');
+        if (typeof culturalBackground === 'string') {
+            profileUpdate.ethnicity = culturalBackground;
+        } else if (typeof ethnicity === 'string') {
+            profileUpdate.ethnicity = ethnicity;
+        }
+
+        const profession = map.get('profession');
+        if (typeof profession === 'string') profileUpdate.profession = profession;
 
         const children = map.get('children');
         if (typeof children === 'string') {
@@ -1044,6 +1150,7 @@ export class UsersService {
             where,
             include: {
                 profile: true,
+                onboardingAnswers: true,
                 photos: { orderBy: { position: 'asc' }, take: 5 },
             },
             take: 200,
@@ -1122,7 +1229,11 @@ export class UsersService {
 
         const target = await this.prisma.user.findUnique({
             where: { id: profileUserId },
-            include: { profile: true, photos: { orderBy: { position: 'asc' } } },
+            include: {
+                profile: true,
+                onboardingAnswers: true,
+                photos: { orderBy: { position: 'asc' } },
+            },
         });
         if (!target) throw new NotFoundException('Profile not found');
 
@@ -1142,19 +1253,28 @@ export class UsersService {
     }
 
     // ── likes ───────────────────────────────────────────────────
-    private async resetDailyLikesIfNeeded(userId: string) {
+    private async resetLikesIfNeeded(userId: string) {
         const user = await this.prisma.user.findUnique({ where: { id: userId } });
         if (!user) throw new NotFoundException('User not found');
 
+        const subscription = await this.prisma.subscription.findUnique({
+            where: { userId },
+            include: { plan: { select: { likesLimit: true, likesPeriod: true } } },
+        });
+        const period = user.plan === 'basic' ? 'lifetime' : (subscription?.plan.likesPeriod ?? 'day');
+        if (period === 'lifetime') return user;
+
         const last = user.lastLikeReset;
         const now = new Date();
-        const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-        if (last < startOfToday) {
+        const periodStart = period === 'month'
+            ? new Date(now.getFullYear(), now.getMonth(), 1)
+            : new Date(now.getFullYear(), now.getMonth(), now.getDate());
+        if (last < periodStart) {
             await this.prisma.user.update({
                 where: { id: userId },
-                data: { likesUsedToday: 0, lastLikeReset: startOfToday },
+                data: { likesUsedToday: 0, lastLikeReset: periodStart },
             });
-            return { ...user, likesUsedToday: 0, lastLikeReset: startOfToday };
+            return { ...user, likesUsedToday: 0, lastLikeReset: periodStart };
         }
         return user;
     }
@@ -1168,7 +1288,11 @@ export class UsersService {
         });
         if (!target) throw new NotFoundException('Target user not found');
 
-        const viewer = await this.resetDailyLikesIfNeeded(viewerId);
+        const viewer = await this.resetLikesIfNeeded(viewerId);
+        const subscription = await this.prisma.subscription.findUnique({
+            where: { userId: viewerId },
+            include: { plan: { select: { likesLimit: true, likesPeriod: true } } },
+        });
 
         // Super-likes are a premium feature (Module B).
         if (dto.type === 'superLike' && viewer.plan === 'basic') {
@@ -1178,10 +1302,10 @@ export class UsersService {
         }
 
         if (dto.type !== 'pass') {
-            // Enforce basic plan daily like limit
-            if (viewer.plan === 'basic' && viewer.likesUsedToday >= 5) {
+            const likesLimit = subscription?.plan.likesLimit ?? (viewer.plan === 'basic' ? 5 : null);
+            if (likesLimit != null && viewer.likesUsedToday >= likesLimit) {
                 throw new ForbiddenException(
-                    'Daily like limit reached. Upgrade to Premium for unlimited likes.',
+                    `Like limit reached for this ${subscription?.plan.likesPeriod ?? (viewer.plan === 'basic' ? 'lifetime' : 'day')} period.`,
                 );
             }
         }

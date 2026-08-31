@@ -564,6 +564,9 @@ model Plan {
   currency        String           @default("USD") @db.VarChar(8)
   // month | year | once
   interval        String           @default("month") @db.VarChar(16)
+  // Configurable like allowance. Null means unlimited.
+  likesLimit      Int?
+  likesPeriod     String           @default("day") @db.VarChar(16)
   features        Json? // string[] of marketing bullet points
   visible         Boolean          @default(true)
   sortOrder       Int              @default(0)

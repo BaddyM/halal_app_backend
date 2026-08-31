@@ -33,8 +33,10 @@ export class BillingService {
       description: 'Essential features to get started',
       priceCents: 0,
       interval: 'month',
+      likesLimit: 5,
+      likesPeriod: 'lifetime',
       sortOrder: 0,
-      features: ['5 likes per day', 'Up to 5 active chats', 'Standard matches'],
+      features: ['5 likes total until upgrade', 'Up to 5 active chats', 'Standard matches'],
     },
     {
       tier: 'premium' as const,
@@ -42,6 +44,8 @@ export class BillingService {
       description: 'Unlimited likes, chats and full visibility',
       priceCents: 999,
       interval: 'month',
+      likesLimit: null,
+      likesPeriod: 'day',
       sortOrder: 1,
       features: [
         'Unlimited likes',
@@ -57,6 +61,8 @@ export class BillingService {
       description: 'Lifetime access + exclusive privileges',
       priceCents: 9999,
       interval: 'once',
+      likesLimit: null,
+      likesPeriod: 'day',
       sortOrder: 2,
       features: [
         'Everything in Premium',
@@ -87,6 +93,10 @@ export class BillingService {
   }
 
   private serializePlan(p: Plan) {
+    const likesLimit = p.likesLimit ?? (p.tier === 'basic' ? 5 : null);
+    const likesPeriod = p.tier === 'basic' ? 'lifetime' : (p.likesPeriod ?? 'day');
+    const configuredFeatures = ((p.features as string[] | null) ?? [])
+      .filter((feature) => !feature.toLowerCase().includes('like'));
     return {
       id: p.id,
       tier: p.tier,
@@ -96,7 +106,14 @@ export class BillingService {
       price: this.formatPrice(p.priceCents, p.currency, p.interval),
       currency: p.currency,
       interval: p.interval,
-      features: (p.features as string[] | null) ?? [],
+      likesLimit,
+      likesPeriod,
+      features: [
+        ...(likesLimit == null ? [] : [
+          `Likes: ${likesLimit} ${likesPeriod === 'lifetime' ? 'total until upgrade' : `per ${likesPeriod}`}`,
+        ]),
+        ...configuredFeatures,
+      ],
       sortOrder: p.sortOrder,
     };
   }
@@ -110,6 +127,7 @@ export class BillingService {
   }
 
   async getSubscription(userId: string) {
+    await this.ensureSeeded();
     const sub = await this.prisma.subscription.findUnique({
       where: { userId },
       include: { plan: true },
@@ -124,16 +142,21 @@ export class BillingService {
       },
     });
     if (!sub) {
+      const currentPlan = await this.prisma.plan.findFirst({
+        where: { tier: user?.plan ?? 'basic', visible: true },
+        orderBy: { sortOrder: 'asc' },
+      });
       return {
         tier: user?.plan ?? 'basic',
         status: 'active',
         provider: null,
         currentPeriodEnd: user?.planExpiresAt ?? null,
         cancelAtPeriodEnd: false,
-        plan: null,
+        plan: currentPlan ? this.serializePlan(currentPlan) : null,
         likesUsedToday: user?.likesUsedToday ?? 0,
         activeChatsCount: user?.activeChatsCount ?? 0,
-        likesLimit: user?.plan === 'basic' ? 5 : null,
+        likesLimit: currentPlan?.likesLimit ?? (user?.plan === 'basic' ? 5 : null),
+        likesPeriod: user?.plan === 'basic' ? 'lifetime' : (currentPlan?.likesPeriod ?? 'day'),
         activeChatsLimit: user?.plan === 'basic' ? 5 : null,
       };
     }
@@ -146,7 +169,8 @@ export class BillingService {
       plan: this.serializePlan(sub.plan),
       likesUsedToday: user?.likesUsedToday ?? 0,
       activeChatsCount: user?.activeChatsCount ?? 0,
-      likesLimit: sub.plan.tier === 'basic' ? 5 : null,
+      likesLimit: sub.plan.likesLimit ?? (sub.plan.tier === 'basic' ? 5 : null),
+      likesPeriod: sub.plan.tier === 'basic' ? 'lifetime' : (sub.plan.likesPeriod ?? 'day'),
       activeChatsLimit: sub.plan.tier === 'basic' ? 5 : null,
     };
   }

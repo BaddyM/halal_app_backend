@@ -168,6 +168,8 @@ export class CreatePlanDto {
   @IsOptional() @Type(() => Number) @IsInt() @Min(0) priceCents?: number;
   @IsOptional() @IsString() currency?: string;
   @IsOptional() @IsIn(['month', 'year', 'once']) interval?: string;
+  @IsOptional() @Type(() => Number) @IsInt() @Min(0) likesLimit?: number;
+  @IsOptional() @IsIn(['day', 'month', 'lifetime']) likesPeriod?: string;
   @IsOptional() @IsArray() features?: string[];
   @IsOptional() @IsBoolean() visible?: boolean;
   @IsOptional() @Type(() => Number) @IsInt() sortOrder?: number;
@@ -180,6 +182,8 @@ export class UpdatePlanDto {
   @IsOptional() @Type(() => Number) @IsInt() @Min(0) priceCents?: number;
   @IsOptional() @IsString() currency?: string;
   @IsOptional() @IsIn(['month', 'year', 'once']) interval?: string;
+  @IsOptional() @Type(() => Number) @IsInt() @Min(0) likesLimit?: number;
+  @IsOptional() @IsIn(['day', 'month', 'lifetime']) likesPeriod?: string;
   @IsOptional() @IsArray() features?: string[];
   @IsOptional() @IsBoolean() visible?: boolean;
   @IsOptional() @Type(() => Number) @IsInt() sortOrder?: number;
