@@ -116,6 +116,36 @@ enum ManualVerificationStatus {
   resubmissionRequired
 }
 
+enum HealthDisclosureType {
+  chronicCondition        // Long-term/chronic condition
+  physicalDisability      // Physical disability or mobility
+  mentalHealth            // Mental/emotional health
+  reproductiveFertility   // Fertility/reproductive health
+  genetic                 // Genetic/hereditary condition
+  medicalTreatment        // Medication or ongoing treatment
+  other                   // Other
+  preferToExplainPrivately
+}
+
+enum ImpactLevel {
+  notSignificantly
+  sometimes
+  significantly
+  preferNotToSay
+}
+
+enum MarriageReadinessTopic {
+  health
+  fertility
+  finances
+  living
+  family
+  religion
+  timeline
+  location
+  work
+}
+
 // ─────────────────────────────────────────────────────────────
 //  USER & AUTH
 // ─────────────────────────────────────────────────────────────
@@ -215,6 +245,22 @@ model User {
   waliApprovalsAsWali WaliApproval[] @relation("WaliApprovals")
   waliApprovalsAsUser WaliApproval[] @relation("UserApprovals")
 
+  // Health Disclosure (progressive three-stage system)
+  healthDisclosure  HealthDisclosure?
+  disclosureRequestsAsRequester HealthDisclosureAccess[] @relation("DisclosureRequests")
+  disclosuresOwned  HealthDisclosureAccess[] @relation("DisclosureOwned")
+  readinessChecklistsAsUser1 MarriageReadinessChecklist[] @relation("ReadinessUser1")
+  readinessChecklistsAsUser2 MarriageReadinessChecklist[] @relation("ReadinessUser2")
+  
+  // Conversation Activity System
+  conversationActivities ConversationActivity[] @relation("ConversationActivityUser")
+  
+  // Prompt Eligibility System
+  promptEligibilities PromptEligibility[] @relation("PromptEligibilityUser")
+  
+  // Nikah Proposal System
+  nikahProposalsInitiated NikahProposal[] @relation("NikahProposalInitiator")
+  nikahProposalsReceived  NikahProposal[] @relation("NikahProposalRecipient")
 
   @@index([email])
 }
@@ -1039,4 +1085,239 @@ model WaliApproval {
   @@index([waliId, status])
   @@index([userId, actionType])
 }
+
+// ─────────────────────────────────────────────────────────────
+//  HEALTH DISCLOSURE — Progressive three-stage system
+// ─────────────────────────────────────────────────────────────
+
+// Stage 1: Onboarding question - does user have something to disclose?
+model HealthDisclosure {
+  id                String                  @id @default(uuid())
+  userId            String                  @unique
+  user              User                    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  // Stage 1: Onboarding answer
+  hasHealthMatter   Boolean?                // null = not yet answered, true = yes, false = no/prefer later
+  
+  // Stage 2: If yes, which category?
+  disclosureType    HealthDisclosureType?   // Only set if hasHealthMatter == true
+  
+  // Stage 2: Private impact assessment
+  impactLevel       ImpactLevel?            // Impact on daily life / married life
+  
+  // Private notes (encrypted at rest, only shown to serious matches after they request)
+  privateNotes      String?                 @db.Text
+  
+  // Whether this is marked for disclosure (false = user changed mind, hides it)
+  isActive          Boolean                 @default(true)
+  
+  // Track when user completed/updated disclosure
+  completedAt       DateTime?               // When user first set hasHealthMatter
+  lastUpdatedAt     DateTime                @default(now()) @updatedAt
+  
+  // For admin/support use
+  flaggedAt         DateTime?               // If flagged for manual review
+  flagReason        String?
+  
+  // Access requests to this disclosure
+  accesses          HealthDisclosureAccess[]
+  
+  @@index([userId])
+}
+
+// Stage 2: Track who has access to see the disclosure
+// (not the actual medical details, just the fact that it exists)
+model HealthDisclosureAccess {
+  id                String    @id @default(uuid())
+  
+  disclosureId      String
+  disclosure        HealthDisclosure  @relation(fields: [disclosureId], references: [id], onDelete: Cascade)
+  
+  // User requesting/granted access
+  requestingUserId  String
+  requestingUser    User      @relation("DisclosureRequests", fields: [requestingUserId], references: [id], onDelete: Cascade)
+  
+  // User who owns the disclosure
+  ownerUserId       String
+  owner             User      @relation("DisclosureOwned", fields: [ownerUserId], references: [id], onDelete: Cascade)
+  
+  // Request status: pending | granted | denied
+  status            String    @default("pending") @db.VarChar(32)
+  
+  // When owner grants access, they see the details
+  grantedAt         DateTime?
+  
+  // Expiration (access auto-revokes after relationship ends)
+  expiresAt         DateTime?
+  
+  createdAt         DateTime  @default(now())
+  
+  @@unique([disclosureId, requestingUserId])
+  @@index([disclosureId, status])
+  @@index([ownerUserId])
+}
+
+// Stage 3: Marriage readiness checklist
+// Tracks topics discussed between a matched couple
+model MarriageReadinessChecklist {
+  id                String    @id @default(uuid())
+  
+  // Between two users (ordered pair to avoid duplicates)
+  user1Id           String
+  user1             User      @relation("ReadinessUser1", fields: [user1Id], references: [id], onDelete: Cascade)
+  
+  user2Id           String
+  user2             User      @relation("ReadinessUser2", fields: [user2Id], references: [id], onDelete: Cascade)
+  
+  // Topics completed (JSON array of MarriageReadinessTopic enum values)
+  completedTopics   Json      @default("[]") // Array of MarriageReadinessTopic
+  
+  // Stage 3 reminder: has user been shown the "before engagement" reminder?
+  reminderShownAt   DateTime?
+  reminderDismissedAt DateTime?
+  
+  // Engagement/marriage tracking
+  engagementConfirmedAt DateTime?
+  
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+  
+  @@unique([user1Id, user2Id])
+  @@index([user1Id])
+  @@index([user2Id])
+}
+
+// ─────────────────────────────────────────────────────────────
+// Conversation Activity System
+// ─────────────────────────────────────────────────────────────
+
+enum ConversationActivityType {
+  matched
+  weekMilestone
+  daysOfConversation
+  healthDiscussionMarked
+  nikahConversationSuggested
+  nikahAcceptedByOne
+  nikahAcceptedByBoth
+  customEvent
+}
+
+// Tracks significant milestones and events in conversations
+model ConversationActivity {
+  id                String    @id @default(uuid())
+  conversationId    String    // Reference to chat conversation (not a foreign key to allow flexibility)
+  
+  userId            String    // The user whose event this is
+  user              User      @relation("ConversationActivityUser", fields: [userId], references: [id], onDelete: Cascade)
+  
+  type              ConversationActivityType
+  
+  // Event-specific data (flexible JSON)
+  data              Json      @default("{}")
+  
+  // For dismissal/viewed tracking
+  viewedAt          DateTime?
+  
+  createdAt         DateTime  @default(now())
+  
+  @@index([conversationId, userId])
+  @@index([userId, viewedAt])
+}
+
+// ─────────────────────────────────────────────────────────────
+// Prompt Eligibility System
+// ─────────────────────────────────────────────────────────────
+
+enum PromptType {
+  healthDisclosure
+  nikahProposal
+  customSuggestion
+}
+
+enum PromptState {
+  notEligible
+  eligible
+  shown
+  dismissed
+  accepted
+  completed
+  expired
+}
+
+// Tracks state of contextual prompts/suggestions per user per conversation
+model PromptEligibility {
+  id                String    @id @default(uuid())
+  userId            String
+  user              User      @relation("PromptEligibilityUser", fields: [userId], references: [id], onDelete: Cascade)
+  
+  conversationId    String    // Reference to chat conversation
+  partnerUserId     String    // The other person in conversation
+  
+  promptType        PromptType
+  state             PromptState @default(notEligible)
+  
+  // Tracking important dates
+  shownAt           DateTime?
+  dismissedAt       DateTime?
+  acceptedAt        DateTime?
+  completedAt       DateTime?
+  expiresAt         DateTime?
+  
+  // For cooldown periods (don't show again until this date)
+  cooldownUntil     DateTime?
+  
+  // Metadata about why shown/dismissed
+  metadata          Json      @default("{}")
+  
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+  
+  @@unique([userId, conversationId, promptType])
+  @@index([userId, promptType, state])
+  @@index([conversationId])
+}
+
+// ─────────────────────────────────────────────────────────────
+// Nikah Proposal System
+// ─────────────────────────────────────────────────────────────
+
+enum NikahProposalStatus {
+  proposed
+  accepted
+  rejected
+  waiting
+}
+
+// Tracks Nikah (marriage) discussion proposals between matches
+model NikahProposal {
+  id                String    @id @default(uuid())
+  
+  // Between two users (who proposed and to whom)
+  initiatorId       String
+  initiator         User      @relation("NikahProposalInitiator", fields: [initiatorId], references: [id], onDelete: Cascade)
+  
+  recipientId       String
+  recipient         User      @relation("NikahProposalRecipient", fields: [recipientId], references: [id], onDelete: Cascade)
+  
+  conversationId    String    // Reference to chat conversation
+  
+  status            NikahProposalStatus @default(proposed)
+  
+  // Timestamps for decision
+  acceptedAt        DateTime?
+  rejectedAt        DateTime?
+  
+  // For mutual agreement tracking
+  bothAgreeAt       DateTime?
+  
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+  
+  @@unique([initiatorId, recipientId, conversationId])
+  @@index([initiatorId])
+  @@index([recipientId])
+  @@index([conversationId])
+  @@index([status])
+}
+
 

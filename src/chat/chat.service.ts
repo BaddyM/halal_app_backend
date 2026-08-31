@@ -684,6 +684,8 @@ export class ChatService implements OnModuleInit {
       data: { waliInvolved: true, waliInvolvedAt: new Date() },
     });
 
+    const subject = `Conversation update for ${participantNames}`;
+
     if (profile.waliEmail) {
       await this.mail.sendWaliSummary({
         to: profile.waliEmail,
@@ -697,7 +699,6 @@ export class ChatService implements OnModuleInit {
       });
     }
     if (profile.waliPhone) {
-      const subject = `Conversation update for ${participantNames}`;
       await this.sms.sendMessage(
         profile.waliPhone,
         `${subject}. ${recentMessages.length} recent message(s) are available in the app.`,

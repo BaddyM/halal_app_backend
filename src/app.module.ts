@@ -25,6 +25,7 @@ import { TasbihModule } from './tasbih/tasbih.module';
 import { SupportModule } from './support/support.module';
 
 import { WaliModule } from './wali/wali.module';
+import { HealthDisclosureModule } from './health-disclosure/health-disclosure.module';
 import { ScheduleModule } from '@nestjs/schedule';
 
 @Module({
@@ -57,6 +58,7 @@ import { ScheduleModule } from '@nestjs/schedule';
         TasbihModule,
         SupportModule,
         WaliModule,
+        HealthDisclosureModule,
     ],
     providers: [
         { provide: APP_GUARD, useClass: ThrottlerGuard },
