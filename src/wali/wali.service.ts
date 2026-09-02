@@ -1,8 +1,9 @@
 import {
-  Injectable,
   BadRequestException,
-  NotFoundException,
   ForbiddenException,
+  Injectable,
+  Logger,
+  NotFoundException,
 } from '@nestjs/common';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { RealtimeBus } from 'src/realtime/realtime.bus';
@@ -43,6 +44,8 @@ export interface WaliPermissionsUpdate {
 
 @Injectable()
 export class WaliService {
+  private readonly logger = new Logger(WaliService.name);
+
   constructor(
     private prisma: PrismaService,
     private realtime: RealtimeBus,
@@ -608,6 +611,199 @@ export class WaliService {
       where: { id: linkId },
       data: { status },
     });
+  }
+
+  /// Hard-removes a guardian link from the admin console. Revoking (see
+  /// updateAdminStatus) keeps the row for audit; this is for links created in
+  /// error, which should leave no trace on either member's profile.
+  async deleteAdminLink(linkId: string) {
+    const link = await this.prisma.waliLink.findUnique({ where: { id: linkId } });
+    if (!link) throw new NotFoundException('Wali link not found');
+    await this.prisma.waliLink.delete({ where: { id: linkId } });
+    return { success: true, id: linkId };
+  }
+
+  // ── Guardian digests ────────────────────────────────────────────
+  /// Activity for one guardian link over [days], counted from the protected
+  /// user's own records. Used both to preview a digest and to build the one
+  /// that gets emailed.
+  private async digestFor(linkId: string, days = 7) {
+    const link = await this.prisma.waliLink.findUnique({
+      where: { id: linkId },
+      include: {
+        wali: { select: { id: true, name: true, email: true } },
+        user: { select: { id: true, name: true } },
+      },
+    });
+    if (!link) throw new NotFoundException('Wali link not found');
+
+    const endDate = new Date();
+    const startDate = new Date(endDate.getTime() - days * 24 * 60 * 60 * 1000);
+    const window = { gte: startDate, lte: endDate };
+    const userId = link.userId;
+
+    const [newMatches, newLikes, newMessages, usersLinked] = await Promise.all([
+      this.prisma.match.count({
+        where: { createdAt: window, OR: [{ userAId: userId }, { userBId: userId }] },
+      }),
+      // The Like table also stores passes; a guardian digest should count
+      // genuine interest only.
+      this.prisma.like.count({
+        where: { createdAt: window, toUserId: userId, type: { in: ['like', 'superLike'] } },
+      }),
+      this.prisma.message.count({ where: { createdAt: window, senderId: userId } }),
+      this.prisma.waliLink.count({ where: { waliId: link.waliId, status: 'active' } }),
+    ]);
+
+    return {
+      link,
+      period: days === 7 ? 'weekly' : 'monthly',
+      startDate,
+      endDate,
+      newMatches,
+      newLikes,
+      newMessages,
+      usersLinked,
+    };
+  }
+
+  /// Read-only counts an admin can inspect before sending anything.
+  async digestPreview(linkId: string, days = 7) {
+    const d = await this.digestFor(linkId, days);
+    return {
+      linkId,
+      waliId: d.link.waliId,
+      waliName: d.link.wali.name,
+      userName: d.link.user.name,
+      period: d.period,
+      startDate: d.startDate.toISOString(),
+      endDate: d.endDate.toISOString(),
+      newMatches: d.newMatches,
+      newLikes: d.newLikes,
+      newMessages: d.newMessages,
+      usersLinked: d.usersLinked,
+    };
+  }
+
+  /// Emails the guardian their digest and records it. Skips quiet periods so a
+  /// wali is not mailed a summary of nothing.
+  async sendDigest(linkId: string, days = 7) {
+    const d = await this.digestFor(linkId, days);
+    const hasActivity = d.newMatches + d.newLikes + d.newMessages > 0;
+    if (!hasActivity) {
+      return { linkId, waliId: d.link.waliId, sent: false, reason: 'No activity in this period' };
+    }
+    if (d.link.status !== 'active') {
+      return { linkId, waliId: d.link.waliId, sent: false, reason: `Link is ${d.link.status}` };
+    }
+
+    // The unique key is (waliId, period, startDate); round the start to the day
+    // so repeated sends inside one period update rather than duplicate.
+    const periodStart = new Date(d.startDate);
+    periodStart.setHours(0, 0, 0, 0);
+
+    const summary = `${d.newMatches} new match(es), ${d.newLikes} like(s) received and ${d.newMessages} message(s) sent.`;
+    let sent = false;
+    try {
+      await this.mail.sendWaliSummary({
+        to: d.link.wali.email,
+        userName: d.link.user.name,
+        participantNames: d.link.user.name,
+        summary,
+        messageCount: d.newMessages,
+      });
+      sent = true;
+    } catch (error: any) {
+      this.logger.warn(`Wali digest email failed for link ${linkId}: ${error.message}`);
+    }
+
+    await this.prisma.waliDigest.upsert({
+      where: {
+        waliId_period_startDate: {
+          waliId: d.link.waliId,
+          period: d.period,
+          startDate: periodStart,
+        },
+      },
+      update: {
+        newMatches: d.newMatches,
+        newLikes: d.newLikes,
+        newMessages: d.newMessages,
+        usersLinked: d.usersLinked,
+        endDate: d.endDate,
+        ...(sent && { sentAt: new Date() }),
+      },
+      create: {
+        waliId: d.link.waliId,
+        period: d.period,
+        startDate: periodStart,
+        endDate: d.endDate,
+        newMatches: d.newMatches,
+        newLikes: d.newLikes,
+        newMessages: d.newMessages,
+        usersLinked: d.usersLinked,
+        sentAt: sent ? new Date() : null,
+      },
+    });
+
+    return {
+      linkId,
+      waliId: d.link.waliId,
+      sent,
+      reason: sent ? undefined : 'Email delivery unavailable',
+      summary,
+    };
+  }
+
+  /// Fans the digest out across every active link. Returns per-link outcomes so
+  /// an admin can see which guardians were actually mailed.
+  async sendDigestToAll(days = 7) {
+    const links = await this.prisma.waliLink.findMany({
+      where: { status: 'active' },
+      select: { id: true },
+    });
+    const results: Array<{ linkId: string; sent: boolean; reason?: string }> = [];
+    for (const link of links) {
+      try {
+        const r = await this.sendDigest(link.id, days);
+        results.push({ linkId: link.id, sent: r.sent, reason: r.reason });
+      } catch (error: any) {
+        results.push({ linkId: link.id, sent: false, reason: error.message });
+      }
+    }
+    return {
+      total: results.length,
+      sent: results.filter((r) => r.sent).length,
+      results,
+    };
+  }
+
+  /// Approval requests a guardian has been asked to act on.
+  async listApprovals(status = 'pending') {
+    const approvals = await this.prisma.waliApproval.findMany({
+      where: status && status !== 'all' ? { status } : {},
+      orderBy: { createdAt: 'desc' },
+      take: 200,
+      include: {
+        wali: { select: { id: true, name: true, email: true } },
+        user: { select: { id: true, name: true, email: true } },
+      },
+    });
+    return approvals.map((a) => ({
+      id: a.id,
+      waliId: a.waliId,
+      waliName: a.wali.name,
+      waliEmail: a.wali.email,
+      userId: a.userId,
+      userName: a.user.name,
+      actionType: a.actionType,
+      targetUserId: a.targetUserId,
+      status: a.status,
+      createdAt: a.createdAt.toISOString(),
+      expiresAt: a.expiresAt.toISOString(),
+      approvedAt: a.approvedAt?.toISOString() ?? null,
+      expired: a.status === 'pending' && a.expiresAt.getTime() < Date.now(),
+    }));
   }
 
   async getAdminSettings() {

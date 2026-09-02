@@ -6,6 +6,12 @@ import { PrismaService } from 'src/prisma/prisma.service';
 export class DevicesService {
   constructor(private readonly prisma: PrismaService) {}
 
+  /// How many push tokens this account has registered. Used by /devices/test to
+  /// distinguish "push failed" from "nothing to send to".
+  async countForUser(userId: string): Promise<number> {
+    return this.prisma.device.count({ where: { userId } });
+  }
+
   /// Registers (or re-points) a push token. Tokens are globally unique, so if
   /// the same token was registered to another account we move it to this user.
   async register(userId: string, token: string, platform: DevicePlatform) {

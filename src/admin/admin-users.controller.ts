@@ -6,13 +6,14 @@ import {
   Patch,
   Post,
   Query,
+  Req,
   Res,
   UseGuards,
   UseInterceptors,
 } from '@nestjs/common';
 import type { Response } from 'express';
 import { UserStatus } from '@prisma/client';
-import { AuthGuard } from 'src/auth/auth.guard';
+import { AuthGuard, AuthedRequest } from 'src/auth/auth.guard';
 import { AdminGuard } from './admin.guard';
 import { AuditInterceptor } from './audit.interceptor';
 import { AdminUsersService } from './admin-users.service';
@@ -67,14 +68,33 @@ export class AdminUsersController {
     return this.users.getVerification(id);
   }
 
+  @Get(':id/verification/audit')
+  verificationAudit(@Param('id') id: string) {
+    return this.users.getVerificationAuditHistory(id);
+  }
+
   @Patch(':id/verification/phone')
-  reviewPhone(@Param('id') id: string, @Body() dto: VerificationReviewDto) {
-    return this.users.reviewPhoneVerification(id, dto.status, dto.reason);
+  reviewPhone(
+    @Req() req: AuthedRequest,
+    @Param('id') id: string,
+    @Body() dto: VerificationReviewDto,
+  ) {
+    return this.users.reviewPhoneVerification(id, dto.status, dto.reason, {
+      id: req.user.userId,
+      email: req.user.email,
+    });
   }
 
   @Patch(':id/verification/identity')
-  reviewIdentity(@Param('id') id: string, @Body() dto: VerificationReviewDto) {
-    return this.users.reviewIdentityVerification(id, dto.status, dto.reason);
+  reviewIdentity(
+    @Req() req: AuthedRequest,
+    @Param('id') id: string,
+    @Body() dto: VerificationReviewDto,
+  ) {
+    return this.users.reviewIdentityVerification(id, dto.status, dto.reason, {
+      id: req.user.userId,
+      email: req.user.email,
+    });
   }
 
   @Post(':id/message')

@@ -111,6 +111,13 @@ export class PushService {
 
   /// Sends a notification to every registered device of [userId]. Tokens that
   /// the provider reports as invalid are pruned. Safe to call unconditionally.
+  /// Whether Firebase credentials are actually loaded. Without this a caller
+  /// cannot tell a delivered push from a logged no-op.
+  isConfigured(): boolean {
+    this.ensureInit();
+    return this.enabled;
+  }
+
   async sendToUser(userId: string, payload: PushPayload): Promise<void> {
     this.ensureInit();
     if (!this.enabled) {

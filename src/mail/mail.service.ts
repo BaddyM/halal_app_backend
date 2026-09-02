@@ -21,7 +21,7 @@ export class MailService {
 
     this.fromAddress =
       this.config.get<string>('MAIL_FROM') ?? user ?? 'no-reply@localhost';
-    this.fromName = this.config.get<string>('MAIL_FROM_NAME') ?? 'Halal Dating';
+    this.fromName = this.config.get<string>('MAIL_FROM_NAME') ?? 'Halal Connect';
 
     if (host && user && pass) {
       this.transporter = nodemailer.createTransport({
@@ -78,10 +78,10 @@ export class MailService {
   async sendCodeEmail(to: string, code: string, kind: 'verify' | 'reset') {
     const subject =
       kind === 'verify'
-        ? 'Verify your email for Halal Dating'
-        : 'Reset your Halal Dating password';
+        ? 'Verify your email for Halal Connect'
+        : 'Reset your Halal Connect password';
 
-    const appName = this.config.get<string>('APP_NAME') ?? 'Halal Dating';
+    const appName = this.config.get<string>('APP_NAME') ?? 'Halal Connect';
     const frontendUrl =
       this.config.get<string>('FRONTEND_URL') ??
       'https://app.halal-dating.local';
@@ -104,6 +104,24 @@ export class MailService {
     });
   }
 
+  async sendWelcomeEmail(to: string, name: string) {
+    const appName = this.config.get<string>('APP_NAME') ?? 'Halal Connect';
+    const safeName = this.escapeHtml(name || 'there');
+    return this.sendMail({
+      to,
+      subject: `Welcome to ${this.escapeHtml(appName)}`,
+      html: `
+        <p>Assalamu alaikum ${safeName},</p>
+        <p>Welcome to ${this.escapeHtml(appName)}. Your account is ready.</p>
+        <p>Complete your profile and add a photo so you start appearing in
+        matches — profiles with a photo and a full "about" section get seen far
+        more often.</p>
+        <p>May Allah grant you a righteous spouse.</p>
+      `,
+      text: `Assalamu alaikum ${name || 'there'},\n\nWelcome to ${appName}. Your account is ready.\nComplete your profile and add a photo so you start appearing in matches.`,
+    });
+  }
+
   async sendWaliInvitation(args: {
     to: string;
     waliName: string;
@@ -111,7 +129,7 @@ export class MailService {
     message?: string;
     invitationToken: string;
   }) {
-    const appName = this.config.get<string>('APP_NAME') ?? 'Halal Dating';
+    const appName = this.config.get<string>('APP_NAME') ?? 'Halal Connect';
     const frontendUrl =
       this.config.get<string>('FRONTEND_URL') ?? 'http://localhost:3000';
     const acceptUrl = `${frontendUrl}/api/wali/accept?token=${encodeURIComponent(args.invitationToken)}`;
@@ -152,7 +170,7 @@ export class MailService {
     summary: string;
     messageCount: number;
   }) {
-    const appName = this.config.get<string>('APP_NAME') ?? 'Halal Dating';
+    const appName = this.config.get<string>('APP_NAME') ?? 'Halal Connect';
     const subject = `Conversation update for ${args.participantNames}`;
     const safeUserName = this.escapeHtml(args.userName);
     const safeParticipants = this.escapeHtml(args.participantNames);
@@ -178,7 +196,7 @@ export class MailService {
     userName: string;
     changedFields: string[];
   }) {
-    const appName = this.config.get<string>('APP_NAME') ?? 'Halal Dating';
+    const appName = this.config.get<string>('APP_NAME') ?? 'Halal Connect';
     const subject = `${args.userName} updated your Wali details on ${appName}`;
     const safeWaliName = this.escapeHtml(args.waliName);
     const safeUserName = this.escapeHtml(args.userName);

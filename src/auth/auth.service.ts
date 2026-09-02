@@ -9,10 +9,11 @@ import {
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import * as bcrypt from 'bcryptjs';
-import { v4 as uuid } from 'uuid';
+import { randomUUID } from 'crypto';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { RealtimeBus } from 'src/realtime/realtime.bus';
 import { MailService } from '../mail/mail.service';
+import { SmsService } from '../mail/sms.service';
 import { OAuthService } from './oauth.service';
 
 @Injectable()
@@ -26,6 +27,7 @@ export class AuthService {
         private readonly oauth: OAuthService,
         private readonly realtime: RealtimeBus,
         private readonly mail: MailService,
+        private readonly sms: SmsService,
     ) {}
 
     private logCode(kind: 'verify' | 'reset' | 'otp', email: string, code: string) {
@@ -55,7 +57,7 @@ export class AuthService {
             { expiresIn: '7d' },
         );
 
-        const refreshTokenValue = uuid();
+        const refreshTokenValue = randomUUID();
         const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000); // 30d
 
         await this.prisma.refreshToken.create({
@@ -131,11 +133,22 @@ export class AuthService {
 
         // Bootstrap admins from config: any email in ADMIN_EMAILS is promoted to
         // the admin role on login (so the dashboard works without manual DB edits).
+        //
+        // The address must be VERIFIED first. Signup does not prove ownership of
+        // an email, so without this check anyone could claim an ADMIN_EMAILS
+        // entry that had not been registered yet and be handed full admin on
+        // their first login.
         const adminEmails = (this.config.get<string>('ADMIN_EMAILS') ?? '')
             .split(',')
             .map((e) => e.trim().toLowerCase())
             .filter(Boolean);
-        const shouldBeAdmin = adminEmails.includes(email.toLowerCase());
+        const listedAsAdmin = adminEmails.includes(email.toLowerCase());
+        const shouldBeAdmin = listedAsAdmin && user.isEmailVerified;
+        if (listedAsAdmin && !user.isEmailVerified) {
+            this.logger.warn(
+                `Admin promotion withheld for ${email}: email is not verified`,
+            );
+        }
 
         await this.prisma.user.update({
             where: { id: user.id },
@@ -148,6 +161,125 @@ export class AuthService {
 
         const tokens = await this.issueTokens(user.id, user.email);
         return { user: this.sanitizeUser(user), ...tokens };
+    }
+
+    // ── phone OTP (passwordless login + phone verification) ─────
+    /// The stored forms a typed number could correspond to. UsersService writes
+    /// phones strictly as E.164 (`+` then digits, no separators) and rejects
+    /// anything else, so stripping the separators a user typed is enough to hit
+    /// the stored value exactly — no scan-and-compare needed. The bare-digits
+    /// variant covers a caller that omitted the leading `+`.
+    private phoneCandidates(phone: string): string[] {
+        const stripped = phone.trim().replace(/[\s().-]/g, '');
+        const digits = stripped.replace(/\D/g, '');
+        if (digits.length < 6) return [];
+        return Array.from(
+            new Set([stripped, stripped.startsWith('+') ? stripped : `+${digits}`]),
+        );
+    }
+
+    /// Resolves the single account owning [phone], or null. Returns null when
+    /// more than one account shares the number: OTP is a login mechanism, and
+    /// guessing which account to sign in to would be worse than refusing.
+    private async userByPhone(phone: string) {
+        const candidates = this.phoneCandidates(phone);
+        if (candidates.length === 0) return null;
+        const matches = await this.prisma.user.findMany({
+            where: { phone: { in: candidates }, isActive: true },
+            select: { id: true, email: true, phone: true },
+            take: 2, // only need to know whether it is ambiguous
+        });
+        if (matches.length !== 1) {
+            if (matches.length > 1) {
+                this.logger.warn(
+                    `OTP refused: multiple active accounts share phone ending ${phone.slice(-4)}`,
+                );
+            }
+            return null;
+        }
+        return matches[0];
+    }
+
+    /// Issues a 6-digit code to [phone].
+    ///
+    /// Always reports success, whether or not the number belongs to an account,
+    /// so this endpoint cannot be used to discover which phone numbers are
+    /// registered. The code is only returned in Dev, for the UI to prefill.
+    async sendOtp(phone: string) {
+        const user = await this.userByPhone(phone);
+        if (!user) {
+            this.logger.log(`OTP requested for unregistered phone — no code sent`);
+            return { sent: true };
+        }
+
+        const code = this.generateCode();
+        const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 min
+
+        // Retire any outstanding codes so only the newest one can be used.
+        await this.prisma.phoneVerificationToken.updateMany({
+            where: { userId: user.id, consumedAt: null },
+            data: { consumedAt: new Date() },
+        });
+        await this.prisma.phoneVerificationToken.create({
+            data: { userId: user.id, phone: user.phone!, code, expiresAt },
+        });
+
+        const delivered = await this.sms.sendCode(user.phone!, code);
+        if (!delivered) {
+            this.logger.warn(
+                `SMS delivery unavailable — OTP for ${user.email} was not sent by SMS`,
+            );
+        }
+        this.logCode('otp', user.email, code);
+
+        return {
+            sent: true,
+            // Never leak the code outside development.
+            otpCode: this.config.get('MODE') === 'Dev' ? code : undefined,
+        };
+    }
+
+    /// Verifies [code] and signs the user in (passwordless). Also marks the
+    /// phone verified, since a delivered code proves control of the number.
+    async verifyOtp(phone: string, code: string) {
+        const user = await this.userByPhone(phone);
+        // Same error for "no such phone" and "wrong code": the client maps 400
+        // to "invalid code" and learns nothing about which numbers exist.
+        if (!user) throw new BadRequestException('Invalid or expired code');
+
+        const token = await this.prisma.phoneVerificationToken.findFirst({
+            where: {
+                userId: user.id,
+                code,
+                consumedAt: null,
+                expiresAt: { gt: new Date() },
+            },
+            orderBy: { createdAt: 'desc' },
+        });
+        if (!token) throw new BadRequestException('Invalid or expired code');
+
+        await this.prisma.$transaction([
+            this.prisma.phoneVerificationToken.update({
+                where: { id: token.id },
+                data: { consumedAt: new Date() },
+            }),
+            this.prisma.user.update({
+                where: { id: user.id },
+                data: {
+                    isPhoneVerified: true,
+                    phoneVerificationStatus: 'verified',
+                    phoneVerificationReason: null,
+                    lastSeenAt: new Date(),
+                },
+            }),
+        ]);
+
+        const full = await this.prisma.user.findUnique({
+            where: { id: user.id },
+            include: { profile: true },
+        });
+        const tokens = await this.issueTokens(user.id, user.email);
+        return { user: this.sanitizeUser(full), ...tokens };
     }
 
     // ── verify email ────────────────────────────────────────────
@@ -334,7 +466,7 @@ export class AuthService {
         if (!user) {
             const email =
                 profile.email ?? `${provider}_${profile.providerId}@oauth.local`;
-            const randomPassword = await this.hash(uuid());
+            const randomPassword = await this.hash(randomUUID());
             user = await this.prisma.user.create({
                 data: {
                     email,

@@ -1,5 +1,6 @@
 import {
   Controller,
+  Delete,
   Get,
   Post,
   Patch,
@@ -35,6 +36,11 @@ export class AdminWaliController {
     return this.waliService.updateAdminStatus(id, data.status ?? data.action);
   }
 
+  @Delete(':id')
+  remove(@Param('id') id: string) {
+    return this.waliService.deleteAdminLink(id);
+  }
+
   @Post(':id/status')
   status(@Param('id') id: string, @Body() data: any) {
     return this.waliService.updateAdminStatus(id, data.status);
@@ -46,13 +52,13 @@ export class AdminWaliController {
   }
 
   @Post(':id/send-digest')
-  sendDigest(@Param('id') id: string) {
-    return { waliId: id, sent: false, reason: 'No undelivered digest items' };
+  sendDigest(@Param('id') id: string, @Query('days') days?: string) {
+    return this.waliService.sendDigest(id, days ? Number(days) : 7);
   }
 
   @Get(':id/digest-preview')
-  async digestPreview(@Param('id') id: string) {
-    return { waliId: id, period: 'weekly', newMatches: 0, newLikes: 0, newMessages: 0, usersLinked: 0 };
+  digestPreview(@Param('id') id: string, @Query('days') days?: string) {
+    return this.waliService.digestPreview(id, days ? Number(days) : 7);
   }
 
   /**
@@ -87,9 +93,8 @@ export class AdminWaliController {
    * GET /api/admin/wali/approvals?status=pending
    */
   @Get('approvals')
-  async getApprovals(@Query('status') status: string = 'pending') {
-    // TODO: Implement admin approval viewing
-    return [];
+  getApprovals(@Query('status') status: string = 'pending') {
+    return this.waliService.listApprovals(status);
   }
 
   /**
@@ -97,8 +102,7 @@ export class AdminWaliController {
    * POST /api/admin/wali/send-digest
    */
   @Post('send-digest')
-  async sendDigestAll(@Body() data: any) {
-    // TODO: Implement manual digest sending
-    return { sent: true };
+  sendDigestAll(@Body() data: any) {
+    return this.waliService.sendDigestToAll(data?.days ? Number(data.days) : 7);
   }
 }

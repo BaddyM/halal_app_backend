@@ -22,6 +22,26 @@ import {
 export class HealthDisclosureService {
   constructor(private prisma: PrismaService) {}
 
+  /// The other participant in [conversationId], verified to include [userId].
+  ///
+  /// The controller previously passed the literal string 'unknown' as the
+  /// partner, so every eligibility record was written against a non-existent
+  /// user and could never be matched back. Resolving it here also stops one
+  /// user reading or writing prompt state on a conversation they are not in.
+  async resolvePartner(userId: string, conversationId: string): Promise<string> {
+    const conversation = await this.prisma.conversation.findUnique({
+      where: { id: conversationId },
+      select: { userAId: true, userBId: true },
+    });
+    if (!conversation) throw new NotFoundException('Conversation not found');
+    if (conversation.userAId !== userId && conversation.userBId !== userId) {
+      throw new NotFoundException('Conversation not found');
+    }
+    return conversation.userAId === userId
+      ? conversation.userBId
+      : conversation.userAId;
+  }
+
   // ─────────────────────────────────────────────────────────────
   // STAGE 1: ONBOARDING — Initial disclosure question
   // ─────────────────────────────────────────────────────────────

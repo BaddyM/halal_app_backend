@@ -2,12 +2,47 @@ import { Injectable } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { PushService } from 'src/push/push.service';
+import { MailService } from 'src/mail/mail.service';
+import { Logger } from '@nestjs/common';
 
 const ONLINE_WINDOW_MS = 5 * 60 * 1000;
 
 @Injectable()
 export class NotificationsService {
-    constructor(private readonly prisma: PrismaService, private readonly push: PushService) {}
+    private readonly logger = new Logger(NotificationsService.name);
+
+    constructor(
+        private readonly prisma: PrismaService,
+        private readonly push: PushService,
+        private readonly mail: MailService,
+    ) {}
+
+    /// Best-effort welcome email, triggered by the app right after signup.
+    ///
+    /// Only fires for an account created in the last 24 hours, so a caller
+    /// cannot use this public endpoint to repeatedly mail an established user.
+    /// Never reports whether the address matched — the controller returns the
+    /// same body regardless.
+    async sendWelcomeEmail(email: string) {
+        const user = await this.prisma.user.findUnique({
+            where: { email: email.trim().toLowerCase() },
+            select: { name: true, email: true, createdAt: true },
+        });
+        if (!user) return;
+
+        const ageMs = Date.now() - user.createdAt.getTime();
+        if (ageMs > 24 * 60 * 60 * 1000) {
+            this.logger.warn('Welcome email skipped: account is not newly created');
+            return;
+        }
+
+        try {
+            await this.mail.sendWelcomeEmail(user.email, user.name);
+        } catch (error: any) {
+            // Signup must never fail because SMTP is down.
+            this.logger.warn(`Welcome email failed for ${user.email}: ${error.message}`);
+        }
+    }
 
     async setConversationReminders(userId: string, enabled: boolean) {
         await this.prisma.user.update({ where: { id: userId }, data: { conversationRemindersEnabled: enabled } });

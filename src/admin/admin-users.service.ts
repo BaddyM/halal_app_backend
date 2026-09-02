@@ -4,6 +4,7 @@ import { join } from 'path';
 import { ManualVerificationStatus, Prisma, Role, UserStatus } from '@prisma/client';
 import * as bcrypt from 'bcryptjs';
 import { PrismaService } from 'src/prisma/prisma.service';
+import { verificationDir } from 'src/upload/storage-paths';
 import { PushService } from 'src/push/push.service';
 import { RealtimeBus } from 'src/realtime/realtime.bus';
 import { AdminUpdateUserDto, AdminUserQueryDto, CreateUserDto } from './dto';
@@ -291,26 +292,165 @@ export class AdminUsersService {
     return { id, verified };
   }
 
+  /// Shaped to the dashboard's `VerificationStatus` type: flat phoneStatus /
+  /// identityStatus, a plain phone string, and the submission under
+  /// identitySubmission. `reviewedBy` is filled from the latest audit row for
+  /// that kind, which is the only place the reviewer's identity is kept.
   async getVerification(id: string) {
     const user = await this.prisma.user.findUnique({
       where: { id },
       include: { profile: true, identityVerification: true },
     });
     if (!user) throw new NotFoundException('User not found');
+
+    const identity = user.identityVerification;
+    const lastIdentityReview = identity
+      ? await this.prisma.verificationAudit.findFirst({
+          where: { userId: id, kind: 'identity' },
+          orderBy: { createdAt: 'desc' },
+          select: { reviewedBy: true },
+        })
+      : null;
+
     return {
       userId: id,
-      phone: {
-        number: user.phone,
-        status: user.phoneVerificationStatus,
-        reason: user.phoneVerificationReason,
-      },
-      identity: user.identityVerification,
+      phone: user.phone ?? undefined,
+      phoneStatus: user.phoneVerificationStatus,
+      phoneReason: user.phoneVerificationReason,
+      identityStatus: identity?.status ?? ManualVerificationStatus.notSubmitted,
+      identitySubmission: identity
+        ? {
+            id: identity.id,
+            userId: identity.userId,
+            submittedAt: identity.createdAt.toISOString(),
+            data: identity.submission,
+            status: identity.status,
+            reviewedAt: identity.reviewedAt?.toISOString() ?? undefined,
+            reviewedBy: lastIdentityReview?.reviewedBy ?? undefined,
+            reason: identity.reason ?? undefined,
+            updatedAt: identity.updatedAt.toISOString(),
+          }
+        : undefined,
     };
   }
 
-  async reviewPhoneVerification(id: string, status: string, reason?: string) {
+  /// Review trail for one member's verification. Returns a bare array of the
+  /// dashboard's `VerificationAuditEntry` — the modal maps over the response
+  /// directly, so it must not be wrapped in an envelope.
+  async getVerificationAuditHistory(id: string) {
+    const user = await this.prisma.user.findUnique({
+      where: { id },
+      select: { id: true },
+    });
+    if (!user) throw new NotFoundException('User not found');
+
+    const entries = await this.prisma.verificationAudit.findMany({
+      where: { userId: id },
+      orderBy: { createdAt: 'desc' },
+      take: 100,
+    });
+    return entries.map((entry) => ({
+      timestamp: entry.createdAt.toISOString(),
+      reviewedBy: entry.reviewedBy ?? 'system',
+      previousStatus: entry.previousStatus,
+      newStatus: entry.newStatus,
+      reason: entry.reason ?? '',
+      kind: entry.kind,
+    }));
+  }
+
+  /// Verification review queue. `type` narrows to one kind, `status` picks the
+  /// decision state (default pending), `search` matches name or email — the
+  /// three controls the dashboard's VerificationFilters panel exposes.
+  async listPendingVerifications(opts: {
+    type?: 'phone' | 'identity';
+    status?: string;
+    search?: string;
+    limit?: number;
+    offset?: number;
+  } = {}) {
+    const status = (opts.status && opts.status !== 'all'
+      ? opts.status
+      : ManualVerificationStatus.pending) as ManualVerificationStatus;
+
+    const phoneMatch: Prisma.UserWhereInput = { phoneVerificationStatus: status };
+    const identityMatch: Prisma.UserWhereInput = {
+      identityVerification: { status },
+    };
+    const kindWhere: Prisma.UserWhereInput =
+      opts.type === 'phone'
+        ? phoneMatch
+        : opts.type === 'identity'
+          ? identityMatch
+          : { OR: [phoneMatch, identityMatch] };
+
+    const search = opts.search?.trim();
+    const where: Prisma.UserWhereInput = search
+      ? {
+          AND: [
+            kindWhere,
+            { OR: [{ name: { contains: search } }, { email: { contains: search } }] },
+          ],
+        }
+      : kindWhere;
+
+    const [total, users] = await this.prisma.$transaction([
+      this.prisma.user.count({ where }),
+      this.prisma.user.findMany({
+        where,
+        orderBy: { updatedAt: 'asc' },
+        skip: Math.max(Number(opts.offset) || 0, 0),
+        take: Math.min(Number(opts.limit) || 50, 200),
+        select: {
+          id: true,
+          name: true,
+          email: true,
+          phone: true,
+          createdAt: true,
+          phoneVerificationStatus: true,
+          identityVerification: {
+            select: { status: true, createdAt: true, updatedAt: true },
+          },
+        },
+      }),
+    ]);
+
+    return {
+      total,
+      // Field names follow the dashboard's `VerificationUser` type exactly —
+      // the queue table reads user.username / phoneVerificationStatus /
+      // identityVerificationStatus / lastSubmittedAt.
+      users: users.map((user) => ({
+        id: user.id,
+        username: user.name,
+        email: user.email,
+        phone: user.phone ?? undefined,
+        phoneVerificationStatus: user.phoneVerificationStatus,
+        identityVerificationStatus:
+          user.identityVerification?.status ??
+          ManualVerificationStatus.notSubmitted,
+        lastSubmittedAt:
+          user.identityVerification?.updatedAt?.toISOString() ??
+          user.createdAt.toISOString(),
+        createdAt: user.createdAt.toISOString(),
+      })),
+    };
+  }
+
+  async reviewPhoneVerification(
+    id: string,
+    status: string,
+    reason?: string,
+    reviewer?: { id: string; email: string },
+  ) {
     const mapped = status as ManualVerificationStatus;
     const verified = mapped === ManualVerificationStatus.verified;
+    const before = await this.prisma.user.findUnique({
+      where: { id },
+      select: { phoneVerificationStatus: true },
+    });
+    if (!before) throw new NotFoundException('User not found');
+
     const user = await this.prisma.user.update({
       where: { id },
       data: {
@@ -320,13 +460,32 @@ export class AdminUsersService {
       },
       select: { id: true, name: true },
     });
+    await this.recordVerificationAudit(
+      id,
+      'phone',
+      before.phoneVerificationStatus,
+      mapped,
+      reason,
+      reviewer,
+    );
     await this.notifyVerification(id, 'phone', mapped, user.name);
-    return { userId: id, status: mapped, reason: reason ?? null };
+    return { success: true, data: await this.getVerification(id) };
   }
 
-  async reviewIdentityVerification(id: string, status: string, reason?: string) {
+  async reviewIdentityVerification(
+    id: string,
+    status: string,
+    reason?: string,
+    reviewer?: { id: string; email: string },
+  ) {
     const mapped = status as ManualVerificationStatus;
-    const verification = await this.prisma.identityVerification.update({
+    const before = await this.prisma.identityVerification.findUnique({
+      where: { userId: id },
+      select: { status: true },
+    });
+    if (!before) throw new NotFoundException('Verification submission not found');
+
+    await this.prisma.identityVerification.update({
       where: { userId: id },
       data: { status: mapped, reason: reason ?? null, reviewedAt: new Date() },
     });
@@ -335,8 +494,41 @@ export class AdminUsersService {
     const phone = await this.prisma.user.findUnique({ where: { id }, select: { isPhoneVerified: true } });
     const complete = mapped === ManualVerificationStatus.verified && phone?.isPhoneVerified === true;
     if (complete) await this.prisma.profile.update({ where: { userId: id }, data: { isVerified: true } });
+    await this.recordVerificationAudit(
+      id,
+      'identity',
+      before.status,
+      mapped,
+      reason,
+      reviewer,
+    );
     await this.notifyVerification(id, 'identity', mapped, user.name);
-    return { userId: id, status: verification.status, reason: verification.reason, badgeVerified: complete };
+    return { success: true, data: await this.getVerification(id), badgeVerified: complete };
+  }
+
+  /// One row per review decision, so the dashboard can show who changed what
+  /// and why. Failures here must never fail the review itself.
+  private async recordVerificationAudit(
+    userId: string,
+    kind: 'phone' | 'identity',
+    previousStatus: ManualVerificationStatus,
+    newStatus: ManualVerificationStatus,
+    reason?: string,
+    reviewer?: { id: string; email: string },
+  ) {
+    await this.prisma.verificationAudit
+      .create({
+        data: {
+          userId,
+          kind,
+          previousStatus,
+          newStatus,
+          reason: reason ?? null,
+          reviewedById: reviewer?.id ?? null,
+          reviewedBy: reviewer?.email ?? null,
+        },
+      })
+      .catch(() => undefined);
   }
 
   private async notifyVerification(id: string, kind: 'phone' | 'identity', status: ManualVerificationStatus, name: string) {
@@ -357,9 +549,16 @@ export class AdminUsersService {
     const documents = (verification.submission as any)?.documents ?? {};
     const document = Object.values(documents).find((value: any) => value?.documentId === documentId) as any;
     if (!document) throw new NotFoundException('Verification document not found');
-    const userDir = join(process.cwd(), 'uploads', 'verification', id);
+    const userDir = verificationDir(id);
+    // The directory is absent until the user's first upload, and readdirSync
+    // would throw ENOENT (a 500) rather than the 404 this case deserves.
+    if (!existsSync(userDir)) throw new NotFoundException('Verification file not found');
     const files = readdirSync(userDir);
-    const filename = files.find((file) => file.startsWith(documentId));
+    // documentId comes from the request; anchor the match to the generated
+    // uuid prefix so it can't be used to reach a neighbouring file.
+    const filename = files.find(
+      (file) => file.slice(0, file.lastIndexOf('.')) === documentId,
+    );
     if (!filename || !existsSync(join(userDir, filename))) throw new NotFoundException('Verification file not found');
     return { path: join(userDir, filename), originalName: document.originalName ?? filename };
   }

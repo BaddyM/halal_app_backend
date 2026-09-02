@@ -4,6 +4,7 @@ import { AdminController } from './admin.controller';
 import { AdminGuard } from './admin.guard';
 import { AdminUsersController } from './admin-users.controller';
 import { AdminUsersService } from './admin-users.service';
+import { AdminVerificationsController } from './admin-verifications.controller';
 import { AdminModerationController } from './admin-moderation.controller';
 import { AdminModerationService } from './admin-moderation.service';
 import { AdminMessagingController } from './admin-messaging.controller';
@@ -20,6 +21,7 @@ import { AuditInterceptor } from './audit.interceptor';
   controllers: [
     AdminController,
     AdminUsersController,
+    AdminVerificationsController,
     AdminModerationController,
     AdminMessagingController,
     AdminCatalogController,

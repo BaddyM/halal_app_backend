@@ -307,9 +307,10 @@ export class HealthDisclosureController {
     @Param('conversationId') conversationId: string,
     @Param('promptType') promptType: string,
   ) {
-    // Get partner ID from conversation (in real app, fetch from ChatService)
-    // For now, use a placeholder
-    const partnerUserId = 'unknown';
+    const partnerUserId = await this.healthService.resolvePartner(
+      req.user.id,
+      conversationId,
+    );
 
     return this.healthService.checkPromptEligibility(
       req.user.id,
@@ -330,10 +331,14 @@ export class HealthDisclosureController {
     @Param('promptType') promptType: string,
     @Body() body: { state: string; metadata?: any; partnerUserId?: string },
   ) {
+    const partnerUserId = await this.healthService.resolvePartner(
+      req.user.id,
+      conversationId,
+    );
     return this.healthService.updatePromptEligibility(
       req.user.id,
       conversationId,
-      body.partnerUserId || 'unknown',
+      partnerUserId,
       promptType,
       body.state,
       body.metadata || {},

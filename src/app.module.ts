@@ -26,6 +26,7 @@ import { SupportModule } from './support/support.module';
 
 import { WaliModule } from './wali/wali.module';
 import { HealthDisclosureModule } from './health-disclosure/health-disclosure.module';
+import { AccountDeletionModule } from './account-deletion/account-deletion.module';
 import { ScheduleModule } from '@nestjs/schedule';
 
 @Module({
@@ -59,6 +60,7 @@ import { ScheduleModule } from '@nestjs/schedule';
         SupportModule,
         WaliModule,
         HealthDisclosureModule,
+        AccountDeletionModule,
     ],
     providers: [
         { provide: APP_GUARD, useClass: ThrottlerGuard },

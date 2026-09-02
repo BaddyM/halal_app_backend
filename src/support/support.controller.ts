@@ -36,7 +36,7 @@ export class SupportController {
     return this.support.replyForUser(req.user.userId, id, dto);
   }
 
-  @Post('/ai')
+  @Post('ai')
   askAi(@Req() req: AuthedRequest, @Body() body: { message: string; ticketId?: string }) {
     return this.support.askAi(req.user.userId, body.message?.trim() ?? '', body.ticketId);
   }

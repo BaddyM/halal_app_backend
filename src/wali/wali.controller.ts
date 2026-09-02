@@ -187,7 +187,7 @@ export class WaliController {
    * Get Wali statistics
    * GET /api/admin/wali/stats
    */
-  @Get('/admin/stats')
+  @Get('admin/stats')
   @UseGuards(AuthGuard, AdminGuard)
   async getWaliStats() {
     return this.waliService.getWaliStats();

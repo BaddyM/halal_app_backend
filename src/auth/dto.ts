@@ -80,3 +80,21 @@ export class OAuthLoginDto {
     @IsString()
     name?: string;
 }
+
+export class SendOtpDto {
+    // Lenient on formatting (users type spaces/dashes); normalised server-side
+    // before lookup so "+1 555 0100" and "+15550100" resolve to one account.
+    @IsString()
+    @Matches(/^[+]?[\d\s()-]{6,20}$/, { message: 'phone must be a valid phone number' })
+    phone!: string;
+}
+
+export class VerifyOtpDto {
+    @IsString()
+    @Matches(/^[+]?[\d\s()-]{6,20}$/, { message: 'phone must be a valid phone number' })
+    phone!: string;
+
+    @IsString()
+    @Length(6, 6)
+    code!: string;
+}

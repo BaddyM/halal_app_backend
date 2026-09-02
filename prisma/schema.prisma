@@ -257,12 +257,19 @@ model User {
   
   // Prompt Eligibility System
   promptEligibilities PromptEligibility[] @relation("PromptEligibilityUser")
+
+  // Account deletion (GDPR / store-compliance erasure requests)
+  deletionRequests  AccountDeletionRequest[]
   
   // Nikah Proposal System
   nikahProposalsInitiated NikahProposal[] @relation("NikahProposalInitiator")
   nikahProposalsReceived  NikahProposal[] @relation("NikahProposalRecipient")
 
   @@index([email])
+
+  // OTP login resolves an account by phone; without this every send/verify
+  // scans the users table.
+  @@index([phone])
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -341,6 +348,23 @@ model IdentityVerification {
   reviewedAt  DateTime?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
+}
+
+/// Per-decision review trail for manual verification. The generic AuditLog only
+/// records "PATCH /admin/users/:id/verification/phone" with no before/after, so
+/// the dashboard's audit panel needs this dedicated record instead.
+model VerificationAudit {
+  id             String   @id @default(uuid())
+  userId         String
+  kind           String   @db.VarChar(16) // "phone" | "identity"
+  previousStatus ManualVerificationStatus
+  newStatus      ManualVerificationStatus
+  reason         String?  @db.Text
+  reviewedById   String?
+  reviewedBy     String?  // admin email, denormalised so the row survives the admin
+  createdAt      DateTime @default(now())
+
+  @@index([userId, createdAt])
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -705,8 +729,12 @@ model InboxMessage {
 // ─────────────────────────────────────────────────────────────
 model SupportTicket {
   id          String   @id @default(uuid())
-  userId      String
-  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  // Null for tickets raised from the public help form, where the reporter is
+  // identified by guestName/guestEmail instead of an account.
+  userId      String?
+  user        User?    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  guestName   String?
+  guestEmail  String?
   subject     String
   category    String   @default("general")
   priority    String   @default("normal")
@@ -727,6 +755,38 @@ model SupportTicketMessage {
   createdAt DateTime      @default(now())
 
   @@index([ticketId, createdAt])
+}
+
+// ─────────────────────────────────────────────────────────────
+//  ACCOUNT DELETION — erasure requests raised in-app or from the
+//  public /delete-account form. Kept as a record after the account
+//  is purged, so userId is nullable and survives the user row.
+// ─────────────────────────────────────────────────────────────
+enum DeletionRequestStatus {
+  pending
+  confirmed
+  rejected
+}
+
+model AccountDeletionRequest {
+  id               String   @id @default(uuid())
+  userId           String?
+  user             User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  email            String
+  phone            String?
+  reason           String?  @db.Text
+  status           DeletionRequestStatus @default(pending)
+  requestedAt      DateTime @default(now())
+  // Set when an admin confirms a soft deletion: the grace window before the
+  // row is actually purged.
+  scheduledPurgeAt DateTime?
+  handledAt        DateTime?
+  handledById      String?
+  handledNote      String?  @db.Text
+  hardDeleted      Boolean  @default(false)
+
+  @@index([status, requestedAt])
+  @@index([email])
 }
 
 // ─────────────────────────────────────────────────────────────

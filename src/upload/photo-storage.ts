@@ -1,7 +1,7 @@
 import { BadRequestException } from '@nestjs/common';
 import { diskStorage } from 'multer';
-import { extname } from 'path';
 import { existsSync, mkdirSync } from 'fs';
+import { extensionForMime } from './storage-paths';
 
 export const PHOTO_DEST = './uploads/photos/users';
 export const PHOTO_ALLOWED_MIME = ['image/jpeg', 'image/png', 'image/webp', 'image/jpg'];
@@ -18,7 +18,7 @@ export const photoMulterOptions = {
         },
         filename: (_req: any, file: any, cb: any) => {
             const unique = `${Date.now()}-${Math.round(Math.random() * 1e9)}`;
-            cb(null, `${unique}${extname(file.originalname).toLowerCase()}`);
+            cb(null, `${unique}${extensionForMime(file.mimetype)}`);
         },
     }),
     fileFilter: (_req: any, file: any, cb: any) => {
