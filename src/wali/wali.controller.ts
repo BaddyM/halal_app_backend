@@ -3,6 +3,7 @@ import {
   Get,
   Post,
   Patch,
+  Put,
   Delete,
   Param,
   Body,
@@ -19,6 +20,12 @@ import { AdminGuard } from 'src/admin/admin.guard';
 @Controller('wali')
 export class WaliController {
   constructor(private readonly waliService: WaliService) {}
+
+  @Get()
+  @UseGuards(AuthGuard)
+  listAliases(@Request() req: any) {
+    return this.waliService.getMyWalis(req.user.id);
+  }
 
   @Get('me')
   @UseGuards(AuthGuard)
@@ -44,6 +51,18 @@ export class WaliController {
     });
   }
 
+  @Get('status')
+  @UseGuards(AuthGuard)
+  status(@Request() req: any) {
+    return this.waliService.getStatus(req.user.id);
+  }
+
+  @Delete()
+  @UseGuards(AuthGuard)
+  remove(@Request() req: any) {
+    return this.waliService.removeForUser(req.user.id);
+  }
+
   @Post('resend-invite')
   @UseGuards(AuthGuard)
   resendInvite(@Request() req: any) {
@@ -59,6 +78,12 @@ export class WaliController {
   @Get('decline')
   decline(@Query('token') token: string) { return this.waliService.respondToToken(token, 'reject'); }
 
+  @Get('confirm/:token')
+  confirmSigned(@Param('token') token: string) { return this.waliService.respondToToken(token, 'accept'); }
+
+  @Get('decline/:token')
+  declineSigned(@Param('token') token: string) { return this.waliService.respondToToken(token, 'reject'); }
+
   @Get('unsubscribe')
   unsubscribe(@Query('token') token: string) { return this.waliService.unsubscribeByToken(token); }
 
@@ -70,10 +95,51 @@ export class WaliController {
    * Invite a Wali (Guardian)
    * POST /api/wali/invite
    */
+  @Patch('preferences')
+  @UseGuards(AuthGuard)
+  async updatePreferences(
+    @Request() req: any,
+    @Body() data: { ccChats?: boolean; weeklySummary?: boolean; matchApprovals?: boolean },
+  ) {
+    const links = await this.waliService.getMyWalis(req.user.id);
+    const link = links[0];
+    if (!link) throw new NotFoundException('No active Wali link');
+    return this.waliService.updateWaliPermissions(req.user.id, link.linkId, {
+      ...(data.ccChats !== undefined && { seeChats: !!data.ccChats }),
+      ...(data.matchApprovals !== undefined && { approveMatches: !!data.matchApprovals }),
+    });
+  }
+
+  @Put('preferences')
+  @UseGuards(AuthGuard)
+  async updateDeliveryPreferences(
+    @Request() req: any,
+    @Body() data: { chatSummaries?: boolean; weeklyDigest?: boolean; matchAlerts?: boolean },
+  ) {
+    return this.waliService.updateDeliveryPreferences(req.user.id, {
+      ...(data.chatSummaries !== undefined && { chatSummaries: data.chatSummaries }),
+      ...(data.weeklyDigest !== undefined && { weeklyDigest: data.weeklyDigest }),
+      ...(data.matchAlerts !== undefined && { matchAlerts: data.matchAlerts }),
+    });
+  }
+
+  @Delete(':id')
+  @UseGuards(AuthGuard)
+  deleteAlias(@Request() req: any, @Param('id') id: string) {
+    return this.waliService.revokeWali(req.user.id, id);
+  }
+
   @Post('invite')
   @UseGuards(AuthGuard)
   async inviteWali(@Request() req: any, @Body() data: any) {
-    return this.waliService.inviteWali(req.user.id, data);
+    const payload = {
+      ...data,
+      waliName: data?.name ?? data?.waliName,
+      waliEmail: data?.email ?? data?.waliEmail,
+      relationship: data?.relationship,
+      message: data?.message,
+    };
+    return this.waliService.inviteWali(req.user.id, payload);
   }
 
   /**

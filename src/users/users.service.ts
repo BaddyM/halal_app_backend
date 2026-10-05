@@ -4,6 +4,7 @@ import {
     Injectable,
     Logger,
     NotFoundException,
+    OnModuleInit,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Prisma, SubscriptionPlan } from '@prisma/client';
@@ -17,16 +18,18 @@ import {
     SetWaliDto,
     UpdatePhotoDto,
     DeleteAccountDto,
+    RequestAccountDeletionDto,
 } from './dto';
-import { join } from 'path';
-import { existsSync, unlinkSync } from 'fs';
+import { basename, extname, join } from 'path';
+import { existsSync, mkdirSync, renameSync, unlinkSync } from 'fs';
+import { createHmac, timingSafeEqual } from 'crypto';
 import { PushService } from 'src/push/push.service';
 import { RealtimeBus } from 'src/realtime/realtime.bus';
 
 const ONLINE_WINDOW_MS = 5 * 60 * 1000; // 5 min
 
 @Injectable()
-export class UsersService {
+export class UsersService implements OnModuleInit {
     // Simple in-memory TTL cache for matchesSummary to improve first-reply
     // latency. Keyed by userId. TTL in ms.
     private matchesSummaryCache = new Map<
@@ -43,6 +46,125 @@ export class UsersService {
         private readonly push: PushService,
         private readonly realtime: RealtimeBus,
     ) {}
+
+    async onModuleInit() {
+        const legacyPrivatePhotos = await this.prisma.photo.findMany({
+            where: { isPrivate: true, url: { contains: '/uploads/photos/users/' } },
+            select: { id: true, url: true },
+        });
+        const privateDirectory = join(process.cwd(), 'uploads', 'private', 'photos', 'users');
+        if (legacyPrivatePhotos.length > 0 && !existsSync(privateDirectory)) {
+            mkdirSync(privateDirectory, { recursive: true });
+        }
+        for (const photo of legacyPrivatePhotos) {
+            const filename = basename(photo.url);
+            const oldPath = join(process.cwd(), 'uploads', 'photos', 'users', filename);
+            const newPath = join(privateDirectory, filename);
+            if (existsSync(oldPath) && !existsSync(newPath)) renameSync(oldPath, newPath);
+            await this.prisma.photo.update({
+                where: { id: photo.id },
+                data: { url: `/private/photos/users/${filename}` },
+            });
+        }
+    }
+
+    private photoAccessSecret() {
+        return this.config.get<string>('SYSTEM_SECRET') ?? this.config.get<string>('JWT_SECRET') ?? 'dev-secret';
+    }
+
+    private signedPrivatePhotoUrl(photoId: string, viewerId: string, admin = false) {
+        const payload = Buffer.from(JSON.stringify({
+            photoId,
+            viewerId,
+            admin,
+            expiresAt: Date.now() + 10 * 60 * 1000,
+        })).toString('base64url');
+        const signature = createHmac('sha256', this.photoAccessSecret()).update(payload).digest('base64url');
+        return `/api/media/private-photos/${photoId}?token=${payload}.${signature}`;
+    }
+
+    async photoUrlForViewer(viewerId: string, photoId: string) {
+        const photo = await this.prisma.photo.findUnique({ where: { id: photoId } });
+        if (!photo) throw new NotFoundException('Photo not found');
+        if (photo.moderationStatus !== 'approved' && viewerId !== photo.userId) {
+            throw new NotFoundException('Photo not found');
+        }
+        if (!photo.isPrivate) {
+            if (viewerId !== photo.userId) {
+                const match = await this.prisma.match.findFirst({
+                    where: { OR: [{ userAId: viewerId, userBId: photo.userId }, { userAId: photo.userId, userBId: viewerId }] },
+                    select: { id: true },
+                });
+                if (!match || (await this.blockedIdsFor(viewerId)).has(photo.userId)) {
+                    throw new NotFoundException('Photo not found');
+                }
+            }
+            return { id: photo.id, url: this.toRelativeAssetPath(photo.url), isPrivate: false };
+        }
+        if ((await this.privateAccessFor(viewerId, photo.userId)) !== 'granted' ||
+            (viewerId !== photo.userId && (await this.blockedIdsFor(viewerId)).has(photo.userId))) {
+            throw new NotFoundException('Photo not found');
+        }
+        return { id: photo.id, url: this.signedPrivatePhotoUrl(photo.id, viewerId), isPrivate: true };
+    }
+
+    async getPublicPhotoFile(fileName: string) {
+        if (!/^[A-Za-z0-9._-]+$/.test(fileName)) throw new NotFoundException('Photo not found');
+        const url = `/uploads/photos/users/${fileName}`;
+        const photo = await this.prisma.photo.findFirst({
+            where: { url, moderationStatus: 'approved' },
+            select: { id: true, url: true },
+        });
+        if (!photo) throw new NotFoundException('Photo not found');
+        const filePath = join(process.cwd(), 'uploads', 'photos', 'users', fileName);
+        if (!existsSync(filePath)) throw new NotFoundException('Photo not found');
+        const ext = extname(filePath).toLowerCase();
+        return {
+            filePath,
+            contentType: ext === '.png' ? 'image/png' : ext === '.webp' ? 'image/webp' : 'image/jpeg',
+        };
+    }
+
+    async getPrivatePhotoFile(photoId: string, token: string) {
+        const [payload, signature] = token.split('.');
+        if (!payload || !signature) throw new NotFoundException('Photo not found');
+        const expected = createHmac('sha256', this.photoAccessSecret()).update(payload).digest();
+        let supplied: Buffer;
+        try { supplied = Buffer.from(signature, 'base64url'); } catch { throw new NotFoundException('Photo not found'); }
+        if (expected.length !== supplied.length || !timingSafeEqual(expected, supplied)) {
+            throw new NotFoundException('Photo not found');
+        }
+        let claims: { photoId: string; viewerId: string; admin?: boolean; expiresAt: number };
+        try { claims = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8')); }
+        catch { throw new NotFoundException('Photo not found'); }
+        if (claims.photoId !== photoId || claims.expiresAt <= Date.now()) throw new NotFoundException('Photo not found');
+
+        const photo = await this.prisma.photo.findUnique({ where: { id: photoId } });
+        if (!photo?.isPrivate || (photo.moderationStatus !== 'approved' && !claims.admin)) throw new NotFoundException('Photo not found');
+        if (claims.admin) {
+            const admin = await this.prisma.user.findUnique({ where: { id: claims.viewerId }, select: { role: true } });
+            if (admin?.role !== 'admin') throw new NotFoundException('Photo not found');
+        } else if (claims.viewerId !== photo.userId) {
+            const [grant, blocked] = await Promise.all([
+                this.prisma.photoAccessRequest.findUnique({
+                    where: { requesterId_ownerId: { requesterId: claims.viewerId, ownerId: photo.userId } },
+                }),
+                this.blockedIdsFor(claims.viewerId),
+            ]);
+            if (!grant || grant.status !== 'granted' || blocked.has(photo.userId) ||
+                (grant.expiresAt && grant.expiresAt <= new Date())) {
+                throw new NotFoundException('Photo not found');
+            }
+        }
+        await this.prisma.photoAccessAudit.create({
+            data: { requesterId: claims.viewerId, ownerId: photo.userId, photoId, action: 'view' },
+        });
+        const filePath = photo.url.startsWith('/private/')
+            ? join(process.cwd(), 'uploads', photo.url.replace(/^\//, ''))
+            : join(process.cwd(), photo.url.replace(/^\//, ''));
+        if (!existsSync(filePath)) throw new NotFoundException('Photo not found');
+        return { filePath, contentType: extname(filePath).toLowerCase() === '.png' ? 'image/png' : extname(filePath).toLowerCase() === '.webp' ? 'image/webp' : 'image/jpeg' };
+    }
 
     async exportData(userId: string) {
         const user = await this.prisma.user.findUnique({
@@ -81,6 +203,65 @@ export class UsersService {
         await this.prisma.user.delete({ where: { id: userId } });
         this.matchesSummaryCache.delete(userId);
         return { success: true };
+    }
+
+    async requestAccountDeletion(userId: string, dto: RequestAccountDeletionDto) {
+        const user = await this.prisma.user.findUnique({
+            where: { id: userId },
+            select: { password: true, deletionRequest: true },
+        });
+        if (!user) throw new NotFoundException('User not found');
+        if (!(await bcrypt.compare(dto.password, user.password))) {
+            throw new BadRequestException('Incorrect password');
+        }
+        const request = await this.prisma.accountDeletionRequest.upsert({
+            where: { userId },
+            update: { reason: dto.reason ?? null, status: 'pending', reviewedBy: null, reviewedAt: null },
+            create: { userId, reason: dto.reason ?? null },
+        });
+        this.realtime.emitAdminEvent('moderation', `${userId} requested account deletion`, { requestId: request.id });
+        return { requestId: request.id, status: request.status, createdAt: request.createdAt };
+    }
+
+    async listAccountDeletionRequests(status = 'pending') {
+        return this.prisma.accountDeletionRequest.findMany({
+            where: status === 'all' ? {} : { status },
+            include: { user: { select: { id: true, name: true, email: true, createdAt: true } } },
+            orderBy: { createdAt: 'asc' },
+        });
+    }
+
+    async reviewAccountDeletionRequest(requestId: string, adminId: string, approve: boolean) {
+        const request = await this.prisma.accountDeletionRequest.findUnique({ where: { id: requestId } });
+        if (!request) throw new NotFoundException('Deletion request not found');
+        if (request.status !== 'pending') throw new BadRequestException('Deletion request has already been reviewed');
+        if (approve) {
+            const admin = await this.prisma.user.findUnique({ where: { id: adminId }, select: { email: true } });
+            await this.prisma.$transaction([
+                this.prisma.auditLog.create({
+                    data: {
+                        adminId,
+                        adminEmail: admin?.email ?? null,
+                        action: 'POST /admin/account-deletion-requests/:id/approve',
+                        target: request.userId,
+                    },
+                }),
+                this.prisma.user.delete({ where: { id: request.userId } }),
+            ]);
+            return { requestId, status: 'approved' };
+        }
+        const updated = await this.prisma.accountDeletionRequest.update({
+            where: { id: requestId },
+            data: { status: 'rejected', reviewedBy: adminId, reviewedAt: new Date() },
+        });
+        await this.prisma.auditLog.create({
+            data: {
+                adminId,
+                action: 'POST /admin/account-deletion-requests/:id/reject',
+                target: request.userId,
+            },
+        });
+        return updated;
     }
 
     // ── helpers ─────────────────────────────────────────────────
@@ -146,30 +327,33 @@ export class UsersService {
         options?: { mode?: 'summary' | 'full'; maxPhotos?: number },
     ) {
         const profile = user.profile;
-        const allPhotos: Array<{ id: string; url: string; isPrimary?: boolean; isPrivate?: boolean }> =
+        const allPhotos: Array<{ id: string; url: string; isPrimary?: boolean; isPrivate?: boolean; moderationStatus?: string }> =
             user.photos ?? [];
         const isSelf = viewer?.id === user.id;
         const canSeePrivate = isSelf || privateAccess === 'granted';
         const mode = options?.mode ?? 'full';
         const maxPhotos = Math.max(1, options?.maxPhotos ?? (mode === 'summary' ? 3 : 10));
 
-        const publicPhotos = allPhotos.filter((p) => !p.isPrivate);
-        const privatePhotos = allPhotos.filter((p) => p.isPrivate);
+        const approvedPhotos = allPhotos.filter((p) => p.moderationStatus === 'approved');
+        const publicPhotos = approvedPhotos.filter((p) => !p.isPrivate);
+        const privatePhotos = approvedPhotos.filter((p) => p.isPrivate);
 
         // Detailed photo list. The owner sees everything (with privacy flags);
         // a viewer sees public photos plus, only if granted, the private ones.
-        const visiblePhotos = canSeePrivate ? allPhotos : publicPhotos;
+        const visiblePhotos = isSelf ? allPhotos : canSeePrivate ? approvedPhotos : publicPhotos;
         const visibleSlice = visiblePhotos.slice(0, maxPhotos);
         const photos = visibleSlice.map((p) => ({
             id: p.id,
-            url: this.toRelativeAssetPath(p.url),
+            url: p.isPrivate && viewer ? this.signedPrivatePhotoUrl(p.id, viewer.id) : this.toRelativeAssetPath(p.url),
             isPrimary: p.isPrimary ?? false,
             isPrivate: p.isPrivate ?? false,
         }));
-        const galleryImages = visibleSlice.map((p) => this.toRelativeAssetPath(p.url));
-        const primaryImage = this.toRelativeAssetPath(
-            profile?.primaryImageUrl ?? publicPhotos[0]?.url ?? null,
+        const galleryImages = visibleSlice.map((p) =>
+            p.isPrivate && viewer ? this.signedPrivatePhotoUrl(p.id, viewer.id) : this.toRelativeAssetPath(p.url),
         );
+        const primaryImage = isSelf
+            ? this.toRelativeAssetPath(profile?.primaryImageUrl ?? publicPhotos[0]?.url ?? null)
+            : this.toRelativeAssetPath(publicPhotos.find((p) => p.isPrimary)?.url ?? publicPhotos[0]?.url ?? null);
 
         const basePayload = {
             id: user.id,
@@ -603,7 +787,7 @@ export class UsersService {
     async getVerification(userId: string) {
         const user = await this.prisma.user.findUnique({
             where: { id: userId },
-            include: { profile: true, identityVerification: true },
+            include: { profile: true, identityVerification: true, photoVerification: true },
         });
         if (!user) throw new NotFoundException('User not found');
         return {
@@ -624,6 +808,9 @@ export class UsersService {
                       reviewedAt: user.identityVerification.reviewedAt,
                   }
                 : { status: 'notSubmitted', reason: null, submission: null },
+            photo: user.photoVerification
+                ? { status: user.photoVerification.status, reason: user.photoVerification.reason, submittedAt: user.photoVerification.createdAt }
+                : { status: 'notSubmitted', reason: null },
             badge: { verified: user.profile?.isVerified === true },
         };
     }
@@ -1043,19 +1230,15 @@ export class UsersService {
 
     // ── subscription ────────────────────────────────────────────
     async changePlan(userId: string, plan: SubscriptionPlan) {
-        const updated = await this.prisma.user.update({
+        const user = await this.prisma.user.findUnique({
             where: { id: userId },
-            data: {
-                plan,
-                planExpiresAt:
-                    plan === 'premium'
-                        ? new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)
-                        : null,
-                // Reset basic limits if upgrading
-                ...(plan !== 'basic' && { likesUsedToday: 0, activeChatsCount: 0 }),
-            },
+            select: { plan: true, planExpiresAt: true },
         });
-        return { plan: updated.plan, planExpiresAt: updated.planExpiresAt };
+        if (!user) throw new NotFoundException('User not found');
+        if (user.plan !== plan) {
+            throw new ForbiddenException('Plan changes must be completed through verified checkout');
+        }
+        return { plan: user.plan, planExpiresAt: user.planExpiresAt };
     }
 
     // ── discover ────────────────────────────────────────────────
@@ -1279,7 +1462,47 @@ export class UsersService {
         return user;
     }
 
-    async likeProfile(viewerId: string, dto: LikeProfileDto) {
+    private async checkWaliApproval(userId: string, targetUserId: string, actionType: 'like' | 'match_accept') {
+        const links = await this.prisma.waliLink.findMany({
+            where: {
+                userId,
+                status: 'active',
+                ...(actionType === 'like' ? { approveLikes: true } : { approveMatches: true }),
+            },
+            select: { waliId: true },
+        });
+        if (!links.length) return { pending: false, approvalIds: [] as string[] };
+        const approvals = await this.prisma.waliApproval.findMany({
+            where: {
+                userId,
+                targetUserId,
+                actionType,
+                status: { in: ['pending', 'approved'] },
+                expiresAt: { gt: new Date() },
+            },
+        });
+        const approved = approvals.filter((approval) => approval.status === 'approved');
+        const missing = links.filter((link) => !approved.some((approval) => approval.waliId === link.waliId));
+        if (!missing.length) return { pending: false, approvalIds: approved.map((approval) => approval.id) };
+
+        const pendingWalis = new Set(approvals.filter((approval) => approval.status === 'pending').map((approval) => approval.waliId));
+        const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+        for (const link of missing) {
+            if (pendingWalis.has(link.waliId)) continue;
+            const approval = await this.prisma.waliApproval.create({
+                data: { waliId: link.waliId, userId, actionType, targetUserId, actionDetails: { targetUserId }, expiresAt },
+            });
+            void this.push.sendToUser(link.waliId, {
+                title: 'Wali approval requested',
+                body: 'A person you support is waiting for your approval before continuing.',
+                data: { type: 'wali_approval', approvalId: approval.id },
+            });
+            this.realtime.emitToUser(link.waliId, 'wali:approval-requested', { approvalId: approval.id, userId, actionType, targetUserId, expiresAt });
+        }
+        return { pending: true, approvalIds: [] as string[] };
+    }
+
+    async likeProfile(viewerId: string, dto: LikeProfileDto, approvalAction: 'like' | 'match_accept' = 'like') {
         if (dto.toUserId === viewerId)
             throw new BadRequestException('Cannot like yourself');
 
@@ -1287,6 +1510,13 @@ export class UsersService {
             where: { id: dto.toUserId },
         });
         if (!target) throw new NotFoundException('Target user not found');
+
+        let approvedWaliRequestIds: string[] = [];
+        if (dto.type !== 'pass') {
+            const approval = await this.checkWaliApproval(viewerId, dto.toUserId, approvalAction);
+            if (approval.pending) return { success: true, matched: false, pendingApproval: true };
+            approvedWaliRequestIds = approval.approvalIds;
+        }
 
         const viewer = await this.resetLikesIfNeeded(viewerId);
         const subscription = await this.prisma.subscription.findUnique({
@@ -1325,6 +1555,13 @@ export class UsersService {
                 type: dto.type,
             },
         });
+
+        if (approvedWaliRequestIds.length) {
+            await this.prisma.waliApproval.updateMany({
+                where: { id: { in: approvedWaliRequestIds }, status: 'approved' },
+                data: { status: 'used' },
+            });
+        }
 
         if (dto.type !== 'pass') {
             await this.prisma.user.update({
@@ -1566,7 +1803,7 @@ export class UsersService {
     /// Accept an incoming interest = like the person back (forms a match if it
     /// was a pending like). `otherUserId` is the interested user's id.
     async acceptInterest(userId: string, otherUserId: string) {
-        return this.likeProfile(userId, { toUserId: otherUserId, type: 'like' });
+        return this.likeProfile(userId, { toUserId: otherUserId, type: 'like' }, 'match_accept');
     }
 
     /// Reject an incoming interest = pass on that user.
@@ -1616,6 +1853,30 @@ export class UsersService {
             update: {},
             create: { blockerId, blockedId: targetId },
         });
+        const grants = await this.prisma.photoAccessRequest.findMany({
+            where: {
+                OR: [
+                    { requesterId: blockerId, ownerId: targetId },
+                    { requesterId: targetId, ownerId: blockerId },
+                ],
+                status: 'granted',
+            },
+            select: { requesterId: true, ownerId: true },
+        });
+        if (grants.length > 0) {
+            await this.prisma.photoAccessRequest.updateMany({
+                where: {
+                    OR: [
+                        { requesterId: blockerId, ownerId: targetId },
+                        { requesterId: targetId, ownerId: blockerId },
+                    ],
+                },
+                data: { status: 'denied', expiresAt: null },
+            });
+            await this.prisma.photoAccessAudit.createMany({
+                data: grants.map((grant) => ({ ...grant, action: 'revoke' })),
+            });
+        }
         return { success: true };
     }
 
@@ -1714,11 +1975,81 @@ export class UsersService {
         });
         return photos.map((p) => ({
             id: p.id,
-            url: p.url,
+            url: p.isPrivate ? this.signedPrivatePhotoUrl(p.id, userId) : p.url,
             isPrimary: p.isPrimary,
             isPrivate: p.isPrivate,
+            moderationStatus: p.moderationStatus,
+            moderationReason: p.moderationReason,
+            flags: p.flags ?? [],
             position: p.position,
         }));
+    }
+
+    async adminPhotoQueue(status = 'pending', search?: string) {
+        const photos = await this.prisma.photo.findMany({
+            where: status === 'flagged'
+                ? { flags: { not: Prisma.DbNull } }
+                : { moderationStatus: status },
+            include: { user: { select: { id: true, name: true, email: true } } },
+            orderBy: { createdAt: 'asc' },
+        });
+        const filtered = photos.filter((photo) => !search ||
+            `${photo.user.name} ${photo.user.email} ${photo.id}`.toLowerCase().includes(search.toLowerCase()));
+        return filtered.map((photo) => ({
+            id: photo.id,
+            userId: photo.userId,
+            user: photo.user,
+            visibility: photo.isPrivate ? 'private' : 'public',
+            url: photo.isPrivate ? this.signedPrivatePhotoUrl(photo.id, photo.userId, true) : photo.url,
+            status: photo.moderationStatus,
+            reason: photo.moderationReason,
+            flags: Array.isArray(photo.flags) ? photo.flags : [],
+            createdAt: photo.createdAt,
+        }));
+    }
+
+    async reviewPhotoModeration(photoId: string, status: 'approved' | 'rejected', reason: string | undefined, adminId: string, adminEmail?: string) {
+        const photo = await this.prisma.photo.findUnique({ where: { id: photoId }, include: { user: { select: { name: true } } } });
+        if (!photo) throw new NotFoundException('Photo not found');
+        const updated = await this.prisma.photo.update({
+            where: { id: photoId },
+            data: { moderationStatus: status, moderationReason: reason?.slice(0, 1000) ?? null },
+        });
+        await this.prisma.auditLog.create({
+            data: { adminId, adminEmail, action: `photo ${status}`, target: JSON.stringify({ photoId, userId: photo.userId, reason: reason ?? null }) },
+        });
+        void this.push.sendToUser(photo.userId, {
+            title: status === 'approved' ? 'Photo approved' : 'Photo needs attention',
+            body: status === 'approved' ? 'Your photo is now visible to other members.' : (reason ?? 'Please choose a different profile photo.'),
+            data: { type: 'photo_moderation', photoId, status },
+        });
+        this.realtime.emitToUser(photo.userId, 'notification:new', { kind: 'photo_moderation', photoId, status });
+        this.realtime.emitAdminEvent('moderation', `${photo.user.name}'s photo ${status}`, { photoId, userId: photo.userId });
+        return { id: updated.id, status: updated.moderationStatus, reason: updated.moderationReason };
+    }
+
+    async adminPhotoRequests() {
+        return this.prisma.photoAccessRequest.findMany({
+            include: {
+                requester: { select: { id: true, name: true } },
+                owner: { select: { id: true, name: true } },
+            },
+            orderBy: { createdAt: 'desc' },
+            take: 500,
+        });
+    }
+
+    async adminRevokePhotoRequest(requestId: string, adminId: string, reason?: string) {
+        const request = await this.prisma.photoAccessRequest.findUnique({ where: { id: requestId } });
+        if (!request) throw new NotFoundException('Photo access request not found');
+        await this.prisma.photoAccessRequest.update({ where: { id: requestId }, data: { status: 'revoked', expiresAt: new Date() } });
+        await this.prisma.photoAccessAudit.create({
+            data: { requesterId: request.requesterId, ownerId: request.ownerId, action: 'admin_revoke' },
+        });
+        await this.prisma.auditLog.create({
+            data: { adminId, action: 'photo access admin_revoke', target: JSON.stringify({ requestId, reason: reason ?? 'Admin safety override' }) },
+        });
+        return { success: true, status: 'revoked' };
     }
 
     /// Persist newly-uploaded photo files. The first photo ever uploaded
@@ -1743,6 +2074,7 @@ export class UsersService {
                     url: f.url,
                     isPrimary: makePrimary,
                     isPrivate: opts.isPrivate ?? false,
+                    moderationStatus: 'pending',
                     position: position++,
                 },
             });
@@ -1793,9 +2125,10 @@ export class UsersService {
         });
         return {
             id: updated.id,
-            url: updated.url,
+            url: updated.isPrivate ? this.signedPrivatePhotoUrl(updated.id, userId) : updated.url,
             isPrimary: updated.isPrimary,
             isPrivate: updated.isPrivate,
+            moderationStatus: updated.moderationStatus,
         };
     }
 
@@ -1847,30 +2180,35 @@ export class UsersService {
             where: { requesterId_ownerId: { requesterId: viewerId, ownerId } },
         });
         if (!req) return 'none';
-        if (req.status === 'granted') return 'granted';
-        if (req.status === 'pending') return 'pending';
+        if (req.status === 'granted' && (!req.expiresAt || req.expiresAt > new Date())) return 'granted';
+        if (req.status === 'pending' && (!req.expiresAt || req.expiresAt > new Date())) return 'pending';
         return 'none';
     }
 
-    async requestPhotoAccess(requesterId: string, ownerId: string) {
+    async requestPhotoAccess(requesterId: string, ownerId: string, reason?: string) {
         if (requesterId === ownerId) {
             throw new BadRequestException('You cannot request your own photos');
         }
         if ((await this.blockedIdsFor(requesterId)).has(ownerId)) {
             throw new NotFoundException('User not found');
         }
-        const owner = await this.prisma.user.findUnique({
+        const [owner, match] = await Promise.all([this.prisma.user.findUnique({
             where: { id: ownerId },
             select: { id: true },
-        });
+        }), this.prisma.match.findFirst({
+            where: { OR: [{ userAId: requesterId, userBId: ownerId }, { userAId: ownerId, userBId: requesterId }] },
+            select: { id: true },
+        })]);
         if (!owner) throw new NotFoundException('User not found');
+        if (!match) throw new ForbiddenException('Private photo access requires an active match');
 
         const req = await this.prisma.photoAccessRequest.upsert({
             where: { requesterId_ownerId: { requesterId, ownerId } },
             // Re-requesting after a denial resets it to pending.
-            update: { status: 'pending' },
-            create: { requesterId, ownerId, status: 'pending' },
+            update: { status: 'pending', reason: reason?.slice(0, 500) ?? null, expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000) },
+            create: { requesterId, ownerId, status: 'pending', reason: reason?.slice(0, 500) ?? null, expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000) },
         });
+        await this.prisma.photoAccessAudit.create({ data: { requesterId, ownerId, action: 'request' } });
         this.realtime.emitToUser(ownerId, 'notification:new', { kind: 'photoRequest', requesterId });
         void this.push.sendToUser(ownerId, {
             title: 'Private photo request',
@@ -1878,6 +2216,23 @@ export class UsersService {
             data: { type: 'photoRequest', requesterId },
         });
         return { success: true, status: req.status };
+    }
+
+    async respondPhotoRequestById(ownerId: string, requestId: string, grant: boolean) {
+        const request = await this.prisma.photoAccessRequest.findFirst({
+            where: { id: requestId, ownerId, status: 'pending' },
+        });
+        if (!request) throw new NotFoundException('Photo request not found');
+        if (request.expiresAt && request.expiresAt <= new Date()) {
+            await this.prisma.photoAccessRequest.update({
+                where: { id: request.id }, data: { status: 'denied' },
+            });
+            await this.prisma.photoAccessAudit.create({
+                data: { requesterId: request.requesterId, ownerId, action: 'expire' },
+            });
+            throw new NotFoundException('Photo request has expired');
+        }
+        return this.respondPhotoAccess(ownerId, request.requesterId, grant);
     }
 
     /// Owner responds to a pending request. `grant=false` denies it.
@@ -1889,7 +2244,10 @@ export class UsersService {
 
         const updated = await this.prisma.photoAccessRequest.update({
             where: { id: req.id },
-            data: { status: grant ? 'granted' : 'denied' },
+            data: { status: grant ? 'granted' : 'denied', expiresAt: null },
+        });
+        await this.prisma.photoAccessAudit.create({
+            data: { requesterId, ownerId, action: grant ? 'grant' : 'decline' },
         });
         this.realtime.emitToUser(requesterId, 'notification:new', { kind: grant ? 'photoGranted' : 'photoDenied', ownerId });
         void this.push.sendToUser(requesterId, {
@@ -1903,7 +2261,7 @@ export class UsersService {
     /// Pending inbound private-photo requests for the owner to act on.
     async listPhotoRequests(ownerId: string) {
         const reqs = await this.prisma.photoAccessRequest.findMany({
-            where: { ownerId, status: 'pending' },
+            where: { ownerId, status: 'pending', OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }] },
             orderBy: { createdAt: 'desc' },
             include: {
                 requester: {
@@ -1929,5 +2287,50 @@ export class UsersService {
                     .join(', '),
             },
         }));
+    }
+
+    async listPhotoGrants(ownerId: string) {
+        const grants = await this.prisma.photoAccessRequest.findMany({
+            where: { ownerId, status: 'granted' },
+            include: { requester: { select: { id: true, name: true, email: true } } },
+            orderBy: { updatedAt: 'desc' },
+        });
+        return grants.filter((grant) => !grant.expiresAt || grant.expiresAt > new Date()).map((grant) => ({
+            userId: grant.requesterId,
+            name: grant.requester.name,
+            email: grant.requester.email,
+            grantedAt: grant.updatedAt,
+        }));
+    }
+
+    async revokePhotoGrant(ownerId: string, requesterId: string) {
+        const grant = await this.prisma.photoAccessRequest.findUnique({
+            where: { requesterId_ownerId: { requesterId, ownerId } },
+        });
+        if (!grant || grant.status !== 'granted') throw new NotFoundException('Photo grant not found');
+        await this.prisma.photoAccessRequest.update({
+            where: { id: grant.id }, data: { status: 'denied', expiresAt: null },
+        });
+        await this.prisma.photoAccessAudit.create({ data: { requesterId, ownerId, action: 'revoke' } });
+        return { success: true };
+    }
+
+    async unmatch(viewerId: string, matchId: string) {
+        const match = await this.prisma.match.findFirst({
+            where: { id: matchId, OR: [{ userAId: viewerId }, { userBId: viewerId }] },
+        });
+        if (!match) throw new NotFoundException('Match not found');
+        const otherId = match.userAId === viewerId ? match.userBId : match.userAId;
+        const pair: [string, string] = viewerId < otherId
+            ? [viewerId, otherId]
+            : [otherId, viewerId];
+        await this.prisma.$transaction(async (tx) => {
+            await tx.photoAccessRequest.deleteMany({
+                where: { OR: [{ requesterId: viewerId, ownerId: otherId }, { requesterId: otherId, ownerId: viewerId }] },
+            });
+            await tx.conversation.deleteMany({ where: { userAId: pair[0], userBId: pair[1] } });
+            await tx.match.delete({ where: { id: matchId } });
+        });
+        return { success: true };
     }
 }

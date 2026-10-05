@@ -3,6 +3,8 @@ import {
   Post,
   Get,
   Put,
+  Patch,
+  Delete,
   Param,
   Body,
   UseGuards,
@@ -13,11 +15,140 @@ import {
 import { HealthDisclosureService } from './health-disclosure.service';
 import { AuthGuard } from '../auth/auth.guard';
 import { HealthDisclosureType, ImpactLevel } from '@prisma/client';
+import { PrismaService } from '../prisma/prisma.service';
 
 @Controller('health-disclosure')
 @UseGuards(AuthGuard)
 export class HealthDisclosureController {
-  constructor(private readonly healthService: HealthDisclosureService) {}
+  constructor(
+    private readonly healthService: HealthDisclosureService,
+    private readonly prisma: PrismaService,
+  ) {}
+
+  @Get()
+  async getDisclosureAlias(@Request() req) {
+    return this.healthService.getOwnDisclosure(req.user.id);
+  }
+
+  @Post()
+  async upsertDisclosureAlias(
+    @Request() req,
+    @Body()
+    body: {
+      hasHealthMatter?: boolean | null;
+      disclosureType?: HealthDisclosureType;
+      impactLevel?: ImpactLevel;
+      privateNotes?: string;
+      isActive?: boolean;
+      userId?: string;
+    },
+  ) {
+    if (body.hasHealthMatter !== undefined) {
+      return this.healthService.setInitialHealthDisclosureAnswer(
+        req.user.id,
+        body.hasHealthMatter,
+      );
+    }
+
+    if (body.userId) {
+      const disclosure = await this.prisma.healthDisclosure.findUnique({
+        where: { userId: req.user.id },
+      });
+
+      if (!disclosure) {
+        throw new Error('Health disclosure not initialized');
+      }
+
+      const access = await this.prisma.healthDisclosureAccess.upsert({
+        where: {
+          disclosureId_requestingUserId: {
+            disclosureId: disclosure.id,
+            requestingUserId: body.userId,
+          },
+        },
+        update: {
+          status: 'granted',
+          grantedAt: new Date(),
+          expiresAt: new Date(Date.now() + 730 * 24 * 60 * 60 * 1000),
+        },
+        create: {
+          disclosureId: disclosure.id,
+          requestingUserId: body.userId,
+          ownerUserId: req.user.id,
+          status: 'granted',
+          grantedAt: new Date(),
+          expiresAt: new Date(Date.now() + 730 * 24 * 60 * 60 * 1000),
+        },
+      });
+
+      return access;
+    }
+
+    return this.healthService.updateHealthDisclosureDetails(req.user.id, body);
+  }
+
+  @Patch()
+  async updateDisclosureAlias(
+    @Request() req,
+    @Body()
+    body: {
+      disclosureType?: HealthDisclosureType;
+      impactLevel?: ImpactLevel;
+      privateNotes?: string;
+      isActive?: boolean;
+    },
+  ) {
+    return this.healthService.updateHealthDisclosureDetails(req.user.id, body);
+  }
+
+  @Delete('share/:userId')
+  async revokeShareAlias(@Request() req, @Param('userId') userId: string) {
+    await this.healthService.denyDisclosureAccess(req.user.id, userId);
+    return { success: true };
+  }
+
+  @Post('share')
+  async shareDisclosureAlias(
+    @Request() req,
+    @Body() body: { userId?: string },
+  ) {
+    const userId = body.userId;
+    if (!userId) {
+      throw new Error('userId is required');
+    }
+
+    const disclosure = await this.prisma.healthDisclosure.findUnique({
+      where: { userId: req.user.id },
+    });
+
+    if (!disclosure) {
+      throw new Error('Health disclosure not initialized');
+    }
+
+    const access = await this.prisma.healthDisclosureAccess.upsert({
+      where: {
+        disclosureId_requestingUserId: {
+          disclosureId: disclosure.id,
+          requestingUserId: userId,
+        },
+      },
+      update: {
+        status: 'granted',
+        grantedAt: new Date(),
+        expiresAt: new Date(Date.now() + 730 * 24 * 60 * 60 * 1000),
+      },
+      create: {
+        disclosureId: disclosure.id,
+        requestingUserId: userId,
+        ownerUserId: req.user.id,
+        status: 'granted',
+        grantedAt: new Date(),
+        expiresAt: new Date(Date.now() + 730 * 24 * 60 * 60 * 1000),
+      },
+    });
+
+    return access;
+  }
 
   // ─────────────────────────────────────────────────────────────
   // STAGE 1: ONBOARDING
@@ -307,9 +438,18 @@ export class HealthDisclosureController {
     @Param('conversationId') conversationId: string,
     @Param('promptType') promptType: string,
   ) {
-    // Get partner ID from conversation (in real app, fetch from ChatService)
-    // For now, use a placeholder
-    const partnerUserId = 'unknown';
+    const conversation = await this.prisma.conversation.findFirst({
+      where: {
+        id: conversationId,
+        OR: [{ userAId: req.user.id }, { userBId: req.user.id }],
+      },
+      select: { userAId: true, userBId: true },
+    });
+    const partnerUserId = conversation
+      ? conversation.userAId === req.user.id
+        ? conversation.userBId
+        : conversation.userAId
+      : 'unknown';
 
     return this.healthService.checkPromptEligibility(
       req.user.id,

@@ -18,8 +18,8 @@ export class NotificationsController {
     }
 
     @Post('read')
-    markAllRead(@Req() req: AuthedRequest) {
-        return this.notifications.markAllRead(req.user.userId);
+    markAllRead(@Req() req: AuthedRequest, @Body() body: { ids?: string[] }) {
+        return this.notifications.markAllRead(req.user.userId, body?.ids);
     }
 
     @Patch('conversation-reminders')

@@ -1,19 +1,24 @@
 import {
   BadRequestException,
   Body,
-  ForbiddenException,
   Controller,
+  ForbiddenException,
+  Get,
+  NotFoundException,
+  Param,
   Post,
   Req,
+  Res,
   UploadedFile,
   UseGuards,
   UseInterceptors,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { diskStorage } from 'multer';
-import { extname } from 'path';
+import { extname, join } from 'path';
 import { existsSync, mkdirSync, unlinkSync } from 'fs';
 import { ApiBearerAuth, ApiBody, ApiConsumes } from '@nestjs/swagger';
+import { Response } from 'express';
 import { AuthGuard, AuthedRequest } from 'src/auth/auth.guard';
 import { PrismaService } from 'src/prisma/prisma.service';
 
@@ -77,7 +82,7 @@ export class UploadController {
 
     const url = `/uploads/photos/users/${file.filename}`;
     const photo = await this.prisma.photo.create({
-      data: { userId: req.user.userId, url, isPrimary: true, position: 0 },
+      data: { userId: req.user.userId, url, isPrimary: true, moderationStatus: 'pending', position: 0 },
     });
 
     await this.prisma.profile.upsert({
@@ -198,5 +203,27 @@ export class UploadController {
       size: file.size,
       originalName: file.originalname,
     };
+  }
+}
+
+@Controller('uploads/photos/users')
+export class PublicProfilePhotoController {
+  constructor(private readonly prisma: PrismaService) {}
+
+  @Get(':fileName')
+  async servePublicProfilePhoto(@Param('fileName') fileName: string, @Res() response: Response) {
+    if (!/^[A-Za-z0-9._-]+$/.test(fileName)) throw new NotFoundException('Photo not found');
+    const url = `/uploads/photos/users/${fileName}`;
+    const photo = await this.prisma.photo.findFirst({
+      where: { url, moderationStatus: 'approved' },
+      select: { id: true, url: true },
+    });
+    if (!photo) throw new NotFoundException('Photo not found');
+    const filePath = join(process.cwd(), 'uploads', 'photos', 'users', fileName);
+    if (!existsSync(filePath)) throw new NotFoundException('Photo not found');
+    response.setHeader('Cache-Control', 'public, max-age=300');
+    const ext = extname(filePath).toLowerCase();
+    response.setHeader('Content-Type', ext === '.png' ? 'image/png' : ext === '.webp' ? 'image/webp' : 'image/jpeg');
+    return response.sendFile(filePath);
   }
 }

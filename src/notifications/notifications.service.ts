@@ -94,9 +94,13 @@ export class NotificationsService {
         const me = await this.prisma.user.findUnique({ where: { id: userId } });
         if (!me) return [];
 
-        const readMarker = me.notificationsReadAt;
-        const isRead = (createdAt: Date) =>
-            !!readMarker && createdAt <= readMarker;
+        const [readMarker, explicitReads] = await Promise.all([
+            Promise.resolve(me.notificationsReadAt),
+            this.prisma.notificationRead.findMany({ where: { userId }, select: { notificationId: true } }),
+        ]);
+        const readIds = new Set(explicitReads.map((item) => item.notificationId));
+        const isRead = (id: string, createdAt: Date) =>
+            readIds.has(id) || (!!readMarker && createdAt <= readMarker);
 
         const [matches, incomingLikes, conversationsByPair] = await Promise.all([
             this.prisma.match.findMany({
@@ -153,7 +157,7 @@ export class NotificationsService {
                 id: `match-${m.id}`,
                 type: 'match' as const,
                 createdAt: m.createdAt,
-                isRead: isRead(m.createdAt),
+                isRead: isRead(`match-${m.id}`, m.createdAt),
                 partner: this.serializePartner(partner),
                 conversationId: convByPair.get(key) ?? null,
                 isSuperLike: false,
@@ -174,7 +178,7 @@ export class NotificationsService {
                 id: `like-${l.id}`,
                 type: 'likeRequest' as const,
                 createdAt: l.createdAt,
-                isRead: isRead(l.createdAt),
+                isRead: isRead(`like-${l.id}`, l.createdAt),
                 partner: this.serializePartner(l.fromUser),
                 conversationId: null,
                 isSuperLike: l.type === 'superLike',
@@ -192,7 +196,14 @@ export class NotificationsService {
         return { count: items.filter((i) => !i.isRead).length };
     }
 
-    async markAllRead(userId: string) {
+    async markAllRead(userId: string, ids?: string[]) {
+        if (ids?.length) {
+            await this.prisma.notificationRead.createMany({
+                data: [...new Set(ids)].map((notificationId) => ({ userId, notificationId })),
+                skipDuplicates: true,
+            });
+            return { success: true, count: new Set(ids).size };
+        }
         await this.prisma.user.update({
             where: { id: userId },
             data: { notificationsReadAt: new Date() },

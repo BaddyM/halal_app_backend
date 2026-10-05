@@ -1,9 +1,9 @@
 import { Module } from '@nestjs/common';
 import { AuthModule } from 'src/auth/auth.module';
-import { UploadController } from './upload.controller';
+import { PublicProfilePhotoController, UploadController } from './upload.controller';
 
 @Module({
     imports: [AuthModule],
-    controllers: [UploadController],
+    controllers: [UploadController, PublicProfilePhotoController],
 })
 export class UploadModule {}

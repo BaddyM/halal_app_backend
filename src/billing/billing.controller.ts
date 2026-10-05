@@ -19,6 +19,12 @@ export class BillingController {
     return this.billing.getSubscription(req.user.userId);
   }
 
+  @Get('subscriptions/me')
+  @UseGuards(AuthGuard)
+  subscriptionContract(@Req() req: AuthedRequest) {
+    return this.billing.getSubscription(req.user.userId);
+  }
+
   @Get('me/transactions')
   @UseGuards(AuthGuard)
   transactions(@Req() req: AuthedRequest) {

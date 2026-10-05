@@ -91,6 +91,18 @@ export class TasbihApiController {
     return this.tasbihService.getTodayStats(req.user.id);
   }
 
+  @Get('streak')
+  @UseGuards(AuthGuard)
+  async getStreak(@Request() req: any) {
+    return this.tasbihService.getStreak(req.user.id);
+  }
+
+  @Post('sync')
+  @UseGuards(AuthGuard)
+  async syncDaily(@Request() req: any, @Body() body: { count: number; date: string }) {
+    return this.tasbihService.syncDailyCount(req.user.id, Number(body.count), body.date);
+  }
+
   /**
    * Get period stats (month/year)
    * GET /api/tasbih/stats?period=month&year=2026&month=08

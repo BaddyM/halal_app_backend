@@ -256,6 +256,52 @@ export class TasbihCompleteService {
     };
   }
 
+  async getStreak(userId: string) {
+    const [streak, badges] = await Promise.all([
+      this.prisma.tasbihStreak.findUnique({ where: { userId } }),
+      this.prisma.userBadge.findMany({
+        where: { userId, status: 'earned' },
+        select: { badge: { select: { name: true } } },
+      }),
+    ]);
+    return {
+      current: streak?.currentStreak ?? 0,
+      longest: streak?.longestStreak ?? 0,
+      badges: badges.map((badge) => badge.badge.name),
+    };
+  }
+
+  async syncDailyCount(userId: string, count: number, dateText: string) {
+    if (!Number.isInteger(count) || count < 0) throw new BadRequestException('count must be a non-negative whole number');
+    const date = new Date(`${dateText}T00:00:00.000Z`);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(dateText) || Number.isNaN(date.getTime())) {
+      throw new BadRequestException('date must use YYYY-MM-DD format');
+    }
+    const settings = await this.getUserSettings(userId);
+    return this.prisma.$transaction(async (tx) => {
+      const current = await tx.tasbihDaily.upsert({
+        where: { userId_date: { userId, date } },
+        create: { userId, date, count: 0, metGoal: false },
+        update: {},
+      });
+      if (count < current.count) throw new BadRequestException('Synced daily count cannot reduce the server total');
+      const delta = count - current.count;
+      if (delta === 0) return { date: dateText, count: current.count, synced: false };
+
+      const updated = await tx.tasbihDaily.updateMany({
+        where: { id: current.id, count: current.count },
+        data: { count, metGoal: count >= settings.dailyGoal },
+      });
+      if (updated.count === 0) {
+        const latest = await tx.tasbihDaily.findUnique({ where: { userId_date: { userId, date } } });
+        if (latest && latest.count >= count) return { date: dateText, count: latest.count, synced: false };
+        throw new BadRequestException('Daily Tasbih total changed concurrently; retry sync');
+      }
+      await tx.tasbihUserSettings.update({ where: { userId }, data: { lifetimeTotal: { increment: delta } } });
+      return { date: dateText, count, synced: true };
+    });
+  }
+
   /**
    * Get period stats (month/year)
    */

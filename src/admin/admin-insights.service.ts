@@ -329,22 +329,48 @@ export class AdminInsightsService {
     since.setDate(1);
     since.setHours(0, 0, 0, 0);
 
-    const txns = await this.prisma.transaction.findMany({
-      where: { status: 'succeeded', createdAt: { gte: since } },
-      select: { amountCents: true, createdAt: true },
-    });
+    const [txns, giftOrders] = await Promise.all([
+      this.prisma.transaction.findMany({
+        where: { status: 'succeeded', createdAt: { gte: since } },
+        select: { amountCents: true, currency: true, createdAt: true },
+      }),
+      this.prisma.paymentOrder.findMany({
+        where: { itemType: 'gift', status: 'completed', completedAt: { gte: since } },
+        select: { amountCents: true, currency: true, completedAt: true },
+      }),
+    ]);
 
-    const buckets = new Map<string, number>();
+    const buckets = new Map<string, Map<string, number>>();
     for (let i = 0; i < months; i++) {
       const d = new Date(since);
       d.setMonth(since.getMonth() + i);
-      buckets.set(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`, 0);
+      buckets.set(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`, new Map());
     }
-    for (const t of txns) {
-      const key = `${t.createdAt.getFullYear()}-${String(t.createdAt.getMonth() + 1).padStart(2, '0')}`;
-      if (buckets.has(key)) buckets.set(key, (buckets.get(key) ?? 0) + t.amountCents);
+    const addRevenue = (createdAt: Date | null, currency: string, amountCents: number) => {
+      if (!createdAt) return;
+      const key = `${createdAt.getFullYear()}-${String(createdAt.getMonth() + 1).padStart(2, '0')}`;
+      const month = buckets.get(key);
+      if (month) month.set(currency.toUpperCase(), (month.get(currency.toUpperCase()) ?? 0) + amountCents);
+    };
+    for (const t of txns) addRevenue(t.createdAt, t.currency, t.amountCents);
+    for (const order of giftOrders) {
+      addRevenue(order.completedAt, order.currency, order.amountCents);
     }
-    return [...buckets.entries()].map(([month, revenueCents]) => ({ month, revenueCents }));
+    const currencyCodes = new Set([
+      ...txns.map((transaction) => transaction.currency.toUpperCase()),
+      ...giftOrders.map((order) => order.currency.toUpperCase()),
+    ]);
+    const zeroDecimalCurrencies = new Set(['UGX', 'KES', 'TZS', 'RWF', 'BIF', 'XOF', 'XAF']);
+    return [...buckets.entries()].flatMap(([month, monthValues]) =>
+      [...currencyCodes].map((currency) => ({
+        month,
+        currency,
+        revenueCents: monthValues.get(currency) ?? 0,
+        revenueAmount:
+          (monthValues.get(currency) ?? 0) /
+          (zeroDecimalCurrencies.has(currency) ? 1 : 100),
+      })),
+    );
   }
 
   async transactions(limit = 50) {

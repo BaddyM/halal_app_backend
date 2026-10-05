@@ -1,6 +1,6 @@
 import { IsIn, IsOptional, IsString } from 'class-validator';
 
-export type BillingProvider = 'stripe' | 'apple' | 'google' | 'manual';
+export type BillingProvider = 'stripe' | 'apple' | 'google' | 'manual' | 'pesapal';
 const PROVIDERS = ['stripe', 'apple', 'google', 'manual'];
 
 export class CheckoutDto {

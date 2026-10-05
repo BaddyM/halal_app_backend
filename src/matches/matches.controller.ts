@@ -1,4 +1,4 @@
-import { Controller, Get, Param, Post, Query, Req, UseGuards } from '@nestjs/common';
+import { Controller, Delete, Get, Param, Post, Query, Req, UseGuards } from '@nestjs/common';
 import { AuthGuard, AuthedRequest } from 'src/auth/auth.guard';
 import { UsersService } from 'src/users/users.service';
 
@@ -43,6 +43,11 @@ export class MatchesController {
   @Post(':id/reject')
   reject(@Req() req: AuthedRequest, @Param('id') id: string) {
     return this.users.rejectInterest(req.user.userId, id);
+  }
+
+  @Delete(':id')
+  unmatch(@Req() req: AuthedRequest, @Param('id') id: string) {
+    return this.users.unmatch(req.user.userId, id);
   }
 
   // Adapter endpoints for alternate client expectations (backwards-compatibility)

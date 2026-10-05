@@ -1,0 +1,4 @@
+ALTER TABLE `WaliLink`
+  ADD COLUMN `chatSummaries` BOOLEAN NOT NULL DEFAULT true,
+  ADD COLUMN `weeklyDigest` BOOLEAN NOT NULL DEFAULT true,
+  ADD COLUMN `matchAlerts` BOOLEAN NOT NULL DEFAULT true;

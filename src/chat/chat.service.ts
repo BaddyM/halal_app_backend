@@ -556,6 +556,28 @@ export class ChatService implements OnModuleInit {
     return { ...this.serializeMessage(msg), isMine: true };
   }
 
+  async deleteMessage(userId: string, conversationId: string, messageId: string) {
+    await this.assertMembership(userId, conversationId);
+    const message = await this.prisma.message.findUnique({ where: { id: messageId } });
+    if (!message || message.conversationId !== conversationId) {
+      throw new NotFoundException('Message not found');
+    }
+    if (message.senderId !== userId) {
+      throw new ForbiddenException('You can only delete your own messages');
+    }
+    await this.prisma.message.delete({ where: { id: messageId } });
+    const latest = await this.prisma.message.findFirst({
+      where: { conversationId },
+      orderBy: { createdAt: 'desc' },
+      select: { createdAt: true },
+    });
+    await this.prisma.conversation.update({
+      where: { id: conversationId },
+      data: { lastMessageAt: latest?.createdAt ?? new Date() },
+    });
+    return { id: messageId, deleted: true };
+  }
+
   /**
    * Convenience: send a message to another user (server finds/creates
    * the single canonical conversation for the pair and sends the message).

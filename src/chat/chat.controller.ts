@@ -1,5 +1,6 @@
 import {
   Body,
+  Delete,
   Controller,
   Get,
   Param,
@@ -26,7 +27,6 @@ export class ChatController {
   list(@Req() req: AuthedRequest) {
     return this.chat.listConversations(req.user.userId);
   }
-
   @Post('conversations')
   start(@Req() req: AuthedRequest, @Body() dto: StartConversationDto) {
     return this.chat.findOrCreate(req.user.userId, dto.otherUserId);
@@ -61,6 +61,15 @@ export class ChatController {
     });
   }
 
+  @Delete('conversations/:conversationId/messages/:messageId')
+  deleteMessage(
+    @Req() req: AuthedRequest,
+    @Param('conversationId') conversationId: string,
+    @Param('messageId') messageId: string,
+  ) {
+    return this.chat.deleteMessage(req.user.userId, conversationId, messageId);
+  }
+
   @Post('conversations/:id/read')
   markRead(@Req() req: AuthedRequest, @Param('id') id: string) {
     return this.chat.markRead(req.user.userId, id);
@@ -82,5 +91,31 @@ export class ChatController {
     @Body() body: { typing: boolean },
   ) {
     return this.chat.broadcastTyping(req.user.userId, id, !!body?.typing);
+  }
+}
+
+@UseGuards(AuthGuard)
+@Controller('chats')
+export class ChatsContractController {
+  constructor(private readonly chat: ChatService) {}
+
+  @Get()
+  list(@Req() req: AuthedRequest) {
+    return this.chat.listConversations(req.user.userId);
+  }
+
+  @Get(':id/messages')
+  messages(@Req() req: AuthedRequest, @Param('id') id: string, @Query() query: MessagesQueryDto) {
+    return this.chat.getMessages(req.user.userId, id, query);
+  }
+
+  @Post(':id/messages')
+  send(@Req() req: AuthedRequest, @Param('id') id: string, @Body() body: { text: string }) {
+    return this.chat.sendMessage(req.user.userId, id, body.text);
+  }
+
+  @Post(':id/read')
+  markRead(@Req() req: AuthedRequest, @Param('id') id: string) {
+    return this.chat.markRead(req.user.userId, id);
   }
 }

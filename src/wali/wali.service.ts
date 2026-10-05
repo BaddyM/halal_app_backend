@@ -3,10 +3,14 @@ import {
   BadRequestException,
   NotFoundException,
   ForbiddenException,
+  Logger,
 } from '@nestjs/common';
+import { Cron } from '@nestjs/schedule';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { RealtimeBus } from 'src/realtime/realtime.bus';
 import { MailService } from 'src/mail/mail.service';
+import { ConfigService } from '@nestjs/config';
+import { createHmac, timingSafeEqual } from 'crypto';
 
 // ────────────────────────────────────────────────────────────────
 // INTERFACES
@@ -43,11 +47,40 @@ export interface WaliPermissionsUpdate {
 
 @Injectable()
 export class WaliService {
+  private readonly logger = new Logger(WaliService.name);
+
   constructor(
     private prisma: PrismaService,
     private realtime: RealtimeBus,
     private mail: MailService,
+    private config: ConfigService,
   ) {}
+
+  private signInvitation(linkId: string, action: 'accept' | 'reject') {
+    const expiresAt = Date.now() + 7 * 24 * 60 * 60 * 1000;
+    const payload = Buffer.from(JSON.stringify({ linkId, action, expiresAt })).toString('base64url');
+    const secret = this.config.get<string>('WALI_LINK_SECRET') ?? this.config.get<string>('SYSTEM_SECRET') ?? 'dev-secret';
+    const signature = createHmac('sha256', secret).update(payload).digest('base64url');
+    return `${payload}.${signature}`;
+  }
+
+  private verifyInvitation(token: string, action: 'accept' | 'reject') {
+    const [payload, signature] = token.split('.');
+    if (!payload || !signature) throw new BadRequestException('Invalid invitation link');
+    const secret = this.config.get<string>('WALI_LINK_SECRET') ?? this.config.get<string>('SYSTEM_SECRET') ?? 'dev-secret';
+    const expected = createHmac('sha256', secret).update(payload).digest();
+    const supplied = Buffer.from(signature, 'base64url');
+    if (expected.length !== supplied.length || !timingSafeEqual(expected, supplied)) {
+      throw new BadRequestException('Invalid invitation link');
+    }
+    let claims: { linkId: string; action: string; expiresAt: number };
+    try { claims = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8')); }
+    catch { throw new BadRequestException('Invalid invitation link'); }
+    if (claims.action !== action || claims.expiresAt <= Date.now()) {
+      throw new BadRequestException('Invitation link has expired or is invalid');
+    }
+    return claims.linkId;
+  }
 
   // ────────────────────────────────────────────────────────────────
   // WALI INVITE & ACCEPTANCE
@@ -179,7 +212,8 @@ export class WaliService {
         waliName: waliAccount.name,
         userName: user.name,
         message: data.message,
-        invitationToken: link.id,
+        invitationToken: this.signInvitation(link.id, 'accept'),
+        declineToken: this.signInvitation(link.id, 'reject'),
       });
     }
 
@@ -209,7 +243,8 @@ export class WaliService {
       to: link.wali.email,
       waliName: link.wali.name,
       userName: link.user.name,
-      invitationToken: link.id,
+      invitationToken: this.signInvitation(link.id, 'accept'),
+      declineToken: this.signInvitation(link.id, 'reject'),
     });
     return this.prisma.waliLink.update({
       where: { id: link.id },
@@ -262,8 +297,9 @@ export class WaliService {
   }
 
   async respondToToken(token: string, action: 'accept' | 'reject') {
+    const linkId = this.verifyInvitation(token, action);
     const link = await this.prisma.waliLink.findUnique({
-      where: { id: token },
+      where: { id: linkId },
     });
     if (!link) throw new NotFoundException('Invitation not found');
     return this.respondToInvitation(link.waliId, link.id, { action });
@@ -311,9 +347,142 @@ export class WaliService {
         seeChats: link.seeChats,
         approveLikes: link.approveLikes,
         approveMatches: link.approveMatches,
+        chatSummaries: link.chatSummaries,
+        weeklyDigest: link.weeklyDigest,
+        matchAlerts: link.matchAlerts,
       },
       acceptedAt: link.acceptedAt,
     }));
+  }
+
+  async getStatus(userId: string) {
+    const link = await this.prisma.waliLink.findFirst({
+      where: { userId, status: { in: ['active', 'pending'] } },
+      include: { wali: { select: { name: true, email: true } } },
+      orderBy: { updatedAt: 'desc' },
+    });
+    return {
+      linked: link?.status === 'active',
+      status: link?.status ?? 'notLinked',
+      name: link?.wali.name ?? null,
+      email: link?.wali.email ?? null,
+      confirmedAt: link?.acceptedAt ?? null,
+    };
+  }
+
+  async removeForUser(userId: string) {
+    const links = await this.prisma.waliLink.findMany({
+      where: { userId, status: { in: ['active', 'pending'] } },
+      select: { id: true },
+    });
+    if (links.length) {
+      await this.prisma.waliLink.updateMany({
+        where: { id: { in: links.map((link) => link.id) } },
+        data: { status: 'revoked', revokedAt: new Date() },
+      });
+    }
+    return { success: true };
+  }
+
+  async updateDeliveryPreferences(userId: string, preferences: {
+    chatSummaries?: boolean;
+    weeklyDigest?: boolean;
+    matchAlerts?: boolean;
+  }) {
+    const link = await this.prisma.waliLink.findFirst({
+      where: { userId, status: 'active' },
+      orderBy: { updatedAt: 'desc' },
+    });
+    if (!link) throw new NotFoundException('No active Wali link');
+    return this.prisma.waliLink.update({
+      where: { id: link.id },
+      data: {
+        ...(preferences.chatSummaries !== undefined && { chatSummaries: preferences.chatSummaries, seeChats: preferences.chatSummaries }),
+        ...(preferences.weeklyDigest !== undefined && { weeklyDigest: preferences.weeklyDigest }),
+        ...(preferences.matchAlerts !== undefined && { matchAlerts: preferences.matchAlerts }),
+      },
+    });
+  }
+
+  @Cron('0 9 * * 1')
+  async sendWeeklyDigests() {
+    const endDate = new Date();
+    const startDate = new Date(endDate.getTime() - 7 * 24 * 60 * 60 * 1000);
+    const links = await this.prisma.waliLink.findMany({
+      where: { status: 'active', weeklyDigest: true },
+      include: {
+        user: { select: { id: true, name: true } },
+        wali: { select: { id: true, email: true } },
+      },
+    });
+
+    for (const link of links) {
+      const prior = await this.prisma.waliDigest.findUnique({
+        where: { waliId_period_startDate: { waliId: link.waliId, period: 'weekly', startDate } },
+        select: { id: true },
+      });
+      if (prior) continue;
+
+      const [messages, matches] = await Promise.all([
+        link.chatSummaries
+          ? this.prisma.message.findMany({
+              where: {
+                createdAt: { gte: startDate, lte: endDate },
+                conversation: { OR: [{ userAId: link.userId }, { userBId: link.userId }] },
+              },
+              include: { sender: { select: { name: true } } },
+              orderBy: { createdAt: 'asc' },
+              take: 80,
+            })
+          : Promise.resolve([]),
+        link.matchAlerts
+          ? this.prisma.match.count({
+              where: {
+                createdAt: { gte: startDate, lte: endDate },
+                OR: [{ userAId: link.userId }, { userBId: link.userId }],
+              },
+            })
+          : Promise.resolve(0),
+      ]);
+      if (!messages.length && !matches) continue;
+
+      let digest: { id: string };
+      try {
+        digest = await this.prisma.waliDigest.create({
+          data: {
+            waliId: link.waliId,
+            period: 'weekly',
+            startDate,
+            endDate,
+            newMatches: matches,
+            newMessages: messages.length,
+            usersLinked: 1,
+          },
+          select: { id: true },
+        });
+      } catch (error: any) {
+        if (error?.code === 'P2002') continue;
+        throw error;
+      }
+
+      const messageSummary = messages.length
+        ? messages.slice(-20).map((message) => `${message.sender.name}: ${message.text.slice(0, 240)}`).join('\n')
+        : 'No conversation messages were included in this digest.';
+      const matchSummary = matches ? `New matches this week: ${matches}.` : 'No new matches this week.';
+      try {
+        await this.mail.sendWaliSummary({
+          to: link.wali.email,
+          userName: link.user.name,
+          participantNames: `${link.user.name} weekly update`,
+          summary: `${matchSummary}\n\n${messageSummary}`,
+          messageCount: messages.length,
+        });
+        await this.prisma.waliDigest.update({ where: { id: digest.id }, data: { sentAt: new Date() } });
+      } catch (error) {
+        await this.prisma.waliDigest.delete({ where: { id: digest.id } }).catch(() => undefined);
+        this.logger.error(`Could not send weekly Wali digest for ${link.id}: ${String(error)}`);
+      }
+    }
   }
 
   /**

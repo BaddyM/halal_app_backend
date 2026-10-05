@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ForbiddenException,
   Injectable,
   Logger,
   NotFoundException,
@@ -266,10 +267,8 @@ export class BillingService {
       return { activated: true, subscription: sub };
     }
 
-    // Internal/manual activation (e.g. dashboard) takes effect immediately.
     if (provider === 'manual') {
-      const sub = await this.activate(userId, plan, provider, `manual_${Date.now()}`);
-      return { activated: true, subscription: sub };
+      throw new ForbiddenException('Manual plan activation is restricted to administrators');
     }
 
     // Stripe: if a secret key is configured, create a real Checkout Session and
@@ -425,6 +424,16 @@ export class BillingService {
   ) {
     const plan = await this.planOrThrow(planId);
     return this.activate(userId, plan, provider, externalId);
+  }
+
+  async activateVerifiedPesapalPlan(userId: string, planId: string, trackingId: string) {
+    const existing = await this.prisma.transaction.findFirst({
+      where: { provider: 'pesapal', externalId: trackingId, status: 'succeeded' },
+      select: { id: true },
+    });
+    if (existing) return this.getSubscription(userId);
+    const plan = await this.planOrThrow(planId);
+    return this.activate(userId, plan, 'pesapal', trackingId);
   }
 
   /// Expire/revoke a subscription (e.g. Stripe customer.subscription.deleted or

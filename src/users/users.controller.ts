@@ -115,7 +115,8 @@ export class UsersController {
         @UploadedFiles() files: Express.Multer.File[],
         @Body('isPrivate') isPrivate?: string,
     ) {
-        const urls = (files ?? []).map((f) => ({ url: publicPhotoUrl(f.filename) }));
+        const isPrivateUpload = isPrivate === 'true' || isPrivate === '1';
+        const urls = (files ?? []).map((f) => ({ url: publicPhotoUrl(f.filename, isPrivateUpload) }));
         return this.users.addPhotos(req.user.userId, urls, {
             isPrivate: isPrivate === 'true' || isPrivate === '1',
         });

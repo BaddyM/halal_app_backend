@@ -110,11 +110,15 @@ export class MailService {
     userName: string;
     message?: string;
     invitationToken: string;
+    declineToken?: string;
   }) {
     const appName = this.config.get<string>('APP_NAME') ?? 'Halal Dating';
     const frontendUrl =
       this.config.get<string>('FRONTEND_URL') ?? 'http://localhost:3000';
-    const acceptUrl = `${frontendUrl}/api/wali/accept?token=${encodeURIComponent(args.invitationToken)}`;
+    const acceptUrl = `${frontendUrl}/api/wali/confirm/${encodeURIComponent(args.invitationToken)}`;
+    const declineUrl = args.declineToken
+      ? `${frontendUrl}/api/wali/decline/${encodeURIComponent(args.declineToken)}`
+      : undefined;
     const safeWaliName = this.escapeHtml(args.waliName);
     const safeUserName = this.escapeHtml(args.userName);
     const safeMessage = args.message ? this.escapeHtml(args.message) : '';
@@ -130,6 +134,7 @@ export class MailService {
         : []),
       '',
       `Accept invitation: ${acceptUrl}`,
+      ...(declineUrl ? [`Decline invitation: ${declineUrl}`] : []),
     ].join('\n');
     const html = `
       <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; color: #253238;">
@@ -139,6 +144,7 @@ export class MailService {
         <p>When the user chooses to involve you, you may receive the latest conversation summary by email. Weekly summaries are sent only when there is recent chat activity and pause automatically after two consecutive inactive weeks.</p>
         ${safeMessage ? `<p><strong>Message from ${safeUserName}:</strong> ${safeMessage}</p>` : ''}
         <p><a href="${acceptUrl}">Accept Wali invitation</a></p>
+        ${declineUrl ? `<p><a href="${declineUrl}">Decline invitation</a></p>` : ''}
         <p style="font-size: 12px; color: #667">This invitation does not provide access to the user's account or password.</p>
       </div>
     `;

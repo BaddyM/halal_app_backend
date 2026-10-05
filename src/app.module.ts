@@ -26,6 +26,11 @@ import { SupportModule } from './support/support.module';
 
 import { WaliModule } from './wali/wali.module';
 import { HealthDisclosureModule } from './health-disclosure/health-disclosure.module';
+import { GiftsModule } from './gifts/gifts.module';
+import { WalletModule } from './wallet/wallet.module';
+import { VerificationModule } from './verification/verification.module';
+import { JourneyModule } from './journey/journey.module';
+import { LegalModule } from './legal/legal.module';
 import { ScheduleModule } from '@nestjs/schedule';
 
 @Module({
@@ -35,8 +40,11 @@ import { ScheduleModule } from '@nestjs/schedule';
         ScheduleModule.forRoot(),
         ConfigModule.forRoot({ isGlobal: true }),
         ServeStaticModule.forRoot({
-            rootPath: join(process.cwd(), 'uploads'),
-            serveRoot: '/uploads/',
+            rootPath: join(process.cwd(), 'uploads/photos/chat'),
+            serveRoot: '/uploads/photos/chat/',
+        }, {
+            rootPath: join(process.cwd(), 'uploads/ads'),
+            serveRoot: '/uploads/ads/',
         }),
         PrismaModule,
         AuthModule,
@@ -59,6 +67,11 @@ import { ScheduleModule } from '@nestjs/schedule';
         SupportModule,
         WaliModule,
         HealthDisclosureModule,
+        GiftsModule,
+        WalletModule,
+        VerificationModule,
+        JourneyModule,
+        LegalModule,
     ],
     providers: [
         { provide: APP_GUARD, useClass: ThrottlerGuard },

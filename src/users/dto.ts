@@ -130,3 +130,8 @@ export class DeleteAccountDto {
     @IsString() password!: string;
     @Type(() => Boolean) @IsBoolean() confirm!: boolean;
 }
+
+export class RequestAccountDeletionDto {
+    @IsString() password!: string;
+    @IsOptional() @IsString() @MaxLength(2000) reason?: string;
+}

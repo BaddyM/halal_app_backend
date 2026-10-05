@@ -12,9 +12,11 @@ export const PHOTO_MAX_SIZE = 5 * 1024 * 1024;
 /// so storage location, naming and validation stay consistent.
 export const photoMulterOptions = {
     storage: diskStorage({
-        destination: (_req: any, _file: any, cb: any) => {
-            if (!existsSync(PHOTO_DEST)) mkdirSync(PHOTO_DEST, { recursive: true });
-            cb(null, PHOTO_DEST);
+        destination: (req: any, _file: any, cb: any) => {
+            const isPrivate = req.body?.isPrivate === 'true' || req.body?.isPrivate === '1';
+            const destination = isPrivate ? './uploads/private/photos/users' : PHOTO_DEST;
+            if (!existsSync(destination)) mkdirSync(destination, { recursive: true });
+            cb(null, destination);
         },
         filename: (_req: any, file: any, cb: any) => {
             const unique = `${Date.now()}-${Math.round(Math.random() * 1e9)}`;
@@ -30,6 +32,8 @@ export const photoMulterOptions = {
     limits: { fileSize: PHOTO_MAX_SIZE },
 };
 
-export function publicPhotoUrl(filename: string): string {
-    return `/uploads/photos/users/${filename}`;
+export function publicPhotoUrl(filename: string, isPrivate = false): string {
+    return isPrivate
+        ? `/private/photos/users/${filename}`
+        : `/uploads/photos/users/${filename}`;
 }

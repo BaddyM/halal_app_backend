@@ -179,6 +179,7 @@ model User {
 
   // Profile UI settings
   prayerTimesEnabled        Boolean  @default(true)
+  chaperoneMode             Boolean  @default(false)
   halalVerificationSubmitted Boolean  @default(false)
   // Read receipts are a premium feature with a user toggle (Module C).
   readReceiptsEnabled       Boolean  @default(true)
@@ -200,6 +201,7 @@ model User {
   // Relations
   profile           Profile?
   identityVerification IdentityVerification?
+  photoVerification   ProfilePhotoVerification?
   onboardingAnswers OnboardingAnswer[]
   photos            Photo[]
 
@@ -213,6 +215,17 @@ model User {
 
   subscription      Subscription?
   transactions      Transaction[]
+  paymentOrders     PaymentOrder[]
+  discountRedemptions DiscountReservation[]
+  giftInventory     GiftInventory[]
+  giftsSent         GiftSent[] @relation("GiftsSent")
+  giftsReceived     GiftSent[] @relation("GiftsReceived")
+  wallet            WalletAccount?
+  walletTransactions WalletTransaction[]
+  withdrawals       WithdrawalRequest[]
+  deletionRequest   AccountDeletionRequest?
+  notificationReads NotificationRead[]
+  journeySteps      JourneyStep[]
 
   devices           Device[]
   inboxMessages     InboxMessage[]
@@ -343,6 +356,20 @@ model IdentityVerification {
   updatedAt   DateTime @updatedAt
 }
 
+model ProfilePhotoVerification {
+  id         String   @id @default(uuid())
+  userId     String   @unique
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  status     ManualVerificationStatus @default(pending)
+  submission Json
+  reason     String?  @db.Text
+  reviewedAt DateTime?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([status, createdAt])
+}
+
 // ─────────────────────────────────────────────────────────────
 //  PHOTOS
 // ─────────────────────────────────────────────────────────────
@@ -355,6 +382,9 @@ model Photo {
   // Private/locked photos are hidden in discovery & on the public profile.
   // They become visible to a viewer only after an approved PhotoAccessRequest.
   isPrivate Boolean  @default(false)
+  moderationStatus String @default("approved") @db.VarChar(16)
+  moderationReason String? @db.VarChar(1000)
+  flags     Json?
   position  Int      @default(0)
   createdAt DateTime @default(now())
 
@@ -370,6 +400,8 @@ model PhotoAccessRequest {
   ownerId     String
   // pending | granted | denied
   status      String   @default("pending") @db.VarChar(16)
+  reason      String?  @db.VarChar(500)
+  expiresAt   DateTime?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
@@ -379,6 +411,19 @@ model PhotoAccessRequest {
   @@unique([requesterId, ownerId])
   @@index([ownerId])
   @@index([requesterId])
+}
+
+model PhotoAccessAudit {
+  id          String   @id @default(uuid())
+  requesterId String
+  ownerId     String
+  photoId     String?
+  action      String   @db.VarChar(24)
+  createdAt   DateTime @default(now())
+
+  @@index([ownerId, createdAt])
+  @@index([requesterId, createdAt])
+  @@index([photoId, createdAt])
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -620,6 +665,199 @@ model Transaction {
   createdAt   DateTime @default(now())
 
   @@index([userId])
+}
+
+model PaymentOrder {
+  id               String   @id @default(uuid())
+  userId           String
+  user             User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  itemType         String   @db.VarChar(24)
+  itemId           String   @db.VarChar(191)
+  provider         String   @default("pesapal") @db.VarChar(16)
+  merchantReference String  @unique @db.VarChar(64)
+  orderTrackingId  String?  @unique @db.VarChar(128)
+  redirectUrl      String?  @db.Text
+  amountCents      Int
+  quantity         Int      @default(1)
+  subtotalAmountCents Int   @default(0)
+  discountAmountCents Int  @default(0)
+  discountCodeId   String?  @db.VarChar(191)
+  discountReservation DiscountReservation?
+  currency         String   @default("UGX") @db.VarChar(8)
+  status           String   @default("pending") @db.VarChar(16)
+  providerStatus   String?  @db.VarChar(64)
+  completedAt      DateTime?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  @@index([userId, status, createdAt])
+}
+
+model DiscountCode {
+  id           String   @id @default(uuid())
+  code         String   @unique @db.VarChar(48)
+  type         String   @default("percent") @db.VarChar(16)
+  value        Int
+  appliesTo    String   @default("all") @db.VarChar(48)
+  usageLimit   Int?
+  usedCount    Int      @default(0)
+  reservedCount Int     @default(0)
+  active       Boolean  @default(true)
+  expiresAt    DateTime?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  reservations DiscountReservation[]
+
+  @@index([active, expiresAt])
+}
+
+model DiscountReservation {
+  id        String       @id @default(uuid())
+  codeId    String
+  code      DiscountCode @relation(fields: [codeId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  orderId   String       @unique
+  order     PaymentOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  status    String       @default("reserved") @db.VarChar(16)
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+
+  @@index([codeId, status])
+  @@index([userId, createdAt])
+}
+
+model GiftCatalogItem {
+  id          String   @id @default(uuid())
+  name        String
+  description String?  @db.Text
+  image       String?  @db.Text
+  price       Int
+  cashValue   Int      @default(0)
+  currency    String   @default("UGX") @db.VarChar(8)
+  enabled     Boolean  @default(true)
+  sortOrder   Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  inventory   GiftInventory[]
+  sent        GiftSent[]
+}
+
+model GiftInventory {
+  id        String         @id @default(uuid())
+  userId    String
+  user      User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  giftId    String
+  gift      GiftCatalogItem @relation(fields: [giftId], references: [id], onDelete: Cascade)
+  quantity  Int            @default(0)
+  updatedAt DateTime       @updatedAt
+
+  @@unique([userId, giftId])
+  @@index([userId])
+}
+
+model GiftSent {
+  id          String          @id @default(uuid())
+  giftId      String
+  gift        GiftCatalogItem @relation(fields: [giftId], references: [id])
+  senderId    String
+  sender      User            @relation("GiftsSent", fields: [senderId], references: [id], onDelete: Cascade)
+  recipientId String
+  recipient   User            @relation("GiftsReceived", fields: [recipientId], references: [id], onDelete: Cascade)
+  quantity    Int             @default(1)
+  message     String?         @db.VarChar(500)
+  cashValue   Int
+  createdAt   DateTime        @default(now())
+
+  @@index([recipientId, createdAt])
+  @@index([senderId, createdAt])
+}
+
+model WalletAccount {
+  id              String   @id @default(uuid())
+  userId          String   @unique
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  balance         Int      @default(0)
+  pendingBalance  Int      @default(0)
+  lifetime        Int      @default(0)
+  updatedAt       DateTime @updatedAt
+}
+
+model WalletTransaction {
+  id          String   @id @default(uuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type        String   @db.VarChar(24)
+  amount      Int
+  currency    String   @default("UGX") @db.VarChar(8)
+  reference   String?  @unique @db.VarChar(191)
+  description String?  @db.VarChar(255)
+  createdAt   DateTime @default(now())
+
+  @@index([userId, createdAt])
+}
+
+model WithdrawalRequest {
+  id          String   @id @default(uuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  pendingUserId String? @unique
+  amount      Int
+  currency    String   @default("UGX") @db.VarChar(8)
+  method      String   @db.VarChar(24)
+  details     Json
+  status      String   @default("pending") @db.VarChar(16)
+  reference   String?  @db.VarChar(191)
+  reason      String?  @db.VarChar(1000)
+  reviewedBy  String?  @db.VarChar(191)
+  reviewedAt  DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([status, createdAt])
+  @@index([userId, createdAt])
+}
+
+model AccountDeletionRequest {
+  id         String   @id @default(uuid())
+  userId     String   @unique
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  reason     String?  @db.VarChar(2000)
+  status     String   @default("pending") @db.VarChar(16)
+  reviewedBy String?  @db.VarChar(191)
+  reviewedAt DateTime?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([status, createdAt])
+}
+
+model NotificationRead {
+  id             String   @id @default(uuid())
+  userId         String
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  notificationId String   @db.VarChar(191)
+  readAt         DateTime @default(now())
+
+  @@unique([userId, notificationId])
+  @@index([userId, readAt])
+}
+
+model JourneyStep {
+  id          String   @id @default(uuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  stepKey     String   @db.VarChar(48)
+  title       String   @db.VarChar(120)
+  description String   @db.VarChar(500)
+  completed   Boolean  @default(false)
+  completedAt DateTime?
+  position    Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([userId, stepKey])
+  @@index([userId, position])
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -1018,6 +1256,9 @@ model WaliLink {
   seeChats      Boolean @default(false)  // Can view chat messages
   approveLikes  Boolean @default(false)  // Must approve before you like someone
   approveMatches Boolean @default(false) // Must approve before accepting a match
+  chatSummaries Boolean @default(true)
+  weeklyDigest  Boolean @default(true)
+  matchAlerts   Boolean @default(true)
   
   // Invitation tracking
   inviteSentAt  DateTime?
