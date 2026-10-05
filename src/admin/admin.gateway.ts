@@ -10,6 +10,7 @@ import {
 import { Server, Socket } from 'socket.io';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { RealtimeBus } from 'src/realtime/realtime.bus';
+import { getJwtSecret } from 'src/auth/jwt-secret';
 
 interface AdminSocket extends Socket {
   data: { userId?: string };
@@ -18,7 +19,15 @@ interface AdminSocket extends Socket {
 /// Realtime channel for the admin dashboard. Authenticates the JWT *and*
 /// requires `role === 'admin'`; admins join the `feed` room and receive
 /// `admin:event` pushes (plus an `admin:backlog` snapshot on connect).
-@WebSocketGateway({ cors: { origin: '*' }, namespace: '/admin' })
+@WebSocketGateway({
+  cors: {
+    origin: (process.env.CORS_ORIGINS ?? process.env.DASHBOARD_ORIGINS ?? process.env.FRONTEND_URL ?? 'https://admin.halalconnect.space')
+      .split(',')
+      .map((origin) => origin.trim())
+      .filter(Boolean),
+  },
+  namespace: '/admin',
+})
 export class AdminGateway implements OnGatewayInit, OnGatewayConnection {
   private readonly logger = new Logger(AdminGateway.name);
 
@@ -47,7 +56,7 @@ export class AdminGateway implements OnGatewayInit, OnGatewayConnection {
     }
     try {
       const payload = await this.jwt.verifyAsync<{ sub: string }>(token, {
-        secret: this.config.get('SYSTEM_SECRET') ?? 'dev-secret',
+        secret: getJwtSecret(this.config),
       });
       const user = await this.prisma.user.findUnique({
         where: { id: payload.sub },

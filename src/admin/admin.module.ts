@@ -14,7 +14,6 @@ import { AdminCatalogService } from './admin-catalog.service';
 import { AdminInsightsController } from './admin-insights.controller';
 import { AdminInsightsService } from './admin-insights.service';
 import { AdminGateway } from './admin.gateway';
-import { AuditInterceptor } from './audit.interceptor';
 
 @Module({
   imports: [AuthModule],
@@ -29,7 +28,6 @@ import { AuditInterceptor } from './audit.interceptor';
   ],
   providers: [
     AdminGuard,
-    AuditInterceptor,
     AdminUsersService,
     AdminModerationService,
     AdminMessagingService,

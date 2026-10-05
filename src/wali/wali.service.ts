@@ -6,11 +6,13 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { RealtimeBus } from 'src/realtime/realtime.bus';
 import { MailService } from 'src/mail/mail.service';
 import { ConfigService } from '@nestjs/config';
 import { createHmac, timingSafeEqual } from 'crypto';
+import { getWaliLinkSecret } from 'src/auth/jwt-secret';
 
 // ────────────────────────────────────────────────────────────────
 // INTERFACES
@@ -59,7 +61,7 @@ export class WaliService {
   private signInvitation(linkId: string, action: 'accept' | 'reject') {
     const expiresAt = Date.now() + 7 * 24 * 60 * 60 * 1000;
     const payload = Buffer.from(JSON.stringify({ linkId, action, expiresAt })).toString('base64url');
-    const secret = this.config.get<string>('WALI_LINK_SECRET') ?? this.config.get<string>('SYSTEM_SECRET') ?? 'dev-secret';
+    const secret = getWaliLinkSecret(this.config);
     const signature = createHmac('sha256', secret).update(payload).digest('base64url');
     return `${payload}.${signature}`;
   }
@@ -67,7 +69,7 @@ export class WaliService {
   private verifyInvitation(token: string, action: 'accept' | 'reject') {
     const [payload, signature] = token.split('.');
     if (!payload || !signature) throw new BadRequestException('Invalid invitation link');
-    const secret = this.config.get<string>('WALI_LINK_SECRET') ?? this.config.get<string>('SYSTEM_SECRET') ?? 'dev-secret';
+    const secret = getWaliLinkSecret(this.config);
     const expected = createHmac('sha256', secret).update(payload).digest();
     const supplied = Buffer.from(signature, 'base64url');
     if (expected.length !== supplied.length || !timingSafeEqual(expected, supplied)) {
@@ -239,6 +241,32 @@ export class WaliService {
       include: { user: true, wali: true },
     });
     if (!link) throw new NotFoundException('No pending Wali invitation');
+    await this.mail.sendWaliInvitation({
+      to: link.wali.email,
+      waliName: link.wali.name,
+      userName: link.user.name,
+      invitationToken: this.signInvitation(link.id, 'accept'),
+      declineToken: this.signInvitation(link.id, 'reject'),
+    });
+    return this.prisma.waliLink.update({
+      where: { id: link.id },
+      data: { inviteSentAt: new Date() },
+    });
+  }
+
+  async resendAdminInvite(linkId: string) {
+    const link = await this.prisma.waliLink.findUnique({
+      where: { id: linkId },
+      include: {
+        user: { select: { name: true } },
+        wali: { select: { id: true, name: true, email: true } },
+      },
+    });
+    if (!link) throw new NotFoundException('Wali link not found');
+    if (link.status !== 'pending') {
+      throw new BadRequestException('Only pending Wali invitations can be resent');
+    }
+
     await this.mail.sendWaliInvitation({
       to: link.wali.email,
       waliName: link.wali.name,
@@ -750,7 +778,7 @@ export class WaliService {
   async listAllWali(status?: string, search?: string) {
     const links = await this.prisma.waliLink.findMany({
       where: {
-        ...(status ? { status } : {}),
+        ...(status ? { status: status === 'declined' ? 'rejected' : status } : {}),
         ...(search
           ? {
               OR: [
@@ -762,20 +790,107 @@ export class WaliService {
       },
       orderBy: { updatedAt: 'desc' },
       include: {
-        user: { select: { id: true, name: true, email: true } },
-        wali: { select: { id: true, name: true, email: true } },
+        user: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+            profile: { select: { gender: true, waliRelation: true } },
+          },
+        },
+        wali: { select: { id: true, name: true, email: true, phone: true } },
       },
     });
-    return links;
+    return links.map((link) => ({
+      id: link.id,
+      userId: link.userId,
+      userName: link.user.name,
+      userEmail: link.user.email,
+      userGender: link.user.profile?.gender ?? null,
+      waliName: link.wali.name,
+      waliEmail: link.wali.email,
+      waliPhone: link.wali.phone,
+      relationship: link.user.profile?.waliRelation ?? '',
+      status: link.status === 'rejected' ? 'declined' : link.status,
+      ccChats: link.seeChats,
+      ccMatches: link.matchAlerts,
+      approvalRequired: link.approveLikes || link.approveMatches,
+      invitedAt: link.inviteSentAt,
+      acceptedAt: link.acceptedAt,
+      createdAt: link.createdAt,
+    }));
   }
 
   async updateAdminStatus(linkId: string, status: string) {
-    if (!['pending', 'active', 'rejected', 'revoked'].includes(status)) {
+    const normalizedStatus = status === 'declined' ? 'rejected' : status;
+    if (!['pending', 'active', 'rejected', 'revoked'].includes(normalizedStatus)) {
       throw new BadRequestException('Invalid Wali status');
     }
     return this.prisma.waliLink.update({
       where: { id: linkId },
-      data: { status },
+      data: { status: normalizedStatus },
+    });
+  }
+
+  async updateDashboardLink(
+    linkId: string,
+    input: {
+      status?: unknown;
+      ccChats?: unknown;
+      ccMatches?: unknown;
+      approvalRequired?: unknown;
+      relationship?: unknown;
+    },
+  ) {
+    const current = await this.prisma.waliLink.findUnique({ where: { id: linkId } });
+    if (!current) throw new NotFoundException('Wali link not found');
+    const data: Prisma.WaliLinkUpdateInput = {};
+
+    if (input.status !== undefined) {
+      const status = input.status === 'declined' ? 'rejected' : input.status;
+      if (typeof status !== 'string' || !['pending', 'active', 'rejected', 'revoked'].includes(status)) {
+        throw new BadRequestException('Invalid Wali status');
+      }
+      data.status = status;
+    }
+    if (input.ccChats !== undefined) {
+      if (typeof input.ccChats !== 'boolean') throw new BadRequestException('ccChats must be a boolean');
+      data.seeChats = input.ccChats;
+    }
+    if (input.ccMatches !== undefined) {
+      if (typeof input.ccMatches !== 'boolean') throw new BadRequestException('ccMatches must be a boolean');
+      data.matchAlerts = input.ccMatches;
+    }
+    if (input.approvalRequired !== undefined) {
+      if (typeof input.approvalRequired !== 'boolean') {
+        throw new BadRequestException('approvalRequired must be a boolean');
+      }
+      data.approveLikes = input.approvalRequired;
+      data.approveMatches = input.approvalRequired;
+    }
+    if (input.relationship !== undefined && typeof input.relationship !== 'string') {
+      throw new BadRequestException('relationship must be a string');
+    }
+    if (!Object.keys(data).length && input.relationship === undefined) {
+      throw new BadRequestException('No supported Wali link fields were provided');
+    }
+
+    return this.prisma.$transaction(async (tx) => {
+      if (input.relationship !== undefined) {
+        await tx.profile.upsert({
+          where: { userId: current.userId },
+          create: { userId: current.userId, waliRelation: input.relationship as string },
+          update: { waliRelation: input.relationship as string },
+        });
+      }
+      return tx.waliLink.update({
+        where: { id: linkId },
+        data,
+        include: {
+          user: { select: { id: true, name: true, email: true } },
+          wali: { select: { id: true, name: true, email: true, phone: true } },
+        },
+      });
     });
   }
 

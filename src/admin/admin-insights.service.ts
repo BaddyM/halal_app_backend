@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from 'src/prisma/prisma.service';
 
 const ONLINE_WINDOW_MS = 5 * 60 * 1000;
@@ -19,25 +19,35 @@ export class AdminInsightsService {
     const [
       totalUsers,
       activeUsers,
+      activeToday,
       bannedUsers,
       bannedToday,
       usersLastYear,
       premiumUsers,
+      newSignups,
       verifiedUsers,
       totalMatches,
       pendingReports,
+      pendingVerifications,
       revenue,
       onlineNow,
     ] = await Promise.all([
       this.prisma.user.count(),
       this.prisma.user.count({ where: { status: 'active' } }),
+      this.prisma.user.count({ where: { lastSeenAt: { gte: startOfToday } } }),
       this.prisma.user.count({ where: { status: 'banned' } }),
       this.prisma.user.count({ where: { status: 'banned', updatedAt: { gte: startOfToday } } }),
       this.prisma.user.count({ where: { createdAt: { lte: oneYearAgo } } }),
       this.prisma.user.count({ where: { plan: { not: 'basic' } } }),
+      this.prisma.user.count({ where: { createdAt: { gte: startOfToday } } }),
       this.prisma.profile.count({ where: { isVerified: true } }),
       this.prisma.match.count(),
       this.prisma.report.count({ where: { status: { in: ['open', 'pending'] } } }),
+      Promise.all([
+        this.prisma.user.count({ where: { phoneVerificationStatus: 'pending' } }),
+        this.prisma.identityVerification.count({ where: { status: 'pending' } }),
+        this.prisma.profilePhotoVerification.count({ where: { status: 'pending' } }),
+      ]).then((counts) => counts.reduce((sum, count) => sum + count, 0)),
       this.prisma.transaction.aggregate({
         _sum: { amountCents: true },
         where: { status: 'succeeded' },
@@ -59,14 +69,19 @@ export class AdminInsightsService {
     return {
       totalUsers,
       activeUsers,
+      activeToday,
       bannedUsers,
       bannedToday,
       usersYoyPercent,
       premiumUsers,
+      newSignups,
       verifiedUsers,
       totalMatches,
       pendingReports,
+      pendingVerifications,
+      openReports: pendingReports,
       revenueCents: revenue._sum.amountCents ?? 0,
+      revenue: revenue._sum.amountCents ?? 0,
       onlineNow,
     };
   }
@@ -94,7 +109,12 @@ export class AdminInsightsService {
       const key = `${u.createdAt.getFullYear()}-${String(u.createdAt.getMonth() + 1).padStart(2, '0')}`;
       if (buckets.has(key)) buckets.set(key, (buckets.get(key) ?? 0) + 1);
     }
-    return [...buckets.entries()].map(([month, count]) => ({ month, count }));
+    return [...buckets.entries()].map(([month, count]) => ({
+      month,
+      count,
+      label: month,
+      value: count,
+    }));
   }
 
   async genderRatio() {
@@ -221,6 +241,24 @@ export class AdminInsightsService {
       flagged: m.flagged,
       createdAt: m.createdAt,
     }));
+  }
+
+  async getConversation(id: string) {
+    const conversation = await this.prisma.conversation.findUnique({
+      where: { id },
+      include: {
+        userA: { select: { id: true, name: true, email: true } },
+        userB: { select: { id: true, name: true, email: true } },
+        _count: { select: { messages: true } },
+      },
+    });
+    if (!conversation) throw new NotFoundException('Conversation not found');
+    return {
+      id: conversation.id,
+      participants: [conversation.userA, conversation.userB],
+      messageCount: conversation._count.messages,
+      lastMessageAt: conversation.lastMessageAt,
+    };
   }
 
   async deleteConversation(id: string) {
@@ -439,7 +477,12 @@ export class AdminInsightsService {
       const key = `${r.createdAt.getFullYear()}-${String(r.createdAt.getMonth() + 1).padStart(2, '0')}`;
       if (buckets.has(key)) buckets.set(key, (buckets.get(key) ?? 0) + 1);
     }
-    return [...buckets.entries()].map(([month, count]) => ({ month, count }));
+    return [...buckets.entries()].map(([month, count]) => ({
+      month,
+      count,
+      label: month,
+      value: count,
+    }));
   }
 
   /// Messages and matches per day for the last 7 days.

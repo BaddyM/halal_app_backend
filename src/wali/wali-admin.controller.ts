@@ -33,7 +33,7 @@ export class AdminWaliController {
 
   @Patch(':id')
   update(@Param('id') id: string, @Body() data: any) {
-    return this.waliService.updateAdminStatus(id, data.status ?? data.action);
+    return this.waliService.updateDashboardLink(id, data);
   }
 
   @Delete(':id')
@@ -48,7 +48,7 @@ export class AdminWaliController {
 
   @Post(':id/resend-invite')
   resend(@Param('id') id: string) {
-    return this.waliService.manageWaliLink(id, 'resend');
+    return this.waliService.resendAdminInvite(id);
   }
 
   @Post(':id/send-digest')

@@ -18,7 +18,8 @@ export class WalletService {
 
   async withdrawalSettings() {
     const saved = await this.prisma.appSetting.findUnique({ where: { key: 'wallet.withdrawalThreshold' } });
-    return { minWithdrawal: Number(saved?.value ?? this.threshold()) };
+    const threshold = Number(saved?.value ?? this.config.get('WITHDRAWAL_THRESHOLD', 50000));
+    return { minWithdrawal: threshold, withdrawThreshold: threshold, currency: 'UGX' };
   }
 
   async updateWithdrawalSettings(minWithdrawal: number) {
@@ -30,7 +31,7 @@ export class WalletService {
       create: { key: 'wallet.withdrawalThreshold', value: minWithdrawal },
       update: { value: minWithdrawal },
     });
-    return { minWithdrawal };
+    return { minWithdrawal, withdrawThreshold: minWithdrawal, currency: 'UGX' };
   }
 
   async summary(userId: string) {

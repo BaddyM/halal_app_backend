@@ -6,13 +6,14 @@ import { AuthService } from './auth.service';
 import { AuthGuard } from './auth.guard';
 import { OAuthService } from './oauth.service';
 import { MailModule } from '../mail/mail.module';
+import { getJwtSecret } from './jwt-secret';
 
 @Module({
     imports: [
         JwtModule.registerAsync({
             imports: [ConfigModule],
             useFactory: (config: ConfigService) => ({
-                secret: config.get<string>('SYSTEM_SECRET') ?? 'dev-secret',
+                secret: getJwtSecret(config),
                 signOptions: { expiresIn: '7d' },
             }),
             inject: [ConfigService],

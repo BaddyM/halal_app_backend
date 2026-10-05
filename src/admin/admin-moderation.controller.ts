@@ -6,16 +6,13 @@ import {
   Post,
   Query,
   UseGuards,
-  UseInterceptors,
 } from '@nestjs/common';
 import { AuthGuard } from 'src/auth/auth.guard';
 import { AdminGuard } from './admin.guard';
-import { AuditInterceptor } from './audit.interceptor';
 import { AdminModerationService } from './admin-moderation.service';
 import { ResolveReportDto } from './dto';
 
 @UseGuards(AuthGuard, AdminGuard)
-@UseInterceptors(AuditInterceptor)
 @Controller('admin/reports')
 export class AdminModerationController {
   constructor(private readonly moderation: AdminModerationService) {}

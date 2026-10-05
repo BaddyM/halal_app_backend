@@ -117,20 +117,26 @@ export class VerificationService {
         take: Math.min(100, Math.max(1, input.limit ?? 50)),
       }),
     ]);
-    return {
-      users: users.map((user) => ({
+    const items = users.map((user) => ({
         id: user.id,
         userId: user.id,
         name: user.name,
         email: user.email,
         phone: user.phone,
+        phoneStatus: user.phoneVerificationStatus,
+        identityStatus: user.identityVerification?.status ?? 'notSubmitted',
+        photoStatus: user.photoVerification?.status ?? 'notSubmitted',
+        submittedAt: user.identityVerification?.createdAt ?? user.photoVerification?.createdAt ?? user.updatedAt,
         phoneVerificationStatus: user.phoneVerificationStatus,
         identityVerificationStatus: user.identityVerification?.status ?? 'notSubmitted',
         photoVerificationStatus: user.photoVerification?.status ?? 'notSubmitted',
         identitySubmission: user.identityVerification,
         photoSubmission: user.photoVerification,
         lastSubmittedAt: user.identityVerification?.createdAt ?? user.photoVerification?.createdAt ?? user.updatedAt,
-      })),
+      }));
+    return {
+      items,
+      users: items,
       total,
     };
   }
@@ -197,7 +203,7 @@ export class VerificationService {
       data: { type: 'verification', verificationType: type, status },
     });
     this.realtime.emitToUser(userId, 'notification:new', { kind: 'verification', verificationType: type, status });
-    this.realtime.emitAdminEvent('moderation', `${name} ${type} verification ${status}`, { userId, type, status });
+    this.realtime.emitAdminEvent('verification', `${name} ${type} verification ${status}`, { userId, type, status });
     return { userId, type, status, reason: reason ?? null };
   }
 

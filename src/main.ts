@@ -24,7 +24,23 @@ async function bootstrap() {
     app.use(urlencoded({ extended: true, limit: '2mb' }));
 
     app.setGlobalPrefix('api');
-    app.enableCors();
+    const allowedOrigins = (
+        process.env.CORS_ORIGINS ??
+        process.env.DASHBOARD_ORIGINS ??
+        process.env.FRONTEND_URL ??
+        'https://admin.halalconnect.space'
+    )
+        .split(',')
+        .map((origin) => origin.trim())
+        .filter(Boolean);
+    app.enableCors({
+        origin: (origin, callback) => {
+            if (!origin || allowedOrigins.includes(origin)) return callback(null, true);
+            return callback(new Error('Origin is not allowed by CORS'));
+        },
+        methods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
+        allowedHeaders: ['Authorization', 'Content-Type'],
+    });
     app.useGlobalPipes(
         new ValidationPipe({
             whitelist: true,

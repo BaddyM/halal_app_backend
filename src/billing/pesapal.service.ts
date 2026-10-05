@@ -8,6 +8,7 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { createCipheriv, createDecipheriv, randomBytes, randomUUID } from 'crypto';
 import { PrismaService } from 'src/prisma/prisma.service';
+import { RealtimeBus } from 'src/realtime/realtime.bus';
 import { BillingService } from './billing.service';
 import { DiscountsService } from './discounts.service';
 
@@ -34,10 +35,13 @@ export class PesapalService {
     private readonly config: ConfigService,
     private readonly billing: BillingService,
     private readonly discounts: DiscountsService,
+    private readonly realtime: RealtimeBus,
   ) {}
 
   private encryptionKey(): Buffer {
-    const raw = this.config.get<string>('PAYMENT_CONFIG_ENCRYPTION_KEY');
+    const raw =
+      this.config.get<string>('PAYMENT_KEYS_ENCRYPTION_KEY') ??
+      this.config.get<string>('PAYMENT_CONFIG_ENCRYPTION_KEY');
     if (!raw) throw new ServiceUnavailableException('Payment config encryption is not configured');
     const key = /^[a-f\d]{64}$/i.test(raw)
       ? Buffer.from(raw, 'hex')
@@ -388,6 +392,15 @@ export class PesapalService {
             await this.fulfillGiftOrder(order);
           } else {
             throw new BadRequestException('Unsupported payment item');
+          }
+          if (order.itemType === 'gift') {
+            this.realtime.emitAdminEvent('payment', 'Gift payment completed', {
+              userId: order.userId,
+              itemType: order.itemType,
+              itemId: order.itemId,
+              amountCents: order.amountCents,
+              currency: order.currency,
+            });
           }
         } catch (error) {
           await this.prisma.paymentOrder.update({ where: { id: order.id }, data: { status: 'pending' } });

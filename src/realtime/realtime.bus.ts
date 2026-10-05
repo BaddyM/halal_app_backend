@@ -7,6 +7,8 @@ export type AdminEventType =
   | 'match'
   | 'message'
   | 'report'
+  | 'payment'
+  | 'verification'
   | 'subscription'
   | 'moderation';
 

@@ -1,12 +1,10 @@
-import { Body, Controller, Get, Param, Post, UseGuards, UseInterceptors } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, UseGuards } from '@nestjs/common';
 import { AuthGuard } from 'src/auth/auth.guard';
 import { AdminGuard } from './admin.guard';
-import { AuditInterceptor } from './audit.interceptor';
 import { AdminMessagingService } from './admin-messaging.service';
 import { AdminMessageDto, BroadcastDto, SendBulkMessageDto } from './dto';
 
 @UseGuards(AuthGuard, AdminGuard)
-@UseInterceptors(AuditInterceptor)
 @Controller('admin')
 export class AdminMessagingController {
   constructor(private readonly messaging: AdminMessagingService) {}

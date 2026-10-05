@@ -102,6 +102,11 @@ export class AdminInsightsController {
     return this.insights.listConversations(flagged === 'true');
   }
 
+  @Get('conversations/:id')
+  conversation(@Param('id') id: string) {
+    return this.insights.getConversation(id);
+  }
+
   @Get('conversations/:id/messages')
   conversationMessages(@Param('id') id: string) {
     return this.insights.conversationMessages(id);

@@ -25,6 +25,7 @@ import { existsSync, mkdirSync, renameSync, unlinkSync } from 'fs';
 import { createHmac, timingSafeEqual } from 'crypto';
 import { PushService } from 'src/push/push.service';
 import { RealtimeBus } from 'src/realtime/realtime.bus';
+import { getJwtSecret } from 'src/auth/jwt-secret';
 
 const ONLINE_WINDOW_MS = 5 * 60 * 1000; // 5 min
 
@@ -69,7 +70,7 @@ export class UsersService implements OnModuleInit {
     }
 
     private photoAccessSecret() {
-        return this.config.get<string>('SYSTEM_SECRET') ?? this.config.get<string>('JWT_SECRET') ?? 'dev-secret';
+        return getJwtSecret(this.config);
     }
 
     private signedPrivatePhotoUrl(photoId: string, viewerId: string, admin = false) {

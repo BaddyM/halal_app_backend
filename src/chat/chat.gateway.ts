@@ -14,12 +14,21 @@ import {
 import { Server, Socket } from 'socket.io';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { RealtimeBus } from 'src/realtime/realtime.bus';
+import { getJwtSecret } from 'src/auth/jwt-secret';
 
 interface AuthedSocket extends Socket {
     data: { userId?: string };
 }
 
-@WebSocketGateway({ cors: { origin: '*' }, namespace: '/chat' })
+@WebSocketGateway({
+    cors: {
+        origin: (process.env.CORS_ORIGINS ?? process.env.DASHBOARD_ORIGINS ?? process.env.FRONTEND_URL ?? 'https://admin.halalconnect.space')
+            .split(',')
+            .map((origin) => origin.trim())
+            .filter(Boolean),
+    },
+    namespace: '/chat',
+})
 export class ChatGateway
     implements OnGatewayInit, OnGatewayConnection, OnGatewayDisconnect
 {
@@ -52,7 +61,7 @@ export class ChatGateway
         }
         try {
             const payload = await this.jwt.verifyAsync<{ sub: string }>(token, {
-                secret: this.config.get('SYSTEM_SECRET') ?? 'dev-secret',
+                secret: getJwtSecret(this.config),
             });
             client.data.userId = payload.sub;
             void client.join(`user:${payload.sub}`);

@@ -7,11 +7,9 @@ import {
   Patch,
   Post,
   UseGuards,
-  UseInterceptors,
 } from '@nestjs/common';
 import { AuthGuard } from 'src/auth/auth.guard';
 import { AdminGuard } from './admin.guard';
-import { AuditInterceptor } from './audit.interceptor';
 import { AdminCatalogService } from './admin-catalog.service';
 import {
   AttachSubscriptionDto,
@@ -24,7 +22,6 @@ import {
 } from './dto';
 
 @UseGuards(AuthGuard, AdminGuard)
-@UseInterceptors(AuditInterceptor)
 @Controller('admin')
 export class AdminCatalogController {
   constructor(private readonly catalog: AdminCatalogService) {}

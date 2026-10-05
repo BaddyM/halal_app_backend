@@ -238,7 +238,7 @@ export class BillingService {
     this.realtime.emitToUser(userId, 'subscription:updated', sub);
 
     // Live admin feed.
-    this.realtime.emitAdminEvent('subscription', `New ${plan.name} subscription`, {
+    this.realtime.emitAdminEvent('payment', `New ${plan.name} subscription`, {
       userId,
       planId: plan.id,
       amountCents: plan.priceCents,

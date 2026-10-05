@@ -240,7 +240,8 @@ export class TasbihService {
     });
 
     const dailyCount = result._sum.count || 0;
-    const metGoal = dailyCount >= settings.dailyGoal;
+    const systemSettings = await this.getSystemSettings();
+    const metGoal = systemSettings.dailyGoalEnabled && dailyCount >= settings.dailyGoal;
 
     // Upsert daily record
     const daily = await this.prisma.tasbihDaily.upsert({
@@ -313,6 +314,9 @@ export class TasbihService {
    * Update streak on daily goal achievement
    */
   private async updateStreak(userId: string, metGoal: boolean, timezone = 'UTC'): Promise<void> {
+    const systemSettings = await this.getSystemSettings();
+    if (!systemSettings.streaksEnabled) return;
+
     const streak = await this.prisma.tasbihStreak.findUnique({
       where: { userId },
     });
@@ -369,7 +373,11 @@ export class TasbihService {
       const settings = await this.prisma.tasbihSettings.findUnique({
         where: { id: '1' }, // Singleton
       });
-      if (settings && settings.minStreakDays && newStreak === settings.minStreakDays) {
+      if (
+        settings?.badgesEnabled &&
+        settings.minStreakDays &&
+        newStreak === settings.minStreakDays
+      ) {
         this.badgeQueue.add(
           'check-streak-badge',
           { userId, streakDays: newStreak },
@@ -396,6 +404,9 @@ export class TasbihService {
    * Check and award badges (called by queue processor)
    */
   async checkAndAwardBadges(userId: string): Promise<UserBadge[]> {
+    const systemSettings = await this.getSystemSettings();
+    if (!systemSettings.badgesEnabled) return [];
+
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
     if (!user) {
       throw new NotFoundException('User not found');
@@ -823,6 +834,54 @@ export class TasbihService {
     });
   }
 
+  async createDashboardBadge(input: { name?: unknown; type?: unknown; threshold?: unknown }) {
+    if (
+      typeof input.name !== 'string' ||
+      !input.name.trim() ||
+      !['streak', 'count'].includes(String(input.type)) ||
+      !Number.isInteger(input.threshold) ||
+      Number(input.threshold) < 1
+    ) {
+      throw new BadRequestException('Badge name, type, and positive integer threshold are required');
+    }
+
+    const streak = input.type === 'streak';
+    return this.createOrUpdateBadge({
+      name: input.name.trim(),
+      badgeType: streak ? 'streak' : 'milestone',
+      ...(streak ? { streakDays: Number(input.threshold) } : { threshold: Number(input.threshold) }),
+    });
+  }
+
+  async updateDashboardBadge(
+    id: string,
+    input: { name?: unknown; active?: unknown; threshold?: unknown },
+  ) {
+    const badge = await this.prisma.tasbihBadge.findUnique({ where: { id } });
+    if (!badge) throw new NotFoundException('Badge not found');
+
+    const data: { name?: string; isActive?: boolean; threshold?: number; streakDays?: number } = {};
+    if (input.name !== undefined) {
+      if (typeof input.name !== 'string' || !input.name.trim()) {
+        throw new BadRequestException('Badge name must not be empty');
+      }
+      data.name = input.name.trim();
+    }
+    if (input.active !== undefined) {
+      if (typeof input.active !== 'boolean') throw new BadRequestException('Badge active must be a boolean');
+      data.isActive = input.active;
+    }
+    if (input.threshold !== undefined) {
+      if (!Number.isInteger(input.threshold) || Number(input.threshold) < 1) {
+        throw new BadRequestException('Badge threshold must be a positive integer');
+      }
+      if (badge.badgeType === 'streak') data.streakDays = Number(input.threshold);
+      else data.threshold = Number(input.threshold);
+    }
+
+    return this.prisma.tasbihBadge.update({ where: { id }, data });
+  }
+
   /**
    * Get system settings
    */
@@ -847,25 +906,83 @@ export class TasbihService {
   }
 
   async getAdminStats() {
-    const [users, sessions, totals, badges] = await Promise.all([
+    const today = new Date();
+    const [users, sessions, totals, badges, activeStreaks, dailyUsers, sessionsToday] = await Promise.all([
       this.prisma.tasbihUserSettings.count(),
       this.prisma.tasbihSession.count(),
       this.prisma.tasbihDaily.aggregate({ _sum: { count: true } }),
       this.prisma.userBadge.count({ where: { status: 'earned' } }),
+      this.prisma.tasbihStreak.count({ where: { currentStreak: { gt: 0 } } }),
+      this.prisma.tasbihDaily.count({ where: { date: { gte: startOfDay(subDays(today, 6)) } } }),
+      this.prisma.tasbihSession.count({
+        where: { sessionDate: { gte: startOfDay(today), lte: endOfDay(today) } },
+      }),
     ]);
-    return { users, sessions, totalCount: totals._sum.count ?? 0, badgesEarned: badges };
+    return {
+      activeStreaks,
+      sessionsToday,
+      badgesAwarded: badges,
+      avgDailyUsers: Math.round(dailyUsers / 7),
+      users,
+      sessions,
+      totalCount: totals._sum.count ?? 0,
+      badgesEarned: badges,
+    };
   }
 
   async getAdminWeeklyStats() {
-    const start = startOfWeek(new Date(), { weekStartsOn: 1 });
-    const rows = await this.prisma.tasbihDaily.findMany({ where: { date: { gte: start } }, orderBy: { date: 'asc' } });
-    return rows.reduce<Record<string, { total: number; users: number }>>((result, row) => {
-      const key = row.date.toISOString().slice(0, 10);
-      result[key] ??= { total: 0, users: 0 };
-      result[key].total += row.count;
-      result[key].users += 1;
-      return result;
-    }, {});
+    const today = startOfDay(new Date());
+    const start = startOfDay(subDays(today, 6));
+    const sessions = await this.prisma.tasbihSession.findMany({
+      where: { sessionDate: { gte: start, lte: endOfDay(today) } },
+      select: { userId: true, sessionDate: true },
+    });
+    const days = Array.from({ length: 7 }, (_, index) => {
+      const date = subDays(today, 6 - index);
+      return {
+        day: date.toLocaleDateString('en-US', { weekday: 'short' }),
+        date: date.toISOString().slice(0, 10),
+        sessions: 0,
+        users: 0,
+        userIds: new Set<string>(),
+      };
+    });
+    for (const session of sessions) {
+      const index = Math.floor(
+        (startOfDay(session.sessionDate).getTime() - start.getTime()) / 86_400_000,
+      );
+      if (index >= 0 && index < days.length) {
+        days[index].sessions += 1;
+        days[index].userIds.add(session.userId);
+      }
+    }
+    return days.map(({ day, date, sessions: count, userIds }) => ({
+      day,
+      date,
+      sessions: count,
+      users: userIds.size,
+    }));
+  }
+
+  async getAdminLeaderboard(limit: number) {
+    const leaderboard = await this.getLeaderboard('global', limit);
+    const users = await this.prisma.user.findMany({
+      where: { id: { in: leaderboard.map((entry) => entry.userId) } },
+      select: { id: true, name: true, email: true },
+    });
+    const byId = new Map(users.map((user) => [user.id, user]));
+    return leaderboard.flatMap((entry) => {
+      const user = byId.get(entry.userId);
+      return user
+        ? [{
+            userId: entry.userId,
+            name: user.name,
+            email: user.email,
+            currentStreak: entry.currentStreak,
+            totalCount: entry.lifetimeCount,
+          }]
+        : [];
+    });
   }
 
   async adjustUserStreak(
@@ -969,6 +1086,8 @@ export class TasbihService {
    */
   async getLeaderboard(scope: string = 'global', limit: number = 50) {
     if (limit > 100) limit = 100;
+    const settings = await this.getSystemSettings();
+    if (!settings.leaderboardEnabled) return [];
 
     return this.prisma.tasbihLeaderboard.findMany({
       where: { scope },

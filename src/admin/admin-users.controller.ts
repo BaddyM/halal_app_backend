@@ -9,13 +9,11 @@ import {
   Req,
   Res,
   UseGuards,
-  UseInterceptors,
 } from '@nestjs/common';
 import type { Response } from 'express';
 import { UserStatus } from '@prisma/client';
 import { AuthGuard, AuthedRequest } from 'src/auth/auth.guard';
 import { AdminGuard } from './admin.guard';
-import { AuditInterceptor } from './audit.interceptor';
 import { AdminUsersService } from './admin-users.service';
 import {
   AdminMessageDto,
@@ -28,7 +26,6 @@ import {
 } from './dto';
 
 @UseGuards(AuthGuard, AdminGuard)
-@UseInterceptors(AuditInterceptor)
 @Controller('admin/users')
 export class AdminUsersController {
   constructor(private readonly users: AdminUsersService) {}
@@ -54,11 +51,13 @@ export class AdminUsersController {
   }
 
   @Patch(':id/status')
+  @Post(':id/status')
   setStatus(@Param('id') id: string, @Body() dto: SetUserStatusDto) {
     return this.users.setStatus(id, dto.status as UserStatus);
   }
 
   @Patch(':id/verify')
+  @Post(':id/verify')
   verify(@Param('id') id: string, @Body() dto: VerifyUserDto) {
     return this.users.setVerified(id, dto.verified);
   }

@@ -90,8 +90,10 @@ export class AdminUsersService {
       ...(Object.keys(profileIs).length > 0 && { profile: { is: profileIs } }),
       ...(q.search && {
         OR: [
+          { id: { contains: q.search } },
           { name: { contains: q.search } },
           { email: { contains: q.search } },
+          { phone: { contains: q.search } },
         ],
       }),
     };
@@ -120,11 +122,13 @@ export class AdminUsersService {
       }),
     ]);
 
+    const items = users.map((u) => this.serialize(u));
     return {
+      items,
       total,
       page,
       limit,
-      results: users.map((u) => this.serialize(u)),
+      results: items,
     };
   }
 
@@ -540,7 +544,7 @@ export class AdminUsersService {
         : `Your ${kind} verification status is ${status}.`;
     void this.push.sendToUser(id, { title, body, data: { type: 'verification', kind, status } });
     this.realtime.emitToUser(id, 'notification:new', { kind: 'verification', type: kind, status });
-    this.realtime.emitAdminEvent('moderation', `${name} ${kind} verification changed to ${status}`, { userId: id, kind, status });
+    this.realtime.emitAdminEvent('verification', `${name} ${kind} verification changed to ${status}`, { userId: id, kind, status });
   }
 
   async getVerificationDocumentPath(id: string, documentId: string) {

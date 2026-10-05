@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Patch, Post, Query, Req, UseGuards } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Get, Param, Patch, Post, Query, Req, UseGuards } from '@nestjs/common';
 import { AuthGuard, AuthedRequest } from 'src/auth/auth.guard';
 import { AdminGuard } from 'src/admin/admin.guard';
 import { WalletService } from './wallet.service';
@@ -49,7 +49,14 @@ export class AdminWalletSettingsController {
   }
 
   @Patch()
-  updateSettings(@Body() body: { minWithdrawal: number }) {
-    return this.wallet.updateWithdrawalSettings(Number(body.minWithdrawal));
+  updateSettings(@Body() body: { minWithdrawal?: number; withdrawThreshold?: number; currency?: string }) {
+    const threshold = body.withdrawThreshold ?? body.minWithdrawal;
+    if (threshold === undefined) {
+      throw new BadRequestException('withdrawThreshold is required');
+    }
+    if (body.currency !== undefined && body.currency !== 'UGX') {
+      throw new BadRequestException('Wallet currency is currently fixed to UGX');
+    }
+    return this.wallet.updateWithdrawalSettings(Number(threshold));
   }
 }

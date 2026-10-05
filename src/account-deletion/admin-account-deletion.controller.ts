@@ -7,16 +7,13 @@ import {
   Query,
   Req,
   UseGuards,
-  UseInterceptors,
 } from '@nestjs/common';
 import { AdminGuard } from 'src/admin/admin.guard';
-import { AuditInterceptor } from 'src/admin/audit.interceptor';
 import { AuthGuard, AuthedRequest } from 'src/auth/auth.guard';
 import { AccountDeletionService } from './account-deletion.service';
 import { ConfirmDeletionDto, RejectDeletionDto } from './dto';
 
 @UseGuards(AuthGuard, AdminGuard)
-@UseInterceptors(AuditInterceptor)
 @Controller('admin/deletion-requests')
 export class AdminAccountDeletionController {
   constructor(private readonly deletion: AccountDeletionService) {}
