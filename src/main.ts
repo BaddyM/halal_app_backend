@@ -2,6 +2,7 @@ import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { json, urlencoded } from 'express';
+import type { IncomingMessage } from 'http';
 import { AppModule } from './app.module';
 
 async function bootstrap() {
@@ -9,7 +10,17 @@ async function bootstrap() {
     // not forced through oversized JSON bodies. The app still accepts normal
     // profile and form payloads without wasting memory on huge requests.
     const app = await NestFactory.create(AppModule, { bodyParser: false });
-    app.use(json({ limit: '2mb' }));
+    // Keep the exact bytes we received: provider webhook signatures are computed
+    // over the raw payload, and re-serialising the parsed JSON does not
+    // reproduce it (key order, whitespace and number formatting all differ).
+    app.use(
+        json({
+            limit: '2mb',
+            verify: (req: IncomingMessage & { rawBody?: Buffer }, _res, buf) => {
+                req.rawBody = buf;
+            },
+        }),
+    );
     app.use(urlencoded({ extended: true, limit: '2mb' }));
 
     app.setGlobalPrefix('api');

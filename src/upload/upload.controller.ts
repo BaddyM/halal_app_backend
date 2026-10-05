@@ -21,6 +21,7 @@ import { ApiBearerAuth, ApiBody, ApiConsumes } from '@nestjs/swagger';
 import { Response } from 'express';
 import { AuthGuard, AuthedRequest } from 'src/auth/auth.guard';
 import { PrismaService } from 'src/prisma/prisma.service';
+import { extensionForMime, verificationDir } from './storage-paths';
 
 const ALLOWED_MIME = ['image/jpeg', 'image/png', 'image/webp', 'image/jpg'];
 import { randomUUID } from 'crypto';
@@ -59,7 +60,7 @@ export class UploadController {
         },
         filename: (_req, file, cb) => {
           const unique = `${Date.now()}-${Math.round(Math.random() * 1e9)}`;
-          cb(null, `${unique}${extname(file.originalname).toLowerCase()}`);
+          cb(null, `${unique}${extensionForMime(file.mimetype)}`);
         },
       }),
       fileFilter: (_req, file, cb) => {
@@ -115,7 +116,7 @@ export class UploadController {
         },
         filename: (_req, file, cb) => {
           const unique = `${Date.now()}-${Math.round(Math.random() * 1e9)}`;
-          cb(null, `${unique}${extname(file.originalname).toLowerCase()}`);
+          cb(null, `${unique}${extensionForMime(file.mimetype)}`);
         },
       }),
       fileFilter: (_req, file, cb) => {
@@ -160,12 +161,12 @@ export class UploadController {
     FileInterceptor('file', {
       storage: diskStorage({
         destination: (req: any, _file, cb) => {
-          const dest = `./uploads/verification/${req.user.userId}`;
+          const dest = verificationDir(req.user.userId);
           if (!existsSync(dest)) mkdirSync(dest, { recursive: true });
           cb(null, dest);
         },
         filename: (_req, file, cb) => {
-          cb(null, `${randomUUID()}${extname(file.originalname).toLowerCase()}`);
+          cb(null, `${randomUUID()}${extensionForMime(file.mimetype)}`);
         },
       }),
       fileFilter: (_req, file, cb) => {

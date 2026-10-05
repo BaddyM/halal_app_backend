@@ -31,6 +31,7 @@ import { WalletModule } from './wallet/wallet.module';
 import { VerificationModule } from './verification/verification.module';
 import { JourneyModule } from './journey/journey.module';
 import { LegalModule } from './legal/legal.module';
+import { AccountDeletionModule } from './account-deletion/account-deletion.module';
 import { ScheduleModule } from '@nestjs/schedule';
 
 @Module({
@@ -72,6 +73,7 @@ import { ScheduleModule } from '@nestjs/schedule';
         VerificationModule,
         JourneyModule,
         LegalModule,
+        AccountDeletionModule,
     ],
     providers: [
         { provide: APP_GUARD, useClass: ThrottlerGuard },

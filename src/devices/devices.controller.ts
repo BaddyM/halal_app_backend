@@ -34,11 +34,23 @@ export class DevicesController {
   /// FCM chain (credentials → token → device) from the app itself.
   @Post('test')
   async test(@Req() req: AuthedRequest) {
+    // Report what actually happened. Reporting `sent: true` unconditionally
+    // made a silent no-op (no FCM credentials, or no registered device) look
+    // like a working push, which defeats the point of a test endpoint.
+    const devices = await this.devices.countForUser(req.user.userId);
+    if (devices === 0) {
+      return { sent: false, devices, reason: 'No devices registered for this account' };
+    }
     await this.push.sendToUser(req.user.userId, {
       title: 'Test notification 🔔',
       body: 'Push notifications are working.',
       data: { type: 'test' },
     });
-    return { sent: true };
+    const configured = this.push.isConfigured();
+    return {
+      sent: configured,
+      devices,
+      ...(configured ? {} : { reason: 'Push is not configured on this server' }),
+    };
   }
 }

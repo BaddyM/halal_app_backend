@@ -12,11 +12,11 @@ interface NormalizedEvent {
 
 /// Server-side billing webhooks. Public (no auth) — providers call these.
 ///
-/// SECURITY: each handler must verify the provider signature before trusting
-/// the payload. Verification is gated behind the relevant secret being set
-/// (STRIPE_WEBHOOK_SECRET / APPLE_/GOOGLE_) and is left as a clearly-marked
-/// TODO where the provider SDK is required. Events carry our own `userId`/
-/// `planId` in metadata so we can map them to an account.
+/// SECURITY: every handler here runs only after WebhookVerifierService has
+/// authenticated the caller in the controller (Stripe HMAC, Apple JWS chain,
+/// Google Pub/Sub token/OIDC). Verification fails closed when the provider's
+/// secret is unset, so these methods can treat their input as trusted. Events
+/// carry our own `userId`/`planId` in metadata so we can map them to an account.
 @Injectable()
 export class WebhooksService {
   private readonly logger = new Logger(WebhooksService.name);
@@ -27,8 +27,7 @@ export class WebhooksService {
   ) {}
 
   async handleStripe(body: any): Promise<{ received: true }> {
-    // TODO: verify `stripe-signature` header against STRIPE_WEBHOOK_SECRET
-    // using the Stripe SDK + raw body before processing.
+    // Signature already verified by WebhookVerifierService in the controller.
     const type: string = body?.type ?? '';
     const obj = body?.data?.object ?? {};
     const meta = obj?.metadata ?? {};
@@ -56,15 +55,17 @@ export class WebhooksService {
     return { received: true };
   }
 
-  async handleApple(body: any): Promise<{ received: true }> {
-    // TODO: decode + verify the signed JWS payload (App Store Server
-    // Notifications v2) before processing.
+  /// `verified` is the payload decoded from the signed JWS by
+  /// WebhookVerifierService; `envelope` is the original request body, used only
+  /// for the relay fields Apple itself never sets.
+  async handleApple(verified: any, envelope: any = {}): Promise<{ received: true }> {
+    const body = verified ?? {};
     const type: string =
       body?.notificationType ?? body?.notification_type ?? '';
     // Our relay attaches userId/planId; otherwise these would be resolved from
     // the original transaction id ↔ stored subscription.externalId.
-    const userId = body?.userId ?? body?.data?.userId;
-    const planId = body?.planId ?? body?.data?.planId;
+    const userId = body?.userId ?? body?.data?.userId ?? envelope?.userId;
+    const planId = body?.planId ?? body?.data?.planId ?? envelope?.planId;
 
     let event: NormalizedEvent = { action: 'unknown', userId, planId };
     if (['SUBSCRIBED', 'DID_RENEW', 'INITIAL_BUY'].includes(type)) {
@@ -79,7 +80,7 @@ export class WebhooksService {
 
   async handleGoogle(body: any): Promise<{ received: true }> {
     // Google Play RTDN wraps the notification (base64) in a Pub/Sub message.
-    // TODO: verify the Pub/Sub push token / OIDC before processing.
+    // Origin already verified by WebhookVerifierService in the controller.
     let decoded: any = body;
     const data = body?.message?.data;
     if (typeof data === 'string') {

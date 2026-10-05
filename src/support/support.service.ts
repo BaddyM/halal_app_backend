@@ -1,27 +1,63 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { AiService } from 'src/chat/ai.service';
-import { CreateSupportTicketDto, ReplySupportTicketDto, UpdateSupportTicketDto } from './dto';
+import {
+  CreatePublicSupportTicketDto,
+  CreateSupportTicketDto,
+  ReplySupportTicketDto,
+  UpdateSupportTicketDto,
+} from './dto';
 
 @Injectable()
 export class SupportService {
   constructor(private readonly prisma: PrismaService, private readonly ai: AiService) {}
 
+  /// The admin console tracks three states; the backend stores five. Collapse
+  /// for display so badges, filters and counts resolve, and keep the precise
+  /// value alongside as `statusDetail`.
+  private displayStatus(stored: string): 'open' | 'pending' | 'closed' {
+    if (stored === 'waitingForUser') return 'pending';
+    if (stored === 'resolved' || stored === 'closed') return 'closed';
+    return 'open'; // open, inProgress
+  }
+
   private serialize(ticket: any) {
+    const messages = ticket.messages ?? [];
+    const adminMessages = messages.filter((m: any) => m.fromAdmin);
+    const opening = messages.find((m: any) => !m.fromAdmin);
+    const thread = messages.map((message: any) => ({
+      id: message.id,
+      body: message.body,
+      fromAdmin: message.fromAdmin,
+      authorName: message.fromAdmin
+        ? 'Support'
+        : (ticket.guestName ?? ticket.user?.name ?? null),
+      createdAt: message.createdAt,
+    }));
     return {
       id: ticket.id,
+      userId: ticket.userId ?? null,
+      // Guest tickets carry their own name/email; account tickets fall back to
+      // the joined user so the admin list can attribute every row.
+      name: ticket.guestName ?? ticket.user?.name ?? null,
+      email: ticket.guestEmail ?? ticket.user?.email ?? null,
       subject: ticket.subject,
       category: ticket.category,
       priority: ticket.priority,
-      status: ticket.status,
+      // The opening message, which the console renders as the ticket body.
+      message: opening?.body ?? '',
+      status: this.displayStatus(ticket.status),
+      statusDetail: ticket.status,
+      replyCount: adminMessages.length,
+      lastReplyAt: adminMessages.length
+        ? adminMessages[adminMessages.length - 1].createdAt
+        : null,
       createdAt: ticket.createdAt,
       updatedAt: ticket.updatedAt,
-      messages: (ticket.messages ?? []).map((message: any) => ({
-        id: message.id,
-        body: message.body,
-        fromAdmin: message.fromAdmin,
-        createdAt: message.createdAt,
-      })),
+      messages: thread,
+      // The console reads `replies`; kept as a distinct key so the original
+      // `messages` shape stays available to any other caller.
+      replies: thread,
     };
   }
 
@@ -48,6 +84,24 @@ export class SupportService {
     return this.serialize(ticket);
   }
 
+  /// Ticket from the public help form. There is no account to attach, so the
+  /// reporter is recorded on the ticket itself and admins reply by email.
+  async createFromPublicForm(dto: CreatePublicSupportTicketDto) {
+    const ticket = await this.prisma.supportTicket.create({
+      data: {
+        userId: null,
+        guestName: dto.name.trim(),
+        guestEmail: dto.email.trim().toLowerCase(),
+        subject: dto.subject.trim(),
+        category: dto.category,
+        priority: 'normal',
+        messages: { create: { body: dto.message.trim(), fromAdmin: false } },
+      },
+      include: { messages: true },
+    });
+    return this.serialize(ticket);
+  }
+
   async replyForUser(userId: string, ticketId: string, dto: ReplySupportTicketDto) {
     const ticket = await this.prisma.supportTicket.findFirst({ where: { id: ticketId, userId } });
     if (!ticket) throw new NotFoundException('Support ticket not found');
@@ -68,18 +122,37 @@ export class SupportService {
   }
 
   async listForAdmin(status?: string) {
+    // A console filter value covers every stored status that collapses onto it,
+    // so "closed" must also return resolved tickets.
+    const statusFilter =
+      !status || status === 'all'
+        ? undefined
+        : status === 'open'
+          ? { status: { in: ['open', 'inProgress'] } }
+          : status === 'pending'
+            ? { status: 'waitingForUser' }
+            : status === 'closed'
+              ? { status: { in: ['resolved', 'closed'] } }
+              : { status };
+
     const tickets = await this.prisma.supportTicket.findMany({
-      where: status ? { status } : undefined,
+      where: statusFilter,
       orderBy: { updatedAt: 'desc' },
       include: { user: { select: { id: true, name: true, email: true } }, messages: { orderBy: { createdAt: 'asc' } } },
     });
     return tickets.map((ticket) => ({ ...this.serialize(ticket), user: ticket.user }));
   }
 
+  /// Inverse of displayStatus: turns the console's three-state vocabulary into
+  /// the value actually stored.
+  private storedStatus(incoming: string): string {
+    return incoming === 'pending' ? 'waitingForUser' : incoming;
+  }
+
   async updateForAdmin(ticketId: string, dto: UpdateSupportTicketDto) {
     const ticket = await this.prisma.supportTicket.update({
       where: { id: ticketId },
-      data: { ...(dto.status !== undefined && { status: dto.status }), ...(dto.priority !== undefined && { priority: dto.priority }) },
+      data: { ...(dto.status !== undefined && { status: this.storedStatus(dto.status) }), ...(dto.priority !== undefined && { priority: dto.priority }) },
       include: { user: { select: { id: true, name: true, email: true } }, messages: { orderBy: { createdAt: 'asc' } } },
     });
     return { ...this.serialize(ticket), user: ticket.user };

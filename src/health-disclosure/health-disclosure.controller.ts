@@ -438,18 +438,10 @@ export class HealthDisclosureController {
     @Param('conversationId') conversationId: string,
     @Param('promptType') promptType: string,
   ) {
-    const conversation = await this.prisma.conversation.findFirst({
-      where: {
-        id: conversationId,
-        OR: [{ userAId: req.user.id }, { userBId: req.user.id }],
-      },
-      select: { userAId: true, userBId: true },
-    });
-    const partnerUserId = conversation
-      ? conversation.userAId === req.user.id
-        ? conversation.userBId
-        : conversation.userAId
-      : 'unknown';
+    const partnerUserId = await this.healthService.resolvePartner(
+      req.user.id,
+      conversationId,
+    );
 
     return this.healthService.checkPromptEligibility(
       req.user.id,

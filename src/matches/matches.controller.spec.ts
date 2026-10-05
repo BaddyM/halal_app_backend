@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, jest } from '@jest/globals';
 import { Test, TestingModule } from '@nestjs/testing';
 import { MatchesController } from './matches.controller';
 import { UsersService } from '../users/users.service';
+import { AuthGuard } from '../auth/auth.guard';
 
 describe('MatchesController', () => {
   let controller: MatchesController;
@@ -20,7 +21,13 @@ describe('MatchesController', () => {
     const module: TestingModule = await Test.createTestingModule({
       controllers: [MatchesController],
       providers: [{ provide: UsersService, useValue: usersService }],
-    }).compile();
+    })
+      // The controller is guarded by AuthGuard, which pulls in JwtService,
+      // PrismaService and RealtimeBus. This test drives the handler directly,
+      // so stub the guard rather than standing up its whole dependency tree.
+      .overrideGuard(AuthGuard)
+      .useValue({ canActivate: () => true })
+      .compile();
 
     controller = module.get<MatchesController>(MatchesController);
     jest.clearAllMocks();

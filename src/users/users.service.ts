@@ -7,7 +7,7 @@ import {
     OnModuleInit,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { Prisma, SubscriptionPlan } from '@prisma/client';
+import { DeletionRequestStatus, Prisma, SubscriptionPlan } from '@prisma/client';
 import * as bcrypt from 'bcryptjs';
 import { PrismaService } from 'src/prisma/prisma.service';
 import {
@@ -208,26 +208,43 @@ export class UsersService implements OnModuleInit {
     async requestAccountDeletion(userId: string, dto: RequestAccountDeletionDto) {
         const user = await this.prisma.user.findUnique({
             where: { id: userId },
-            select: { password: true, deletionRequest: true },
+            select: { password: true, email: true, phone: true },
         });
         if (!user) throw new NotFoundException('User not found');
         if (!(await bcrypt.compare(dto.password, user.password))) {
             throw new BadRequestException('Incorrect password');
         }
-        const request = await this.prisma.accountDeletionRequest.upsert({
-            where: { userId },
-            update: { reason: dto.reason ?? null, status: 'pending', reviewedBy: null, reviewedAt: null },
-            create: { userId, reason: dto.reason ?? null },
+        const existing = await this.prisma.accountDeletionRequest.findFirst({
+            where: { userId, status: DeletionRequestStatus.pending },
         });
+        const request = existing
+            ? await this.prisma.accountDeletionRequest.update({
+                  where: { id: existing.id },
+                  data: { reason: dto.reason ?? null },
+              })
+            : await this.prisma.accountDeletionRequest.create({
+                  data: {
+                      userId,
+                      email: user.email,
+                      phone: user.phone,
+                      reason: dto.reason ?? null,
+                  },
+              });
         this.realtime.emitAdminEvent('moderation', `${userId} requested account deletion`, { requestId: request.id });
-        return { requestId: request.id, status: request.status, createdAt: request.createdAt };
+        return { requestId: request.id, status: request.status, createdAt: request.requestedAt };
     }
 
     async listAccountDeletionRequests(status = 'pending') {
+        const statusFilter = Object.values(DeletionRequestStatus).find(
+            (value) => value === status,
+        );
+        if (status !== 'all' && !statusFilter) {
+            throw new BadRequestException('Invalid deletion request status');
+        }
         return this.prisma.accountDeletionRequest.findMany({
-            where: status === 'all' ? {} : { status },
+            where: statusFilter ? { status: statusFilter } : {},
             include: { user: { select: { id: true, name: true, email: true, createdAt: true } } },
-            orderBy: { createdAt: 'asc' },
+            orderBy: { requestedAt: 'desc' },
         });
     }
 
@@ -237,22 +254,37 @@ export class UsersService implements OnModuleInit {
         if (request.status !== 'pending') throw new BadRequestException('Deletion request has already been reviewed');
         if (approve) {
             const admin = await this.prisma.user.findUnique({ where: { id: adminId }, select: { email: true } });
-            await this.prisma.$transaction([
-                this.prisma.auditLog.create({
+            await this.prisma.$transaction(async (tx) => {
+                if (request.userId) {
+                    await tx.user.delete({ where: { id: request.userId } });
+                }
+                await tx.accountDeletionRequest.update({
+                    where: { id: requestId },
+                    data: {
+                        status: DeletionRequestStatus.confirmed,
+                        handledById: adminId,
+                        handledAt: new Date(),
+                        hardDeleted: true,
+                    },
+                });
+                await tx.auditLog.create({
                     data: {
                         adminId,
                         adminEmail: admin?.email ?? null,
                         action: 'POST /admin/account-deletion-requests/:id/approve',
                         target: request.userId,
                     },
-                }),
-                this.prisma.user.delete({ where: { id: request.userId } }),
-            ]);
+                });
+            });
             return { requestId, status: 'approved' };
         }
         const updated = await this.prisma.accountDeletionRequest.update({
             where: { id: requestId },
-            data: { status: 'rejected', reviewedBy: adminId, reviewedAt: new Date() },
+            data: {
+                status: DeletionRequestStatus.rejected,
+                handledById: adminId,
+                handledAt: new Date(),
+            },
         });
         await this.prisma.auditLog.create({
             data: {

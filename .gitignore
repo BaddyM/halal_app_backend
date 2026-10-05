@@ -68,3 +68,6 @@ report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
 !/config/*.example.json
 google-services.json
 GoogleService-Info.plist
+
+# Identity documents and other never-public uploads
+private-uploads/
