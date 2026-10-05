@@ -868,6 +868,45 @@ export class TasbihService {
     }, {});
   }
 
+  async adjustUserStreak(
+    userId: string,
+    action: 'set' | 'increment' | 'reset',
+    value?: number,
+  ) {
+    if (!['set', 'increment', 'reset'].includes(action)) {
+      throw new BadRequestException('Invalid streak adjustment action');
+    }
+    if (
+      action !== 'reset' &&
+      (!Number.isInteger(value) || value === undefined || value < 0)
+    ) {
+      throw new BadRequestException('Streak value must be a non-negative integer');
+    }
+
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!user) throw new NotFoundException('User not found');
+
+    const streak = await this.prisma.tasbihStreak.upsert({
+      where: { userId },
+      create: { userId, currentStreak: 0, longestStreak: 0 },
+      update: {},
+    });
+    const currentStreak =
+      action === 'reset'
+        ? 0
+        : action === 'increment'
+          ? streak.currentStreak + value!
+          : value!;
+
+    return this.prisma.tasbihStreak.update({
+      where: { userId },
+      data: {
+        currentStreak,
+        longestStreak: Math.max(currentStreak, streak.longestStreak),
+      },
+    });
+  }
+
   /**
    * Update system settings (admin)
    */

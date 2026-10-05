@@ -17,5 +17,11 @@ export class TasbihAdminAliasController {
   @Get('leaderboard') leaderboard(@Query('limit') limit = '50') { return this.tasbih.getLeaderboard('global', Math.min(Number(limit) || 50, 100)); }
   @Get('stats') stats() { return this.tasbih.getAdminStats(); }
   @Get('weekly') weekly() { return this.tasbih.getAdminWeeklyStats(); }
-  @Patch('users/:userId/streak') updateStreak(@Param('userId') userId: string): Promise<unknown> { return this.tasbih.getTodayStatistics(userId); }
+  @Patch('users/:userId/streak')
+  updateStreak(
+    @Param('userId') userId: string,
+    @Body() data: { action: 'set' | 'increment' | 'reset'; value?: number },
+  ) {
+    return this.tasbih.adjustUserStreak(userId, data.action, data.value);
+  }
 }
