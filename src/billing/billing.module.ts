@@ -13,6 +13,6 @@ import { DiscountsService } from './discounts.service';
   imports: [AuthModule],
   controllers: [BillingController, PaymentsController, PesapalIpnController, PaymentsAdminController, DiscountsController, AdminDiscountsController],
   providers: [BillingService, PesapalService, DiscountsService, AdminGuard],
-  exports: [BillingService],
+  exports: [BillingService, PesapalService],
 })
 export class BillingModule {}
