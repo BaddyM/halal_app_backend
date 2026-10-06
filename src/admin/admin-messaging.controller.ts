@@ -1,18 +1,32 @@
 import { Body, Controller, Get, Param, Post, UseGuards } from '@nestjs/common';
 import { AuthGuard } from 'src/auth/auth.guard';
+import { AdminEmailCampaignService } from './admin-email-campaign.service';
 import { AdminGuard } from './admin.guard';
 import { AdminMessagingService } from './admin-messaging.service';
-import { AdminMessageDto, BroadcastDto, SendBulkMessageDto } from './dto';
+import {
+  AdminMessageDto,
+  BroadcastDto,
+  SendBulkMessageDto,
+  SendEmailCampaignDto,
+} from './dto';
 
 @UseGuards(AuthGuard, AdminGuard)
 @Controller('admin')
 export class AdminMessagingController {
-  constructor(private readonly messaging: AdminMessagingService) {}
+  constructor(
+    private readonly messaging: AdminMessagingService,
+    private readonly emailCampaigns: AdminEmailCampaignService,
+  ) {}
 
   // Targeted admin → user messaging (dashboard "Messaging" tool).
   @Post('messaging')
   send(@Body() dto: SendBulkMessageDto) {
     return this.messaging.sendBulk(dto);
+  }
+
+  @Post('email-campaigns')
+  sendEmailCampaign(@Body() dto: SendEmailCampaignDto) {
+    return this.emailCampaigns.send(dto);
   }
 
   // Broadcast announcement (dashboard "Notifications").

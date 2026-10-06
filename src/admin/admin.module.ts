@@ -1,5 +1,7 @@
 import { Module } from '@nestjs/common';
 import { AuthModule } from 'src/auth/auth.module';
+import { MailModule } from 'src/mail/mail.module';
+import { AdminEmailCampaignService } from './admin-email-campaign.service';
 import { AdminController } from './admin.controller';
 import { AdminGuard } from './admin.guard';
 import { AdminUsersController } from './admin-users.controller';
@@ -16,7 +18,7 @@ import { AdminInsightsService } from './admin-insights.service';
 import { AdminGateway } from './admin.gateway';
 
 @Module({
-  imports: [AuthModule],
+  imports: [AuthModule, MailModule],
   controllers: [
     AdminController,
     AdminUsersController,
@@ -31,6 +33,7 @@ import { AdminGateway } from './admin.gateway';
     AdminUsersService,
     AdminModerationService,
     AdminMessagingService,
+    AdminEmailCampaignService,
     AdminCatalogService,
     AdminInsightsService,
     AdminGateway,

@@ -1,16 +1,20 @@
 import { Type } from 'class-transformer';
 import {
+  ArrayMinSize,
   ArrayMaxSize,
   IsArray,
   IsBoolean,
   IsDateString,
+  IsEmail,
   IsIn,
   IsInt,
   IsNotEmpty,
   IsOptional,
   IsString,
+  IsUrl,
   MaxLength,
   Min,
+  ValidateNested,
 } from 'class-validator';
 
 // ── Subscriptions / plan tiers ─────────────────────────────────
@@ -19,11 +23,18 @@ const SUB_PROVIDERS = ['stripe', 'apple', 'google', 'manual'];
 const SUB_STATUSES = ['active', 'canceled', 'expired', 'pending'];
 
 // ── Users ──────────────────────────────────────────────────────
-const PRACTICE_LABELS = ['Highly Practicing', 'Practicing', 'Moderately', 'Learning'];
+const PRACTICE_LABELS = [
+  'Highly Practicing',
+  'Practicing',
+  'Moderately',
+  'Learning',
+];
 
 export class AdminUserQueryDto {
   @IsOptional() @IsString() search?: string;
-  @IsOptional() @IsIn(['active', 'pending', 'suspended', 'banned']) status?: string;
+  @IsOptional()
+  @IsIn(['active', 'pending', 'suspended', 'banned'])
+  status?: string;
   @IsOptional() @IsIn(PRACTICE_LABELS) practice?: string;
   @IsOptional() @Type(() => Boolean) @IsBoolean() verified?: boolean;
   @IsOptional() @Type(() => Boolean) @IsBoolean() premium?: boolean;
@@ -36,7 +47,9 @@ export class CreateUserDto {
   @IsString() @IsNotEmpty() email!: string;
   @IsString() @IsNotEmpty() @MaxLength(200) password!: string;
   @IsOptional() @IsIn(['user', 'admin']) role?: 'user' | 'admin';
-  @IsOptional() @IsIn(['active', 'pending', 'suspended', 'banned']) status?: string;
+  @IsOptional()
+  @IsIn(['active', 'pending', 'suspended', 'banned'])
+  status?: string;
   @IsOptional() @IsIn(['male', 'female']) gender?: 'male' | 'female';
 }
 
@@ -52,7 +65,9 @@ export class AdminUpdateUserDto {
   @IsOptional() @IsString() @IsNotEmpty() email?: string;
   @IsOptional() @IsString() @MaxLength(200) password?: string;
   @IsOptional() @IsIn(['user', 'admin']) role?: 'user' | 'admin';
-  @IsOptional() @IsIn(['active', 'pending', 'suspended', 'banned']) status?: string;
+  @IsOptional()
+  @IsIn(['active', 'pending', 'suspended', 'banned'])
+  status?: string;
   @IsOptional() @IsIn(['male', 'female']) gender?: 'male' | 'female';
   @IsOptional() @IsString() @MaxLength(80) city?: string;
   @IsOptional() @IsString() @MaxLength(80) country?: string;
@@ -101,7 +116,9 @@ export const MESSAGE_AUDIENCES = [
 export class BroadcastDto {
   @IsString() @IsNotEmpty() @MaxLength(160) title!: string;
   @IsString() @IsNotEmpty() @MaxLength(1000) message!: string;
-  @IsOptional() @IsIn(MESSAGE_AUDIENCES as unknown as string[]) audience?: string;
+  @IsOptional()
+  @IsIn(MESSAGE_AUDIENCES as unknown as string[])
+  audience?: string;
   // Explicit recipients. When present the announcement goes only to these
   // users and the audience segment is ignored.
   @IsOptional()
@@ -113,10 +130,40 @@ export class BroadcastDto {
 
 export class SendBulkMessageDto {
   // Either explicit user ids, an audience segment, or both.
-  @IsOptional() @IsArray() @ArrayMaxSize(1000) @IsString({ each: true }) userIds?: string[];
-  @IsOptional() @IsIn(MESSAGE_AUDIENCES as unknown as string[]) audience?: string;
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(1000)
+  @IsString({ each: true })
+  userIds?: string[];
+  @IsOptional()
+  @IsIn(MESSAGE_AUDIENCES as unknown as string[])
+  audience?: string;
   @IsOptional() @IsString() @MaxLength(160) subject?: string;
   @IsString() @IsNotEmpty() @MaxLength(4000) body!: string;
+}
+
+export class EmailCampaignRecipientDto {
+  @IsEmail() @MaxLength(254) email!: string;
+  @IsOptional() @IsString() @MaxLength(120) name?: string;
+}
+
+export class SendEmailCampaignDto {
+  @IsArray()
+  @ArrayMinSize(1)
+  @ArrayMaxSize(200)
+  @ValidateNested({ each: true })
+  @Type(() => EmailCampaignRecipientDto)
+  recipients!: EmailCampaignRecipientDto[];
+
+  @IsString() @IsNotEmpty() @MaxLength(200) subject!: string;
+  @IsString() @IsNotEmpty() @MaxLength(5000) body!: string;
+  @IsOptional() @IsIn(['branded', 'plain']) template?: 'branded' | 'plain';
+  @IsOptional() @IsString() @MaxLength(160) heading?: string;
+  @IsOptional() @IsString() @MaxLength(60) ctaLabel?: string;
+  @IsOptional()
+  @IsUrl({ protocols: ['http', 'https'], require_protocol: true })
+  ctaUrl?: string;
+  @IsOptional() @IsString() @MaxLength(160) preheader?: string;
 }
 
 // ── Reports ────────────────────────────────────────────────────
@@ -129,7 +176,12 @@ export class ResolveReportDto {
 }
 
 // ── Ads ────────────────────────────────────────────────────────
-const PLACEMENTS = ['HOME_BANNER', 'BETWEEN_MATCHES', 'CHAT_TOP', 'PROFILE_SIDEBAR'];
+const PLACEMENTS = [
+  'HOME_BANNER',
+  'BETWEEN_MATCHES',
+  'CHAT_TOP',
+  'PROFILE_SIDEBAR',
+];
 const AUDIENCES = ['ALL', 'FREE', 'PREMIUM'];
 
 export class CreateAdDto {
@@ -214,5 +266,7 @@ export class UpdateIslamicSettingsDto {
   @IsOptional() @IsBoolean() dailyContentEnabled?: boolean;
   @IsOptional() @IsBoolean() tasbihEnabled?: boolean;
   @IsOptional() @IsBoolean() ramadanMode?: boolean;
-  @IsOptional() @IsIn(['MWL', 'ISNA', 'Egypt', 'Makkah', 'Karachi']) calcMethod?: string;
+  @IsOptional()
+  @IsIn(['MWL', 'ISNA', 'Egypt', 'Makkah', 'Karachi'])
+  calcMethod?: string;
 }
