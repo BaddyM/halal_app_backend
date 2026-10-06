@@ -114,9 +114,15 @@ export class WaliController {
   @UseGuards(AuthGuard)
   async updateDeliveryPreferences(
     @Request() req: any,
-    @Body() data: { chatSummaries?: boolean; weeklyDigest?: boolean; matchAlerts?: boolean },
+    @Body() data: {
+      waliEnabled?: boolean;
+      chatSummaries?: boolean;
+      weeklyDigest?: boolean;
+      matchAlerts?: boolean;
+    },
   ) {
     return this.waliService.updateDeliveryPreferences(req.user.id, {
+      ...(data.waliEnabled !== undefined && { waliEnabled: data.waliEnabled }),
       ...(data.chatSummaries !== undefined && { chatSummaries: data.chatSummaries }),
       ...(data.weeklyDigest !== undefined && { weeklyDigest: data.weeklyDigest }),
       ...(data.matchAlerts !== undefined && { matchAlerts: data.matchAlerts }),

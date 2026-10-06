@@ -3,7 +3,13 @@ import { createHmac } from 'crypto';
 import { UsersService } from './users.service';
 
 function makeService(prisma: any) {
-  return new UsersService(prisma, { get: () => 'test-secret' } as any, {} as any, {} as any);
+  return new UsersService(
+    prisma,
+    { get: () => 'test-secret' } as any,
+    {} as any,
+    {} as any,
+    {} as any,
+  );
 }
 
 describe('private photo access', () => {

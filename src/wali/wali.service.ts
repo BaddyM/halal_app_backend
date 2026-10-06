@@ -43,6 +43,24 @@ export interface WaliPermissionsUpdate {
   approveMatches?: boolean;
 }
 
+export interface WaliPolicySettings {
+  waliEnabled: boolean;
+  requireWaliForSisters: boolean;
+  ccAllChats: boolean;
+  ccDigestFrequency: 'instant' | 'daily' | 'weekly';
+  waliApprovalForMatches: boolean;
+  inviteExpiryDays: number;
+}
+
+const DEFAULT_WALI_POLICY: WaliPolicySettings = {
+  waliEnabled: true,
+  requireWaliForSisters: true,
+  ccAllChats: true,
+  ccDigestFrequency: 'daily',
+  waliApprovalForMatches: true,
+  inviteExpiryDays: 7,
+};
+
 // ────────────────────────────────────────────────────────────────
 // WALI SERVICE
 // ────────────────────────────────────────────────────────────────
@@ -58,8 +76,191 @@ export class WaliService {
     private config: ConfigService,
   ) {}
 
-  private signInvitation(linkId: string, action: 'accept' | 'reject') {
-    const expiresAt = Date.now() + 7 * 24 * 60 * 60 * 1000;
+  async getPolicySettings(): Promise<WaliPolicySettings> {
+    const rows = await this.prisma.appSetting.findMany({
+      where: {
+        key: {
+          in: Object.keys(DEFAULT_WALI_POLICY).map((key) => `wali.${key}`),
+        },
+      },
+    });
+    const stored = new Map(rows.map((row) => [row.key.slice(5), row.value]));
+    const frequency = stored.get('ccDigestFrequency');
+    const inviteExpiryDays = stored.get('inviteExpiryDays');
+    return {
+      waliEnabled:
+        typeof stored.get('waliEnabled') === 'boolean'
+          ? (stored.get('waliEnabled') as boolean)
+          : DEFAULT_WALI_POLICY.waliEnabled,
+      requireWaliForSisters:
+        typeof stored.get('requireWaliForSisters') === 'boolean'
+          ? (stored.get('requireWaliForSisters') as boolean)
+          : DEFAULT_WALI_POLICY.requireWaliForSisters,
+      ccAllChats:
+        typeof stored.get('ccAllChats') === 'boolean'
+          ? (stored.get('ccAllChats') as boolean)
+          : DEFAULT_WALI_POLICY.ccAllChats,
+      ccDigestFrequency:
+        frequency === 'instant' || frequency === 'daily' || frequency === 'weekly'
+          ? frequency
+          : DEFAULT_WALI_POLICY.ccDigestFrequency,
+      waliApprovalForMatches:
+        typeof stored.get('waliApprovalForMatches') === 'boolean'
+          ? (stored.get('waliApprovalForMatches') as boolean)
+          : DEFAULT_WALI_POLICY.waliApprovalForMatches,
+      inviteExpiryDays:
+        typeof inviteExpiryDays === 'number' &&
+        Number.isInteger(inviteExpiryDays) &&
+        inviteExpiryDays >= 1 &&
+        inviteExpiryDays <= 30
+          ? inviteExpiryDays
+          : DEFAULT_WALI_POLICY.inviteExpiryDays,
+    };
+  }
+
+  async getMemberFeatureState(userId: string) {
+    const [profile, policy] = await Promise.all([
+      this.prisma.profile.findUnique({
+        where: { userId },
+        select: { gender: true, waliEnabled: true },
+      }),
+      this.getPolicySettings(),
+    ]);
+    const eligible = profile?.gender === 'female';
+    return {
+      eligible,
+      globalEnabled: policy.waliEnabled,
+      enabled: eligible && policy.waliEnabled && profile?.waliEnabled !== false,
+      requireWaliForSisters: policy.requireWaliForSisters,
+      waliApprovalForMatches: policy.waliApprovalForMatches,
+      ccAllChats: policy.ccAllChats,
+      ccDigestFrequency: policy.ccDigestFrequency,
+      inviteExpiryDays: policy.inviteExpiryDays,
+    };
+  }
+
+  async assertMemberFeatureEnabled(userId: string) {
+    const state = await this.getMemberFeatureState(userId);
+    if (!state.eligible) {
+      throw new ForbiddenException('Wali features are only available to female members.');
+    }
+    if (!state.globalEnabled) {
+      throw new ForbiddenException('Wali features are currently disabled.');
+    }
+    if (!state.enabled) {
+      throw new ForbiddenException('Enable Wali in your settings to continue.');
+    }
+    return state;
+  }
+
+  async setMemberFeatureEnabled(userId: string, enabled: boolean) {
+    const profile = await this.prisma.profile.findUnique({
+      where: { userId },
+      select: { gender: true },
+    });
+    if (profile?.gender !== 'female') {
+      throw new ForbiddenException('Wali settings are only available to female members.');
+    }
+    const policy = await this.getPolicySettings();
+    if (enabled && !policy.waliEnabled) {
+      throw new ForbiddenException('Wali features are currently disabled.');
+    }
+    await this.prisma.profile.update({
+      where: { userId },
+      data: { waliEnabled: enabled },
+    });
+    return { waliEnabled: enabled, globalEnabled: policy.waliEnabled };
+  }
+
+  async assertFemaleMember(userId: string) {
+    const profile = await this.prisma.profile.findUnique({
+      where: { userId },
+      select: { gender: true },
+    });
+    if (profile?.gender !== 'female') {
+      throw new ForbiddenException('Wali settings are only available to female members.');
+    }
+  }
+
+  async assertChatAllowed(userIds: string[]) {
+    const policy = await this.getPolicySettings();
+    if (!policy.waliEnabled || !policy.requireWaliForSisters) return;
+
+    const profiles = await this.prisma.profile.findMany({
+      where: { userId: { in: [...new Set(userIds)] }, gender: 'female' },
+      select: { userId: true, waliEnabled: true },
+    });
+    for (const profile of profiles) {
+      if (!profile.waliEnabled) continue;
+      const activeWali = await this.prisma.waliLink.count({
+        where: { userId: profile.userId, status: 'active' },
+      });
+      if (!activeWali) {
+        throw new ForbiddenException(
+          'A female member must have an active Wali before this chat can continue. They can turn off Wali in settings.',
+        );
+      }
+    }
+  }
+
+  async sendInstantMessageSummary(
+    userIds: string[],
+    senderId: string,
+    content: string,
+    messageType: string,
+  ) {
+    const policy = await this.getPolicySettings();
+    if (
+      !policy.waliEnabled ||
+      !policy.ccAllChats ||
+      policy.ccDigestFrequency !== 'instant' ||
+      messageType !== 'text'
+    ) {
+      return;
+    }
+
+    const profiles = await this.prisma.profile.findMany({
+      where: {
+        userId: { in: [...new Set(userIds)] },
+        gender: 'female',
+        waliEnabled: true,
+      },
+      select: { userId: true, waliName: true },
+    });
+    if (!profiles.length) return;
+
+    const links = await this.prisma.waliLink.findMany({
+      where: {
+        userId: { in: profiles.map((profile) => profile.userId) },
+        status: 'active',
+        seeChats: true,
+        chatSummaries: true,
+      },
+      include: {
+        user: { select: { id: true, name: true } },
+        wali: { select: { email: true } },
+      },
+    });
+
+    for (const link of links) {
+      try {
+        await this.mail.sendWaliSummary({
+          to: link.wali.email,
+          userName: link.user.name,
+          participantNames: 'Conversation update',
+          summary: `New message from ${senderId === link.userId ? link.user.name : 'the other participant'}:\n${content.slice(0, 1000)}`,
+          messageCount: 1,
+          frequency: 'instant',
+        });
+      } catch (error) {
+        this.logger.error(`Instant Wali email failed for link ${link.id}: ${String(error)}`);
+      }
+    }
+  }
+
+  private async signInvitation(linkId: string, action: 'accept' | 'reject') {
+    const policy = await this.getPolicySettings();
+    const expiresAt = Date.now() + policy.inviteExpiryDays * 24 * 60 * 60 * 1000;
     const payload = Buffer.from(JSON.stringify({ linkId, action, expiresAt })).toString('base64url');
     const secret = getWaliLinkSecret(this.config);
     const signature = createHmac('sha256', secret).update(payload).digest('base64url');
@@ -92,6 +293,7 @@ export class WaliService {
    * Invite a Wali (Guardian)
    */
   async inviteWali(userId: string, data: WaliInviteRequest) {
+    await this.assertMemberFeatureEnabled(userId);
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
       include: { profile: true },
@@ -214,8 +416,8 @@ export class WaliService {
         waliName: waliAccount.name,
         userName: user.name,
         message: data.message,
-        invitationToken: this.signInvitation(link.id, 'accept'),
-        declineToken: this.signInvitation(link.id, 'reject'),
+        invitationToken: await this.signInvitation(link.id, 'accept'),
+        declineToken: await this.signInvitation(link.id, 'reject'),
       });
     }
 
@@ -235,6 +437,7 @@ export class WaliService {
   }
 
   async resendInvite(userId: string) {
+    await this.assertMemberFeatureEnabled(userId);
     const link = await this.prisma.waliLink.findFirst({
       where: { userId, status: 'pending' },
       orderBy: { updatedAt: 'desc' },
@@ -245,8 +448,8 @@ export class WaliService {
       to: link.wali.email,
       waliName: link.wali.name,
       userName: link.user.name,
-      invitationToken: this.signInvitation(link.id, 'accept'),
-      declineToken: this.signInvitation(link.id, 'reject'),
+      invitationToken: await this.signInvitation(link.id, 'accept'),
+      declineToken: await this.signInvitation(link.id, 'reject'),
     });
     return this.prisma.waliLink.update({
       where: { id: link.id },
@@ -271,8 +474,8 @@ export class WaliService {
       to: link.wali.email,
       waliName: link.wali.name,
       userName: link.user.name,
-      invitationToken: this.signInvitation(link.id, 'accept'),
-      declineToken: this.signInvitation(link.id, 'reject'),
+      invitationToken: await this.signInvitation(link.id, 'accept'),
+      declineToken: await this.signInvitation(link.id, 'reject'),
     });
     return this.prisma.waliLink.update({
       where: { id: link.id },
@@ -297,6 +500,9 @@ export class WaliService {
       throw new ForbiddenException('Not your invitation');
     if (link.status !== 'pending')
       throw new BadRequestException('Link already responded to');
+    if (data.action === 'accept') {
+      await this.assertMemberFeatureEnabled(link.userId);
+    }
 
     const updatedLink = await this.prisma.waliLink.update({
       where: { id: linkId },
@@ -384,21 +590,43 @@ export class WaliService {
   }
 
   async getStatus(userId: string) {
+    const feature = await this.getMemberFeatureState(userId);
+    if (!feature.eligible) {
+      return {
+        eligible: false,
+        enabled: false,
+        globalEnabled: feature.globalEnabled,
+        linked: false,
+        status: 'unavailable',
+        preferences: null,
+      };
+    }
     const link = await this.prisma.waliLink.findFirst({
       where: { userId, status: { in: ['active', 'pending'] } },
       include: { wali: { select: { name: true, email: true } } },
       orderBy: { updatedAt: 'desc' },
     });
     return {
+      eligible: true,
+      enabled: feature.enabled,
+      globalEnabled: feature.globalEnabled,
       linked: link?.status === 'active',
       status: link?.status ?? 'notLinked',
       name: link?.wali.name ?? null,
       email: link?.wali.email ?? null,
       confirmedAt: link?.acceptedAt ?? null,
+      preferences: link
+        ? {
+            chatSummaries: link.chatSummaries && link.seeChats,
+            weeklyDigest: link.weeklyDigest,
+            matchAlerts: link.matchAlerts,
+          }
+        : null,
     };
   }
 
   async removeForUser(userId: string) {
+    await this.assertFemaleMember(userId);
     const links = await this.prisma.waliLink.findMany({
       where: { userId, status: { in: ['active', 'pending'] } },
       select: { id: true },
@@ -412,11 +640,21 @@ export class WaliService {
     return { success: true };
   }
 
-  async updateDeliveryPreferences(userId: string, preferences: {
-    chatSummaries?: boolean;
-    weeklyDigest?: boolean;
-    matchAlerts?: boolean;
-  }) {
+  async updateDeliveryPreferences(
+    userId: string,
+    preferences: {
+      waliEnabled?: boolean;
+      chatSummaries?: boolean;
+      weeklyDigest?: boolean;
+      matchAlerts?: boolean;
+    },
+  ) {
+    if (preferences.waliEnabled !== undefined) {
+      const result = await this.setMemberFeatureEnabled(userId, preferences.waliEnabled);
+      if (!preferences.waliEnabled || Object.keys(preferences).length === 1) return result;
+    }
+
+    await this.assertMemberFeatureEnabled(userId);
     const link = await this.prisma.waliLink.findFirst({
       where: { userId, status: 'active' },
       orderBy: { updatedAt: 'desc' },
@@ -434,10 +672,34 @@ export class WaliService {
 
   @Cron('0 9 * * 1')
   async sendWeeklyDigests() {
+    const policy = await this.getPolicySettings();
+    if (policy.ccDigestFrequency !== 'weekly') return;
+    await this.sendScheduledDigests('weekly', 7, policy);
+  }
+
+  @Cron('0 9 * * *')
+  async sendDailyDigests() {
+    const policy = await this.getPolicySettings();
+    if (policy.ccDigestFrequency !== 'daily') return;
+    await this.sendScheduledDigests('daily', 1, policy);
+  }
+
+  private async sendScheduledDigests(
+    period: 'daily' | 'weekly',
+    days: number,
+    policy: WaliPolicySettings,
+  ) {
+    if (!policy.waliEnabled) return;
     const endDate = new Date();
-    const startDate = new Date(endDate.getTime() - 7 * 24 * 60 * 60 * 1000);
+    const startDate = new Date(endDate.getTime() - days * 24 * 60 * 60 * 1000);
+    const periodStart = new Date(startDate);
+    periodStart.setHours(0, 0, 0, 0);
     const links = await this.prisma.waliLink.findMany({
-      where: { status: 'active', weeklyDigest: true },
+      where: {
+        status: 'active',
+        weeklyDigest: true,
+        user: { profile: { is: { gender: 'female', waliEnabled: true } } },
+      },
       include: {
         user: { select: { id: true, name: true } },
         wali: { select: { id: true, email: true } },
@@ -446,13 +708,19 @@ export class WaliService {
 
     for (const link of links) {
       const prior = await this.prisma.waliDigest.findUnique({
-        where: { waliId_period_startDate: { waliId: link.waliId, period: 'weekly', startDate } },
+        where: {
+          waliId_period_startDate: {
+            waliId: link.waliId,
+            period,
+            startDate: periodStart,
+          },
+        },
         select: { id: true },
       });
       if (prior) continue;
 
       const [messages, matches] = await Promise.all([
-        link.chatSummaries
+        policy.ccAllChats && link.seeChats && link.chatSummaries
           ? this.prisma.message.findMany({
               where: {
                 createdAt: { gte: startDate, lte: endDate },
@@ -479,8 +747,8 @@ export class WaliService {
         digest = await this.prisma.waliDigest.create({
           data: {
             waliId: link.waliId,
-            period: 'weekly',
-            startDate,
+            period,
+            startDate: periodStart,
             endDate,
             newMatches: matches,
             newMessages: messages.length,
@@ -496,14 +764,17 @@ export class WaliService {
       const messageSummary = messages.length
         ? messages.slice(-20).map((message) => `${message.sender.name}: ${message.text.slice(0, 240)}`).join('\n')
         : 'No conversation messages were included in this digest.';
-      const matchSummary = matches ? `New matches this week: ${matches}.` : 'No new matches this week.';
+      const matchSummary = matches
+        ? `New matches this ${period === 'daily' ? 'day' : 'week'}: ${matches}.`
+        : `No new matches this ${period === 'daily' ? 'day' : 'week'}.`;
       try {
         await this.mail.sendWaliSummary({
-          to: link.wali.email,
-          userName: link.user.name,
-          participantNames: `${link.user.name} weekly update`,
-          summary: `${matchSummary}\n\n${messageSummary}`,
-          messageCount: messages.length,
+        to: link.wali.email,
+        userName: link.user.name,
+        participantNames: `${link.user.name} ${period} update`,
+        summary: `${matchSummary}\n\n${messageSummary}`,
+        messageCount: messages.length,
+        frequency: period,
         });
         await this.prisma.waliDigest.update({ where: { id: digest.id }, data: { sentAt: new Date() } });
       } catch (error) {
@@ -587,6 +858,7 @@ export class WaliService {
     linkId: string,
     updates: WaliPermissionsUpdate,
   ) {
+    await this.assertMemberFeatureEnabled(userId);
     const link = await this.prisma.waliLink.findUnique({
       where: { id: linkId },
     });
@@ -597,7 +869,12 @@ export class WaliService {
 
     const updated = await this.prisma.waliLink.update({
       where: { id: linkId },
-      data: updates,
+      data: {
+        ...updates,
+        ...(updates.seeChats !== undefined && {
+          chatSummaries: updates.seeChats,
+        }),
+      },
     });
 
     return updated;
@@ -616,6 +893,7 @@ export class WaliService {
     targetUserId: string,
     details: any,
   ) {
+    await this.assertMemberFeatureEnabled(userId);
     // Get user's walis who have approval permissions
     const walis = await this.prisma.waliLink.findMany({
       where: {
@@ -856,6 +1134,7 @@ export class WaliService {
     if (input.ccChats !== undefined) {
       if (typeof input.ccChats !== 'boolean') throw new BadRequestException('ccChats must be a boolean');
       data.seeChats = input.ccChats;
+      data.chatSummaries = input.ccChats;
     }
     if (input.ccMatches !== undefined) {
       if (typeof input.ccMatches !== 'boolean') throw new BadRequestException('ccMatches must be a boolean');
@@ -922,17 +1201,27 @@ export class WaliService {
     const startDate = new Date(endDate.getTime() - days * 24 * 60 * 60 * 1000);
     const window = { gte: startDate, lte: endDate };
     const userId = link.userId;
+    const policy = await this.getPolicySettings();
 
     const [newMatches, newLikes, newMessages, usersLinked] = await Promise.all([
-      this.prisma.match.count({
-        where: { createdAt: window, OR: [{ userAId: userId }, { userBId: userId }] },
-      }),
+      link.matchAlerts
+        ? this.prisma.match.count({
+            where: {
+              createdAt: window,
+              OR: [{ userAId: userId }, { userBId: userId }],
+            },
+          })
+        : Promise.resolve(0),
       // The Like table also stores passes; a guardian digest should count
       // genuine interest only.
       this.prisma.like.count({
         where: { createdAt: window, toUserId: userId, type: { in: ['like', 'superLike'] } },
       }),
-      this.prisma.message.count({ where: { createdAt: window, senderId: userId } }),
+      policy.ccAllChats && link.seeChats && link.chatSummaries
+        ? this.prisma.message.count({
+            where: { createdAt: window, senderId: userId },
+          })
+        : Promise.resolve(0),
       this.prisma.waliLink.count({ where: { waliId: link.waliId, status: 'active' } }),
     ]);
 
@@ -970,6 +1259,15 @@ export class WaliService {
   /// wali is not mailed a summary of nothing.
   async sendDigest(linkId: string, days = 7) {
     const d = await this.digestFor(linkId, days);
+    const member = await this.getMemberFeatureState(d.link.userId);
+    if (!member.enabled) {
+      return {
+        linkId,
+        waliId: d.link.waliId,
+        sent: false,
+        reason: 'Wali feature is disabled for this member',
+      };
+    }
     const hasActivity = d.newMatches + d.newLikes + d.newMessages > 0;
     if (!hasActivity) {
       return { linkId, waliId: d.link.waliId, sent: false, reason: 'No activity in this period' };
@@ -992,6 +1290,7 @@ export class WaliService {
         participantNames: d.link.user.name,
         summary,
         messageCount: d.newMessages,
+        frequency: days === 1 ? 'daily' : 'weekly',
       });
       sent = true;
     } catch (error: any) {
@@ -1088,18 +1387,41 @@ export class WaliService {
   }
 
   async getAdminSettings() {
-    const rows = await this.prisma.appSetting.findMany({
-      where: { key: { startsWith: 'wali.' } },
-    });
-    return Object.fromEntries(rows.map((row) => [row.key.slice(5), row.value]));
+    return this.getPolicySettings();
   }
 
   async updateAdminSettings(values: Record<string, unknown>) {
     for (const [key, value] of Object.entries(values)) {
+      if (!(key in DEFAULT_WALI_POLICY)) {
+        throw new BadRequestException(`Unsupported Wali setting: ${key}`);
+      }
+      if (
+        key === 'ccDigestFrequency' &&
+        value !== 'instant' &&
+        value !== 'daily' &&
+        value !== 'weekly'
+      ) {
+        throw new BadRequestException('ccDigestFrequency must be instant, daily, or weekly');
+      }
+      if (key === 'inviteExpiryDays' && (
+        typeof value !== 'number' ||
+        !Number.isInteger(value) ||
+        value < 1 ||
+        value > 30
+      )) {
+        throw new BadRequestException('inviteExpiryDays must be an integer from 1 to 30');
+      }
+      if (
+        key !== 'ccDigestFrequency' &&
+        key !== 'inviteExpiryDays' &&
+        typeof value !== 'boolean'
+      ) {
+        throw new BadRequestException(`${key} must be a boolean`);
+      }
       await this.prisma.appSetting.upsert({
         where: { key: `wali.${key}` },
-        update: { value: value as any },
-        create: { key: `wali.${key}`, value: value as any },
+        update: { value: value as boolean | number | string },
+        create: { key: `wali.${key}`, value: value as boolean | number | string },
       });
     }
     return this.getAdminSettings();

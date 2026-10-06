@@ -2,7 +2,7 @@ import { ForbiddenException } from '@nestjs/common';
 import { UsersService } from './users.service';
 
 function serviceWith(prisma: any) {
-  return new UsersService(prisma, {} as any, {} as any, {} as any);
+  return new UsersService(prisma, {} as any, {} as any, {} as any, {} as any);
 }
 
 describe('UsersService subscription authorization', () => {

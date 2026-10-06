@@ -14,18 +14,42 @@ export class PaymentsAdminController {
   }
 
   @Patch('config')
-  updateConfig(@Body() body: Record<string, string>) {
+  updateConfig(
+    @Body()
+    body: {
+      consumerKey?: string;
+      consumerSecret?: string;
+      environment?: 'sandbox' | 'live';
+      callbackUrl?: string;
+      ipnId?: string;
+      enabled?: boolean;
+      currency?: string;
+      provider?: 'pesapal';
+    },
+  ) {
     return this.payments.saveSettings(body);
   }
 
   @Post('test-connection')
-  testConnection() {
-    return this.payments.testConnection();
+  testConnection(
+    @Body() body: {
+      consumerKey?: string;
+      consumerSecret?: string;
+      environment?: 'sandbox' | 'live';
+    },
+  ) {
+    return this.payments.testConnection(body);
   }
 
   @Post('test')
-  test() {
-    return this.payments.testConnection();
+  test(
+    @Body() body: {
+      consumerKey?: string;
+      consumerSecret?: string;
+      environment?: 'sandbox' | 'live';
+    },
+  ) {
+    return this.payments.testConnection(body);
   }
 
   @Get('transactions')

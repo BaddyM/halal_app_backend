@@ -85,16 +85,14 @@ export class PesapalService {
     }
   }
 
-  private async settings(): Promise<PesapalSettings> {
+  private async settingsOrNull(): Promise<PesapalSettings | null> {
     const row = await this.prisma.appSetting.findUnique({ where: { key: SETTING_KEY } });
     if (row) return this.decrypt(row.value);
     const consumerKey = this.config.get<string>('PESAPAL_CONSUMER_KEY');
     const consumerSecret = this.config.get<string>('PESAPAL_CONSUMER_SECRET');
     const callbackUrl = this.config.get<string>('PESAPAL_CALLBACK_URL');
     const ipnId = this.config.get<string>('PESAPAL_IPN_ID');
-    if (!consumerKey || !consumerSecret || !callbackUrl || !ipnId) {
-      throw new ServiceUnavailableException('Pesapal is not configured by the dashboard');
-    }
+    if (!consumerKey || !consumerSecret || !callbackUrl || !ipnId) return null;
     return {
       consumerKey,
       consumerSecret,
@@ -106,6 +104,14 @@ export class PesapalService {
     };
   }
 
+  private async settings(): Promise<PesapalSettings> {
+    const settings = await this.settingsOrNull();
+    if (!settings) {
+      throw new ServiceUnavailableException('Pesapal is not configured by the dashboard');
+    }
+    return settings;
+  }
+
   private baseUrl(environment: PesapalEnvironment) {
     return environment === 'live'
       ? 'https://pay.pesapal.com/v3'
@@ -113,7 +119,22 @@ export class PesapalService {
   }
 
   async saveSettings(input: Partial<PesapalSettings>) {
-    const current = await this.settings().catch(() => null);
+    let current: PesapalSettings | null;
+    try {
+      current = await this.settingsOrNull();
+    } catch (error) {
+      const completeReplacement =
+        error instanceof ServiceUnavailableException &&
+        error.message === 'Stored Pesapal settings cannot be decrypted' &&
+        !!input.consumerKey?.trim() &&
+        !!input.consumerSecret?.trim() &&
+        !!input.callbackUrl?.trim() &&
+        !!input.ipnId?.trim() &&
+        (input.environment === 'sandbox' || input.environment === 'live');
+      if (!completeReplacement) throw error;
+      current = null;
+      this.logger.warn('Replacing undecryptable Pesapal settings with complete admin input');
+    }
     const next = {
       consumerKey: input.consumerKey ?? current?.consumerKey ?? '',
       consumerSecret: input.consumerSecret ?? current?.consumerSecret ?? '',
@@ -140,7 +161,7 @@ export class PesapalService {
   }
 
   async adminSettings() {
-    const settings = await this.settings().catch(() => null);
+    const settings = await this.settingsOrNull();
     return {
       configured: !!settings,
       provider: 'pesapal',
@@ -176,7 +197,7 @@ export class PesapalService {
 
   async publicConfig() {
     const plans = await this.billing.listPlans();
-    const settings = await this.settings().catch(() => null);
+    const settings = await this.settingsOrNull();
     const giftCount = await this.prisma.giftCatalogItem.count({ where: { enabled: true } });
     const thresholdSetting = await this.prisma.appSetting.findUnique({ where: { key: 'wallet.withdrawalThreshold' } });
     return {
@@ -189,11 +210,7 @@ export class PesapalService {
     };
   }
 
-  private async accessToken(): Promise<string> {
-    if (this.tokenCache && this.tokenCache.expiresAt > Date.now() + 30_000) {
-      return this.tokenCache.token;
-    }
-    const settings = await this.settings();
+  private async requestAccessToken(settings: PesapalSettings): Promise<string> {
     const response = await fetch(`${this.baseUrl(settings.environment)}/api/Auth/RequestToken`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
@@ -203,12 +220,54 @@ export class PesapalService {
     if (!response.ok || !payload.token) {
       throw new ServiceUnavailableException('Pesapal authentication failed');
     }
-    this.tokenCache = { token: payload.token, expiresAt: Date.now() + 4 * 60_000 };
     return payload.token as string;
   }
 
-  async testConnection() {
-    await this.accessToken();
+  private async accessToken(): Promise<string> {
+    if (this.tokenCache && this.tokenCache.expiresAt > Date.now() + 30_000) {
+      return this.tokenCache.token;
+    }
+    const settings = await this.settings();
+    const token = await this.requestAccessToken(settings);
+    this.tokenCache = { token, expiresAt: Date.now() + 4 * 60_000 };
+    return token;
+  }
+
+  async testConnection(input?: {
+    consumerKey?: string;
+    consumerSecret?: string;
+    environment?: PesapalEnvironment;
+  }) {
+    if (
+      input?.environment !== undefined &&
+      input.environment !== 'sandbox' &&
+      input.environment !== 'live'
+    ) {
+      throw new BadRequestException('environment must be sandbox or live');
+    }
+    if (input?.consumerKey || input?.consumerSecret) {
+      if (!input.consumerKey?.trim() || !input.consumerSecret?.trim()) {
+        throw new BadRequestException('Enter both Pesapal credentials to test them');
+      }
+      const settings: PesapalSettings = {
+        consumerKey: input.consumerKey.trim(),
+        consumerSecret: input.consumerSecret.trim(),
+        environment: input.environment ?? 'sandbox',
+        callbackUrl: '',
+        ipnId: '',
+        enabled: false,
+        currency: 'UGX',
+      };
+      await this.requestAccessToken(settings);
+    } else if (input?.environment) {
+      const current = await this.settings();
+      await this.requestAccessToken({
+        ...current,
+        environment: input.environment,
+      });
+    } else {
+      await this.accessToken();
+    }
     return { ok: true, provider: 'pesapal' };
   }
 

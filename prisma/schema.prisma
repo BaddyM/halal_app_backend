@@ -318,6 +318,7 @@ model Profile {
   waliEmail    String?
   waliPhone    String?
   waliRelation String? // e.g. father, brother, uncle
+  waliEnabled  Boolean @default(true)
 
   // Appearance & partner preferences
   hasBeard     Boolean?

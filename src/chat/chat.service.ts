@@ -12,6 +12,7 @@ import { RealtimeBus } from 'src/realtime/realtime.bus';
 import { PushService } from 'src/push/push.service';
 import { MailService } from 'src/mail/mail.service';
 import { SmsService } from 'src/mail/sms.service';
+import { WaliService } from 'src/wali/wali.service';
 import { AiService } from './ai.service';
 import { containsFlaggedWord } from './moderation';
 
@@ -26,6 +27,7 @@ export class ChatService implements OnModuleInit {
     private readonly push: PushService,
     private readonly mail: MailService,
     private readonly sms: SmsService,
+    private readonly wali: WaliService,
   ) {}
 
   private readonly logger = new Logger(ChatService.name);
@@ -142,6 +144,7 @@ export class ChatService implements OnModuleInit {
         'You can only message someone after you have both liked each other.',
       );
     }
+    await this.wali.assertChatAllowed([meId, otherUserId]);
 
     const conv = await this.prisma.conversation.upsert({
       where: { userAId_userBId: { userAId: a, userBId: b } },
@@ -338,6 +341,7 @@ export class ChatService implements OnModuleInit {
     opts: { type?: string; mediaUrl?: string } = {},
   ) {
     const conv = await this.assertMembership(userId, conversationId);
+    await this.wali.assertChatAllowed([conv.userAId, conv.userBId]);
     const type = opts.type ?? 'text';
 
     // Photo/voice messages are a premium feature (Module C). Text is free.
@@ -383,6 +387,16 @@ export class ChatService implements OnModuleInit {
       });
       return m;
     });
+    void this.wali
+      .sendInstantMessageSummary(
+        [conv.userAId, conv.userBId],
+        userId,
+        clean,
+        type,
+      )
+      .catch((error) => {
+        this.logger.error(`Instant Wali email delivery failed: ${String(error)}`);
+      });
 
     const other = conv.userAId === userId ? conv.userBId : conv.userAId;
     const payload = {
@@ -657,9 +671,8 @@ export class ChatService implements OnModuleInit {
   }
 
   // ── Involve wali ────────────────────────────────────────────
-  /// CCs the sender's guardian on a summary of the conversation and marks the
-  /// chat as wali-involved. Guardian delivery (email/SMS) is logged in dev;
-  /// wire a mailer/SMS provider for production.
+  /// Sends the sender's guardian a requested conversation summary and marks
+  /// the chat as wali-involved.
   async involveWali(
     userId: string,
     conversationId: string,
@@ -718,6 +731,7 @@ export class ChatService implements OnModuleInit {
         participantNames,
         summary,
         messageCount: recentMessages.length,
+        frequency: 'instant',
       });
     }
     if (profile.waliPhone) {

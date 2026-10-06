@@ -9,14 +9,25 @@ import {
   Query,
   UseGuards,
 } from '@nestjs/common';
+import { IsEmail, MaxLength } from 'class-validator';
+import { MailService } from 'src/mail/mail.service';
 import { WaliService } from './wali.service';
 import { AuthGuard } from 'src/auth/auth.guard';
 import { AdminGuard } from 'src/admin/admin.guard';
 
+class SendWaliCcTestDto {
+  @IsEmail()
+  @MaxLength(254)
+  email!: string;
+}
+
 @Controller('admin/wali')
 @UseGuards(AuthGuard, AdminGuard)
 export class AdminWaliController {
-  constructor(private waliService: WaliService) {}
+  constructor(
+    private waliService: WaliService,
+    private readonly mail: MailService,
+  ) {}
 
   @Get()
   async list(@Query('status') status?: string, @Query('search') search?: string) {
@@ -29,6 +40,12 @@ export class AdminWaliController {
   @Patch('settings')
   updateSettings(@Body() body: Record<string, unknown>) {
     return this.waliService.updateAdminSettings(body);
+  }
+
+  @Post('test-cc')
+  async sendTestCc(@Body() body: SendWaliCcTestDto) {
+    await this.mail.sendWaliCcTest(body.email);
+    return { sent: true };
   }
 
   @Patch(':id')

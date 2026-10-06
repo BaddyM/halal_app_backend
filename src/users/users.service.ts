@@ -26,6 +26,7 @@ import { createHmac, timingSafeEqual } from 'crypto';
 import { PushService } from 'src/push/push.service';
 import { RealtimeBus } from 'src/realtime/realtime.bus';
 import { getJwtSecret } from 'src/auth/jwt-secret';
+import { WaliService } from 'src/wali/wali.service';
 
 const ONLINE_WINDOW_MS = 5 * 60 * 1000; // 5 min
 
@@ -46,6 +47,7 @@ export class UsersService implements OnModuleInit {
         private readonly config: ConfigService,
         private readonly push: PushService,
         private readonly realtime: RealtimeBus,
+        private readonly wali: WaliService,
     ) {}
 
     async onModuleInit() {
@@ -814,7 +816,13 @@ export class UsersService implements OnModuleInit {
         });
         if (!user) throw new NotFoundException('User not found');
         await this.touchLastSeen(userId);
-        return this.serializeProfile(user, { id: userId, plan: user.plan });
+        const serialized = this.serializeProfile(user, { id: userId, plan: user.plan });
+        const waliFeature = await this.wali.getMemberFeatureState(userId);
+        return {
+            ...serialized,
+            waliEnabled: user.profile?.waliEnabled !== false,
+            waliFeatureEnabled: waliFeature.enabled,
+        };
     }
 
     async getVerification(userId: string) {
@@ -823,13 +831,14 @@ export class UsersService implements OnModuleInit {
             include: { profile: true, identityVerification: true, photoVerification: true },
         });
         if (!user) throw new NotFoundException('User not found');
+        const waliFeature = await this.wali.getMemberFeatureState(userId);
         return {
             phone: {
                 number: user.phone,
                 status: user.phoneVerificationStatus,
                 reason: user.phoneVerificationReason,
             },
-            wali: user.profile?.waliPhone
+            wali: waliFeature.enabled && user.profile?.waliPhone
                 ? { number: user.profile.waliPhone, status: 'notSubmitted', reason: null }
                 : null,
             identity: user.identityVerification
@@ -1496,15 +1505,27 @@ export class UsersService implements OnModuleInit {
     }
 
     private async checkWaliApproval(userId: string, targetUserId: string, actionType: 'like' | 'match_accept') {
+        const member = await this.wali.getMemberFeatureState(userId);
+        if (!member.enabled) return { pending: false, approvalIds: [] as string[] };
+        const globalMatchApproval =
+            actionType === 'match_accept' && member.waliApprovalForMatches;
         const links = await this.prisma.waliLink.findMany({
             where: {
                 userId,
                 status: 'active',
-                ...(actionType === 'like' ? { approveLikes: true } : { approveMatches: true }),
+                ...(!globalMatchApproval &&
+                    (actionType === 'like' ? { approveLikes: true } : { approveMatches: true })),
             },
             select: { waliId: true },
         });
-        if (!links.length) return { pending: false, approvalIds: [] as string[] };
+        if (!links.length) {
+            if (globalMatchApproval) {
+                throw new ForbiddenException(
+                    'An active Wali is required to approve this match. You can turn off Wali in settings.',
+                );
+            }
+            return { pending: false, approvalIds: [] as string[] };
+        }
         const approvals = await this.prisma.waliApproval.findMany({
             where: {
                 userId,
@@ -1981,6 +2002,7 @@ export class UsersService implements OnModuleInit {
 
     // ── Wali / guardian ─────────────────────────────────────────
     async setWali(userId: string, dto: SetWaliDto) {
+        await this.wali.assertMemberFeatureEnabled(userId);
         await this.prisma.profile.upsert({
             where: { userId },
             update: {

@@ -38,7 +38,7 @@ async function bootstrap() {
             if (!origin || allowedOrigins.includes(origin)) return callback(null, true);
             return callback(new Error('Origin is not allowed by CORS'));
         },
-        methods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
+        methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
         allowedHeaders: ['Authorization', 'Content-Type'],
     });
     app.useGlobalPipes(

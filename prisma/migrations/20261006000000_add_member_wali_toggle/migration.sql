@@ -1,0 +1,2 @@
+ALTER TABLE `Profile`
+ADD COLUMN `waliEnabled` BOOLEAN NOT NULL DEFAULT true;

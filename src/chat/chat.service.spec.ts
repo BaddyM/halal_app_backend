@@ -9,6 +9,10 @@ function serviceWith(prisma: any) {
     {} as any,
     {} as any,
     {} as any,
+    {
+      assertChatAllowed: jest.fn().mockResolvedValue(undefined),
+      sendInstantMessageSummary: jest.fn(),
+    } as any,
   );
 }
 

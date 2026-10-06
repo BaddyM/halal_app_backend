@@ -146,7 +146,7 @@ export class MailService {
       '',
       `${args.userName} has invited you to be their Wali (Guardian) on ${appName}.`,
       'As Wali, you may receive conversation summaries when the user chooses to involve you.',
-      'Weekly summaries are sent only when there is recent chat activity and pause after two inactive weeks.',
+      'Updates follow the member’s consent and the delivery schedule selected by the service.',
       ...(args.message
         ? ['', `Message from ${args.userName}: ${args.message}`]
         : []),
@@ -159,7 +159,7 @@ export class MailService {
         <h2>${appName}: Wali invitation</h2>
         <p>Hello ${safeWaliName},</p>
         <p><strong>${safeUserName}</strong> has invited you to be their Wali (Guardian).</p>
-        <p>When the user chooses to involve you, you may receive the latest conversation summary by email. Weekly summaries are sent only when there is recent chat activity and pause automatically after two consecutive inactive weeks.</p>
+        <p>When the user chooses to involve you, you may receive conversation updates by email, subject to their consent and the service delivery schedule.</p>
         ${safeMessage ? `<p><strong>Message from ${safeUserName}:</strong> ${safeMessage}</p>` : ''}
         <p><a href="${acceptUrl}">Accept Wali invitation</a></p>
         ${declineUrl ? `<p><a href="${declineUrl}">Decline invitation</a></p>` : ''}
@@ -169,28 +169,54 @@ export class MailService {
     return this.sendMail({ to: args.to, subject, html, text });
   }
 
+  async sendWaliCcTest(to: string) {
+    const appName = this.config.get<string>('APP_NAME') ?? 'Halal Connect';
+    const subject = `${appName}: test guardian CC email`;
+    const text =
+      'This is a test guardian CC email. Your email delivery settings are working.';
+    return this.sendMail({
+      to,
+      subject,
+      text,
+      html: `
+        <div style="font-family: Arial, sans-serif; max-width: 560px; margin: 0 auto;">
+          <h2>${this.escapeHtml(appName)} guardian CC test</h2>
+          <p>This is a test email only. Guardian CC email delivery is working.</p>
+        </div>
+      `,
+    });
+  }
+
   async sendWaliSummary(args: {
     to: string;
     userName: string;
     participantNames: string;
     summary: string;
     messageCount: number;
+    frequency: 'instant' | 'daily' | 'weekly';
   }) {
     const appName = this.config.get<string>('APP_NAME') ?? 'Halal Connect';
-    const subject = `Conversation update for ${args.participantNames}`;
+    const frequencyLabel = {
+      instant: 'instant conversation update',
+      daily: 'daily conversation digest',
+      weekly: 'weekly conversation digest',
+    }[args.frequency];
+    const subject = `${frequencyLabel} for ${args.participantNames}`;
     const safeUserName = this.escapeHtml(args.userName);
     const safeParticipants = this.escapeHtml(args.participantNames);
     const safeSummary = this.escapeHtml(args.summary);
-    const text = `Hello,\n\nHere is the latest conversation summary for ${args.userName}.\n\n${args.summary}\n\nThis weekly summary is sent only when there is recent chat activity and pauses after two consecutive inactive weeks.`;
+    const intro = args.frequency === 'instant'
+      ? 'Here is the new message the member has chosen to share.'
+      : `Here is the ${args.frequency} conversation update.`;
+    const text = `Hello,\n\n${intro} Summary for ${args.userName}.\n\n${args.summary}`;
     const html = `
       <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; color: #253238;">
-        <h2>${appName}: conversation summary</h2>
+        <h2>${this.escapeHtml(appName)}: ${this.escapeHtml(frequencyLabel)}</h2>
         <p>Hello,</p>
-        <p>Here is the latest summary for <strong>${safeUserName}</strong>.</p>
+        <p>${this.escapeHtml(intro)} Summary for <strong>${safeUserName}</strong>.</p>
         <p><strong>Conversation:</strong> ${safeParticipants}</p>
         <p><strong>Recent messages:</strong> ${args.messageCount}</p>
         <pre style="white-space: pre-wrap; background: #f4f6f7; padding: 16px; border-radius: 8px;">${safeSummary}</pre>
-        <p style="font-size: 12px; color: #667">Weekly summaries are sent only when there is recent chat activity and pause after two consecutive inactive weeks.</p>
       </div>
     `;
     return this.sendMail({ to: args.to, subject, html, text });
@@ -207,14 +233,14 @@ export class MailService {
     const safeWaliName = this.escapeHtml(args.waliName);
     const safeUserName = this.escapeHtml(args.userName);
     const safeFields = this.escapeHtml(args.changedFields.join(', '));
-    const text = `Hello ${args.waliName},\n\n${args.userName} updated these Wali details: ${args.changedFields.join(', ')}.\n\nYou will receive conversation summaries only when the user involves you. Weekly summaries pause after two inactive weeks.`;
+    const text = `Hello ${args.waliName},\n\n${args.userName} updated these Wali details: ${args.changedFields.join(', ')}.\n\nYou will receive conversation summaries only when the user has consented to sharing and according to the service delivery schedule.`;
     const html = `
       <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; color: #253238;">
         <h2>${appName}: Wali details updated</h2>
         <p>Hello ${safeWaliName},</p>
         <p><strong>${safeUserName}</strong> updated these details connected to your Wali role:</p>
         <p>${safeFields}</p>
-        <p>You will receive conversation summaries only when the user involves you. Weekly summaries pause automatically after two consecutive inactive weeks without chat activity.</p>
+        <p>You will receive conversation summaries only when the user has consented to sharing and according to the service delivery schedule.</p>
       </div>
     `;
     return this.sendMail({ to: args.to, subject, html, text });

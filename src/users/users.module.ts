@@ -13,9 +13,10 @@ import {
     PrivatePhotoMediaController,
 } from './photo-access.controller';
 import { AccountDeletionController, AdminAccountDeletionController } from './account-deletion.controller';
+import { WaliModule } from 'src/wali/wali.module';
 
 @Module({
-    imports: [AuthModule],
+    imports: [AuthModule, WaliModule],
     controllers: [
         UsersController,
         UsersContractController,
