@@ -15,6 +15,7 @@ services:
       - PORT=3000
       - JWT_SECRET=${JWT_SECRET:?Set JWT_SECRET in .env}
       - MODE=Prod
+      - CORS_ORIGINS=https://halalconnect.space,https://www.halalconnect.space,https://admin.halalconnect.space
       - REDIS_URL=redis://redis:6379
       - MAIL_HOST=smtp.gmail.com
       - MAIL_PORT=587
