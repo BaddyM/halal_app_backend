@@ -13,11 +13,18 @@ export class MailService {
   private readonly transporter: Transporter | null;
   private readonly fromAddress: string;
   private readonly fromName: string;
+  private readonly resendApiKey: string | undefined;
+  private readonly resendFrom: string;
 
   constructor(private readonly config: ConfigService) {
     const host = this.config.get<string>('MAIL_HOST');
     const user = this.config.get<string>('MAIL_USER');
     const pass = this.config.get<string>('MAIL_PASS');
+    this.resendApiKey =
+      this.config.get<string>('RESEND_API_KEY')?.trim() || undefined;
+    this.resendFrom =
+      this.config.get<string>('RESEND_FROM') ??
+      'Halal Connect <team@halalconnect.space>';
 
     this.fromAddress =
       this.config.get<string>('MAIL_FROM') ?? user ?? 'no-reply@localhost';
@@ -44,6 +51,10 @@ export class MailService {
 
   isConfigured(): boolean {
     return !!this.transporter;
+  }
+
+  isResendConfigured(): boolean {
+    return !!this.resendApiKey;
   }
 
   async sendMail(args: {
@@ -73,6 +84,50 @@ export class MailService {
     });
 
     return info;
+  }
+
+  async sendResendMail(args: {
+    to: string;
+    subject: string;
+    html: string;
+    text?: string;
+  }) {
+    if (!this.resendApiKey) {
+      throw new ServiceUnavailableException(
+        'Resend email delivery is not configured',
+      );
+    }
+
+    const response = await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${this.resendApiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        from: this.resendFrom,
+        to: args.to,
+        subject: args.subject,
+        html: args.html,
+        text: args.text,
+      }),
+    });
+
+    if (!response.ok) {
+      throw new ResendApiError(response.status);
+    }
+
+    const result: unknown = await response.json();
+    if (
+      typeof result !== 'object' ||
+      result === null ||
+      !('id' in result) ||
+      typeof result.id !== 'string'
+    ) {
+      throw new Error('Resend did not return an email ID');
+    }
+
+    return { id: result.id };
   }
 
   async sendCodeEmail(to: string, code: string, kind: 'verify' | 'reset') {
@@ -258,5 +313,15 @@ export class MailService {
           "'": '&#39;',
         })[character] ?? character,
     );
+  }
+}
+
+class ResendApiError extends Error {
+  readonly code: string;
+
+  constructor(status: number) {
+    super(`Resend email request failed with status ${status}`);
+    this.name = 'ResendApiError';
+    this.code = `RESEND_HTTP_${status}`;
   }
 }

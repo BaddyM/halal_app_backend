@@ -15,8 +15,10 @@ export class AdminEmailCampaignService {
   constructor(private readonly mail: MailService) {}
 
   async send(input: SendEmailCampaignDto) {
-    if (!this.mail.isConfigured()) {
-      throw new ServiceUnavailableException('Email delivery is not configured');
+    if (!this.mail.isResendConfigured()) {
+      throw new ServiceUnavailableException(
+        'Resend email delivery is not configured',
+      );
     }
 
     const recipients = [
@@ -33,14 +35,14 @@ export class AdminEmailCampaignService {
     for (const recipient of recipients) {
       const subject = personalise(input.subject, recipient.name);
       try {
-        const result: unknown = await this.mail.sendMail({
+        const result: unknown = await this.mail.sendResendMail({
           to: recipient.email,
           subject,
           html: this.renderHtml(input, recipient.name, subject),
           text: personalise(input.body, recipient.name),
         });
         if (recipientWasRejected(result, recipient.email)) {
-          throw new Error('SMTP_REJECTED');
+          throw new Error('RESEND_REJECTED');
         }
         sent += 1;
       } catch (error) {
@@ -106,7 +108,7 @@ export class AdminEmailCampaignService {
     ) {
       return error.code;
     }
-    return 'SMTP_ERROR';
+    return 'EMAIL_DELIVERY_ERROR';
   }
 }
 

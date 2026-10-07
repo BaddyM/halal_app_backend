@@ -1,6 +1,6 @@
 import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { existsSync, readdirSync } from 'fs';
-import { join } from 'path';
+import { basename, join } from 'path';
 import { ManualVerificationStatus, Prisma, Role, UserStatus } from '@prisma/client';
 import * as bcrypt from 'bcryptjs';
 import { PrismaService } from 'src/prisma/prisma.service';
@@ -553,18 +553,39 @@ export class AdminUsersService {
     const documents = (verification.submission as any)?.documents ?? {};
     const document = Object.values(documents).find((value: any) => value?.documentId === documentId) as any;
     if (!document) throw new NotFoundException('Verification document not found');
-    const userDir = verificationDir(id);
-    // The directory is absent until the user's first upload, and readdirSync
-    // would throw ENOENT (a 500) rather than the 404 this case deserves.
-    if (!existsSync(userDir)) throw new NotFoundException('Verification file not found');
-    const files = readdirSync(userDir);
-    // documentId comes from the request; anchor the match to the generated
-    // uuid prefix so it can't be used to reach a neighbouring file.
-    const filename = files.find(
-      (file) => file.slice(0, file.lastIndexOf('.')) === documentId,
-    );
-    if (!filename || !existsSync(join(userDir, filename))) throw new NotFoundException('Verification file not found');
-    return { path: join(userDir, filename), originalName: document.originalName ?? filename };
+    const storedFilename =
+      typeof document.filename === 'string' &&
+      basename(document.filename) === document.filename
+        ? document.filename
+        : undefined;
+    const roots = [
+      verificationDir(id),
+      join(process.cwd(), 'uploads', 'verification', id),
+    ];
+    const findFile = (directory: string): string | undefined => {
+      if (!existsSync(directory)) return undefined;
+      for (const entry of readdirSync(directory, { withFileTypes: true })) {
+        const filePath = join(directory, entry.name);
+        if (entry.isDirectory()) {
+          const nested = findFile(filePath);
+          if (nested) return nested;
+        } else if (
+          entry.isFile() &&
+          ((entry.name.lastIndexOf('.') > 0 &&
+            entry.name.slice(0, entry.name.lastIndexOf('.')) === documentId) ||
+            entry.name === storedFilename)
+        ) {
+          return filePath;
+        }
+      }
+      return undefined;
+    };
+    const filePath = roots.map(findFile).find(Boolean);
+    if (!filePath) throw new NotFoundException('Verification file not found');
+    return {
+      path: filePath,
+      originalName: document.originalName ?? basename(filePath),
+    };
   }
 
   /// Send an admin message → lands in the user's /inbox + push notification.

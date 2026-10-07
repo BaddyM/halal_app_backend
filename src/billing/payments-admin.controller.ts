@@ -13,6 +13,11 @@ export class PaymentsAdminController {
     return this.payments.adminSettings();
   }
 
+  @Post('register-ipn')
+  registerIpn() {
+    return this.payments.registerIpn();
+  }
+
   @Patch('config')
   updateConfig(
     @Body()

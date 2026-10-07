@@ -14,8 +14,8 @@ type MailAddress = string | { address: string };
 type MailResult = { accepted: MailAddress[]; rejected: MailAddress[] };
 
 type FakeMailService = {
-  isConfigured: jest.Mock<boolean, []>;
-  sendMail: jest.Mock<Promise<MailResult>, [MailMessage]>;
+  isResendConfigured: jest.Mock<boolean, []>;
+  sendResendMail: jest.Mock<Promise<MailResult>, [MailMessage]>;
 };
 
 describe('AdminEmailCampaignService', () => {
@@ -24,15 +24,15 @@ describe('AdminEmailCampaignService', () => {
 
   beforeEach(() => {
     mail = {
-      isConfigured: jest.fn<boolean, []>().mockReturnValue(true),
-      sendMail: jest
+      isResendConfigured: jest.fn<boolean, []>().mockReturnValue(true),
+      sendResendMail: jest
         .fn<Promise<MailResult>, [MailMessage]>()
         .mockResolvedValue({ accepted: [], rejected: [] }),
     };
     service = new AdminEmailCampaignService(mail as unknown as MailService);
   });
 
-  it('sends a personalized, escaped email through the shared mail service', async () => {
+  it('sends a personalized, escaped email through Resend', async () => {
     const input: SendEmailCampaignDto = {
       recipients: [{ email: 'member@example.com', name: '<Sam>' }],
       subject: 'Hello {{name}}',
@@ -41,7 +41,7 @@ describe('AdminEmailCampaignService', () => {
     };
 
     await expect(service.send(input)).resolves.toEqual({ sent: 1, failed: [] });
-    const [message] = mail.sendMail.mock.calls[0] ?? [];
+    const [message] = mail.sendResendMail.mock.calls[0] ?? [];
     expect(message).toMatchObject({
       to: 'member@example.com',
       subject: 'Hello <Sam>',
@@ -61,11 +61,11 @@ describe('AdminEmailCampaignService', () => {
     };
 
     await expect(service.send(input)).resolves.toEqual({ sent: 1, failed: [] });
-    expect(mail.sendMail).toHaveBeenCalledTimes(1);
+    expect(mail.sendResendMail).toHaveBeenCalledTimes(1);
   });
 
   it('returns partial failures without stopping the remaining recipients', async () => {
-    mail.sendMail
+    mail.sendResendMail
       .mockRejectedValueOnce(
         Object.assign(new Error('SMTP failure'), { code: 'EAUTH' }),
       )
@@ -83,11 +83,11 @@ describe('AdminEmailCampaignService', () => {
       sent: 1,
       failed: [{ email: 'first@example.com', error: 'Email delivery failed' }],
     });
-    expect(mail.sendMail).toHaveBeenCalledTimes(2);
+    expect(mail.sendResendMail).toHaveBeenCalledTimes(2);
   });
 
   it('counts an explicitly rejected recipient as failed', async () => {
-    mail.sendMail.mockResolvedValue({
+    mail.sendResendMail.mockResolvedValue({
       accepted: [],
       rejected: [{ address: 'member@example.com' }],
     });
@@ -104,8 +104,8 @@ describe('AdminEmailCampaignService', () => {
     });
   });
 
-  it('refuses to send when SMTP is not configured', async () => {
-    mail.isConfigured.mockReturnValue(false);
+  it('refuses to send when Resend is not configured', async () => {
+    mail.isResendConfigured.mockReturnValue(false);
 
     await expect(
       service.send({
@@ -114,6 +114,6 @@ describe('AdminEmailCampaignService', () => {
         body: 'Message',
       }),
     ).rejects.toBeInstanceOf(ServiceUnavailableException);
-    expect(mail.sendMail).not.toHaveBeenCalled();
+    expect(mail.sendResendMail).not.toHaveBeenCalled();
   });
 });

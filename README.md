@@ -42,7 +42,9 @@ Set the SMTP values in `.env` before running the app in non-dev mode:
 - `MAIL_FROM`
 - `MAIL_FROM_NAME`
 
-The project is now preconfigured to use the Gmail account `halalconnectug@gmail.com` with the provided app password.
+The SMTP settings keep app-generated transactional mail (including verification and password-reset codes) on Gmail.
+
+Admin dashboard campaign and moderation emails use Resend instead. Set `RESEND_API_KEY` in the backend `.env`; optionally set `RESEND_FROM` (defaults to `Halal Connect <team@halalconnect.space>`). Verify the sender domain in Resend before sending. The Docker Compose deployment forwards these settings to the API container.
 
 ## Compile and run the project
 

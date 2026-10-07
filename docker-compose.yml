@@ -9,13 +9,14 @@ services:
     container_name: halal-backend
     restart: always
     ports:
-      - "3003:3000"
+      - "127.0.0.1:3003:3000"
     environment:
       - DATABASE_URL=${DATABASE_URL:?Set DATABASE_URL in .env}
       - PORT=3000
       - JWT_SECRET=${JWT_SECRET:?Set JWT_SECRET in .env}
       - PAYMENT_KEYS_ENCRYPTION_KEY=${PAYMENT_KEYS_ENCRYPTION_KEY:-}
       - PAYMENT_CONFIG_ENCRYPTION_KEY=${PAYMENT_CONFIG_ENCRYPTION_KEY:-}
+      - PESAPAL_IPN_URL=${PESAPAL_IPN_URL:-https://admin.halalconnect.space/api/public/payments/pesapal/ipn}
       - MODE=Prod
       - CORS_ORIGINS=https://halalconnect.space,https://www.halalconnect.space,https://admin.halalconnect.space
       - REDIS_URL=redis://redis:6379
@@ -26,6 +27,8 @@ services:
       - MAIL_PASS=${MAIL_PASS:-}
       - MAIL_FROM=${MAIL_FROM:-}
       - MAIL_FROM_NAME=Halalconnect
+      - RESEND_API_KEY=${RESEND_API_KEY:-}
+      - RESEND_FROM=${RESEND_FROM:-Halal Connect <team@halalconnect.space>}
       # Firebase Cloud Messaging. The key is mounted (below), never baked into
       # the image. Alternative for managed hosts: set FIREBASE_SERVICE_ACCOUNT
       # to the JSON inline and drop the volume.
