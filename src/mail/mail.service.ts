@@ -27,8 +27,11 @@ export class MailService {
       'Halal Connect <team@halalconnect.space>';
 
     this.fromAddress =
-      this.config.get<string>('MAIL_FROM') ?? user ?? 'no-reply@localhost';
-    this.fromName = this.config.get<string>('MAIL_FROM_NAME') ?? 'Halal Connect';
+      this.config.get<string>('MAIL_FROM')?.trim() ||
+      user?.trim() ||
+      'no-reply@localhost';
+    this.fromName =
+      this.config.get<string>('MAIL_FROM_NAME')?.trim() || 'Halal Connect';
 
     if (host && user && pass) {
       const smtpPassword =
