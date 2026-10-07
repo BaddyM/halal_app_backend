@@ -180,7 +180,7 @@ export class MailService {
 
   async sendAdminLoginCode(to: string, code: string) {
     const appName = this.config.get<string>('APP_NAME') ?? 'Halal Connect';
-    return this.sendMail({
+    const email = {
       to,
       subject: `${appName} admin sign-in code`,
       html: `
@@ -192,7 +192,10 @@ export class MailService {
         </div>
       `,
       text: `${appName} admin sign-in code: ${code}. It expires in 10 minutes.`,
-    });
+    };
+    return this.resendApiKey
+      ? this.sendResendMail(email)
+      : this.sendMail(email);
   }
 
   async sendWelcomeEmail(to: string, name: string) {
