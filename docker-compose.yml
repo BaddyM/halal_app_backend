@@ -14,6 +14,7 @@ services:
       - DATABASE_URL=${DATABASE_URL:?Set DATABASE_URL in .env}
       - PORT=3000
       - JWT_SECRET=${JWT_SECRET:?Set JWT_SECRET in .env}
+      - ADMIN_EMAILS=${ADMIN_EMAILS:-}
       - PAYMENT_KEYS_ENCRYPTION_KEY=${PAYMENT_KEYS_ENCRYPTION_KEY:-}
       - PAYMENT_CONFIG_ENCRYPTION_KEY=${PAYMENT_CONFIG_ENCRYPTION_KEY:-}
       - PESAPAL_IPN_URL=${PESAPAL_IPN_URL:-https://admin.halalconnect.space/api/public/payments/pesapal/ipn}
