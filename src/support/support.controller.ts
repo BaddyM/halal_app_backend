@@ -1,6 +1,18 @@
-import { Body, Controller, Get, Param, Post, Req, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Param,
+  Post,
+  Req,
+  UseGuards,
+} from '@nestjs/common';
 import { AuthGuard, AuthedRequest } from 'src/auth/auth.guard';
-import { CreateSupportTicketDto, ReplySupportTicketDto } from './dto';
+import {
+  AskAiSupportDto,
+  CreateSupportTicketDto,
+  ReplySupportTicketDto,
+} from './dto';
 import { SupportService } from './support.service';
 
 @UseGuards(AuthGuard)
@@ -9,7 +21,9 @@ export class SupportController {
   constructor(private readonly support: SupportService) {}
 
   @Get()
-  list(@Req() req: AuthedRequest) { return this.support.listForUser(req.user.userId); }
+  list(@Req() req: AuthedRequest) {
+    return this.support.listForUser(req.user.userId);
+  }
 
   @Post()
   create(@Req() req: AuthedRequest, @Body() dto: CreateSupportTicketDto) {
@@ -22,7 +36,10 @@ export class SupportController {
   }
 
   @Post('ticket')
-  createTicketAlias(@Req() req: AuthedRequest, @Body() dto: CreateSupportTicketDto) {
+  createTicketAlias(
+    @Req() req: AuthedRequest,
+    @Body() dto: CreateSupportTicketDto,
+  ) {
     return this.support.create(req.user.userId, dto);
   }
 
@@ -32,13 +49,20 @@ export class SupportController {
   }
 
   @Post(':id/replies')
-  reply(@Req() req: AuthedRequest, @Param('id') id: string, @Body() dto: ReplySupportTicketDto) {
+  reply(
+    @Req() req: AuthedRequest,
+    @Param('id') id: string,
+    @Body() dto: ReplySupportTicketDto,
+  ) {
     return this.support.replyForUser(req.user.userId, id, dto);
   }
 
   @Post('ai')
-  askAi(@Req() req: AuthedRequest, @Body() body: { message: string; ticketId?: string }) {
-    return this.support.askAi(req.user.userId, body.message?.trim() ?? '', body.ticketId);
+  askAi(@Req() req: AuthedRequest, @Body() body: AskAiSupportDto) {
+    return this.support.askAi(
+      req.user.userId,
+      body.message.trim(),
+      body.ticketId,
+    );
   }
-
 }

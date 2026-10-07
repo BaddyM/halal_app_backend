@@ -5,11 +5,12 @@ import {
     UnauthorizedException,
     NotFoundException,
     ConflictException,
+    ServiceUnavailableException,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import * as bcrypt from 'bcryptjs';
-import { randomUUID } from 'crypto';
+import { randomInt, randomUUID } from 'crypto';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { RealtimeBus } from 'src/realtime/realtime.bus';
 import { MailService } from '../mail/mail.service';
@@ -30,7 +31,7 @@ export class AuthService {
         private readonly sms: SmsService,
     ) {}
 
-    private logCode(kind: 'verify' | 'reset' | 'otp', email: string, code: string) {
+    private logCode(kind: 'verify' | 'reset' | 'otp' | 'admin-login', email: string, code: string) {
         if (this.config.get('MODE') === 'Dev') {
             this.logger.log(
                 `📬 [${kind}] ${email} → code: ${code} (dev only — email delivery not configured)`,
@@ -48,7 +49,46 @@ export class AuthService {
     }
 
     private generateCode(): string {
-        return Math.floor(100000 + Math.random() * 900000).toString();
+        return randomInt(100000, 1_000_000).toString();
+    }
+
+    private async issueAdminLoginChallenge(userId: string, email: string) {
+        const code = this.generateCode();
+        const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
+        const now = new Date();
+        await this.prisma.adminLoginChallenge.deleteMany({
+            where: { expiresAt: { lte: now } },
+        });
+        await this.prisma.adminLoginChallenge.updateMany({
+            where: { userId, usedAt: null },
+            data: { usedAt: now },
+        });
+        const challenge = await this.prisma.adminLoginChallenge.create({
+            data: {
+                userId,
+                codeHash: await this.hash(code),
+                expiresAt,
+            },
+            select: { id: true },
+        });
+        try {
+            await this.mail.sendAdminLoginCode(email, code);
+        } catch (error) {
+            await this.prisma.adminLoginChallenge.updateMany({
+                where: { id: challenge.id, usedAt: null },
+                data: { usedAt: new Date() },
+            });
+            this.logger.error('Admin login code delivery failed');
+            throw new ServiceUnavailableException(
+                'Could not send the admin sign-in code. Please try again later.',
+            );
+        }
+        this.logCode('admin-login', email, code);
+        return {
+            requiresAdminOtp: true as const,
+            challengeId: challenge.id,
+            ...(this.config.get('MODE') === 'Dev' ? { otpCode: code } : {}),
+        };
     }
 
     private async issueTokens(userId: string, email: string) {
@@ -159,8 +199,83 @@ export class AuthService {
         });
         if (shouldBeAdmin) user.role = 'admin';
 
+        if (user.role === 'admin') {
+            return this.issueAdminLoginChallenge(user.id, user.email);
+        }
+
         const tokens = await this.issueTokens(user.id, user.email);
         return { user: this.sanitizeUser(user), ...tokens };
+    }
+
+    async verifyAdminLogin(challengeId: string, code: string) {
+        const now = new Date();
+        const challenge = await this.prisma.adminLoginChallenge.findUnique({
+            where: { id: challengeId },
+            include: { user: true },
+        });
+        if (
+            !challenge ||
+            challenge.usedAt ||
+            challenge.expiresAt <= now ||
+            challenge.attempts >= 5 ||
+            !challenge.user.isActive ||
+            challenge.user.role !== 'admin'
+        ) {
+            throw new UnauthorizedException('Invalid or expired admin sign-in code');
+        }
+
+        if (!(await this.compare(code, challenge.codeHash))) {
+            await this.prisma.adminLoginChallenge.updateMany({
+                where: {
+                    id: challenge.id,
+                    userId: challenge.userId,
+                    attempts: challenge.attempts,
+                    usedAt: null,
+                    expiresAt: { gt: now },
+                },
+                data: {
+                    attempts: { increment: 1 },
+                    ...(challenge.attempts + 1 >= 5 && { usedAt: now }),
+                },
+            });
+            throw new UnauthorizedException('Invalid or expired admin sign-in code');
+        }
+
+        const consumed = await this.prisma.adminLoginChallenge.updateMany({
+            where: {
+                id: challenge.id,
+                userId: challenge.userId,
+                attempts: challenge.attempts,
+                usedAt: null,
+                expiresAt: { gt: now },
+            },
+            data: { usedAt: now },
+        });
+        if (consumed.count !== 1) {
+            throw new UnauthorizedException('Invalid or expired admin sign-in code');
+        }
+
+        const tokens = await this.issueTokens(challenge.user.id, challenge.user.email);
+        return { user: this.sanitizeUser(challenge.user), ...tokens };
+    }
+
+    async resendAdminLogin(challengeId: string) {
+        const now = new Date();
+        const challenge = await this.prisma.adminLoginChallenge.findUnique({
+            where: { id: challengeId },
+            include: { user: true },
+        });
+        if (
+            !challenge ||
+            challenge.usedAt ||
+            challenge.expiresAt <= now ||
+            challenge.attempts >= 5 ||
+            !challenge.user.isActive ||
+            challenge.user.role !== 'admin'
+        ) {
+            throw new UnauthorizedException('Admin sign-in challenge is no longer valid');
+        }
+        return this.issueAdminLoginChallenge(challenge.userId, challenge.user.email);
     }
 
     // ── phone OTP (passwordless login + phone verification) ─────
@@ -318,6 +433,11 @@ export class AuthService {
         if (user.isEmailVerified) return { success: true };
 
         const code = this.generateCode();
+        const now = new Date();
+        await this.prisma.emailVerificationToken.updateMany({
+            where: { userId: user.id, consumedAt: null },
+            data: { consumedAt: now },
+        });
         await this.prisma.emailVerificationToken.create({
             data: {
                 userId: user.id,
@@ -326,7 +446,14 @@ export class AuthService {
             },
         });
         this.logCode('verify', user.email, code);
-        await this.mail.sendCodeEmail(user.email, code, 'verify');
+        try {
+            await this.mail.sendCodeEmail(user.email, code, 'verify');
+        } catch (error) {
+            this.logger.error(
+                `Verification email delivery failed (${error instanceof Error ? error.name : 'unknown error'})`,
+            );
+            throw error;
+        }
 
         return {
             success: true,

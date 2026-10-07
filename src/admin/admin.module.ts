@@ -16,6 +16,8 @@ import { AdminCatalogService } from './admin-catalog.service';
 import { AdminInsightsController } from './admin-insights.controller';
 import { AdminInsightsService } from './admin-insights.service';
 import { AdminGateway } from './admin.gateway';
+import { AdminAiController } from './admin-ai.controller';
+import { AiService } from 'src/chat/ai.service';
 
 @Module({
   imports: [AuthModule, MailModule],
@@ -27,6 +29,7 @@ import { AdminGateway } from './admin.gateway';
     AdminMessagingController,
     AdminCatalogController,
     AdminInsightsController,
+    AdminAiController,
   ],
   providers: [
     AdminGuard,
@@ -37,6 +40,7 @@ import { AdminGateway } from './admin.gateway';
     AdminCatalogService,
     AdminInsightsService,
     AdminGateway,
+    AiService,
   ],
 })
 export class AdminModule {}

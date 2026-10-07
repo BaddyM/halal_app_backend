@@ -15,6 +15,7 @@ import { SmsService } from 'src/mail/sms.service';
 import { WaliService } from 'src/wali/wali.service';
 import { AiService } from './ai.service';
 import { containsFlaggedWord } from './moderation';
+import { generalAiHelpTopic, isBareGreeting } from 'src/support/ai-safety';
 
 const ONLINE_WINDOW_MS = 5 * 60 * 1000;
 
@@ -34,6 +35,36 @@ export class ChatService implements OnModuleInit {
   // Bot user configuration
   private botUserId: string | null = null;
   private pendingReports = new Map<string, string>(); // conversationId -> reportId
+
+  private async replyToBotMessage(message: string) {
+    if (isBareGreeting(message)) {
+      return {
+        reply:
+          'Wa alaikum assalam. I can help with general app questions. For account-specific help, please open Help & Support.',
+        escalate: false,
+      };
+    }
+    const topic = generalAiHelpTopic(message);
+    if (topic == null) {
+      return {
+        reply:
+          'For your privacy, this message was not sent to the AI assistant. Please open Help & Support to contact a support handler.',
+        escalate: false,
+      };
+    }
+    const result = await this.ai.analyzeAndReply(
+      `Give concise, general app guidance about ${topic}.`,
+      { topic },
+    );
+    if (result.escalate) {
+      return {
+        reply:
+          'This question needs a support handler. Please open Help & Support so your request reaches the right team.',
+        escalate: false,
+      };
+    }
+    return result;
+  }
 
   async onModuleInit() {
     const botEmail = process.env.BOT_EMAIL || 'halal-bot@local';
@@ -395,7 +426,9 @@ export class ChatService implements OnModuleInit {
         type,
       )
       .catch((error) => {
-        this.logger.error(`Instant Wali email delivery failed: ${String(error)}`);
+        this.logger.error(
+          `Instant Wali email delivery failed: ${String(error)}`,
+        );
       });
 
     const other = conv.userAId === userId ? conv.userBId : conv.userAId;
@@ -462,8 +495,7 @@ export class ChatService implements OnModuleInit {
         const prompt = clean.replace(command, '').trim() || 'Hello';
         if (this.botUserId) {
           // Use analyzeAndReply so AI can decide whether to escalate
-          const context = { conversationId, senderId: userId };
-          const result = await this.ai.analyzeAndReply(prompt, context);
+          const result = await this.replyToBotMessage(prompt);
           const reply = result.reply;
           const botMsg = await this.prisma.message.create({
             data: {
@@ -532,8 +564,7 @@ export class ChatService implements OnModuleInit {
     // Auto-reply when the other participant is the bot (direct chat with bot)
     try {
       if (this.botUserId && other === this.botUserId) {
-        const context = { conversationId, senderId: userId };
-        const result = await this.ai.analyzeAndReply(clean, context);
+        const result = await this.replyToBotMessage(clean);
         const reply = result.reply;
         const botMsg = await this.prisma.message.create({
           data: {
@@ -570,9 +601,15 @@ export class ChatService implements OnModuleInit {
     return { ...this.serializeMessage(msg), isMine: true };
   }
 
-  async deleteMessage(userId: string, conversationId: string, messageId: string) {
+  async deleteMessage(
+    userId: string,
+    conversationId: string,
+    messageId: string,
+  ) {
     await this.assertMembership(userId, conversationId);
-    const message = await this.prisma.message.findUnique({ where: { id: messageId } });
+    const message = await this.prisma.message.findUnique({
+      where: { id: messageId },
+    });
     if (!message || message.conversationId !== conversationId) {
       throw new NotFoundException('Message not found');
     }

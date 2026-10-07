@@ -1,79 +1,135 @@
-import { Injectable, Logger } from '@nestjs/common';
+import {
+  Injectable,
+  HttpException,
+  HttpStatus,
+  Logger,
+  ServiceUnavailableException,
+} from '@nestjs/common';
 @Injectable()
 export class AiService {
   private readonly logger = new Logger(AiService.name);
 
-  private minuteWindowStart = 0;
-  private minuteCount = 0;
-  private dayWindowStart = 0;
-  private dayCount = 0;
+  private static minuteWindowStart = 0;
+  private static minuteCount = 0;
+  private static dayWindowStart = '';
+  private static dayCount = 0;
 
-  private perMinuteLimit: number;
-  private dailyLimit: number;
+  private readonly perMinuteLimit: number;
+  private readonly dailyLimit: number;
   private readonly model: string;
   private readonly requestTimeoutMs = 12_000;
 
   constructor() {
-    this.perMinuteLimit = parseInt(process.env.GEMINI_PER_MINUTE_LIMIT || '') || 60;
-    this.dailyLimit = parseInt(process.env.GEMINI_DAILY_LIMIT || '') || 1000;
-    this.model = process.env.GEMINI_MODEL || 'gemini-2.0-flash';
+    this.perMinuteLimit =
+      parseInt(process.env.GEMINI_PER_MINUTE_LIMIT || '') || 10;
+    this.dailyLimit = parseInt(process.env.GEMINI_DAILY_LIMIT || '') || 100;
+    this.model = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
     this.resetIfNeeded();
   }
 
   private resetIfNeeded() {
     const now = Date.now();
-    if (now - this.minuteWindowStart > 60_000) {
-      this.minuteWindowStart = now;
-      this.minuteCount = 0;
+    if (now - AiService.minuteWindowStart > 60_000) {
+      AiService.minuteWindowStart = now;
+      AiService.minuteCount = 0;
     }
-    const today = new Date().setHours(0, 0, 0, 0);
-    if (this.dayWindowStart !== today) {
-      this.dayWindowStart = today;
-      this.dayCount = 0;
+    const today = new Intl.DateTimeFormat('en-US', {
+      timeZone: 'America/Los_Angeles',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }).format(new Date());
+    if (AiService.dayWindowStart !== today) {
+      AiService.dayWindowStart = today;
+      AiService.dayCount = 0;
     }
   }
 
-  private consumeToken(cost = 1) {
+  private consumeBudgetUnits(cost = 1) {
     this.resetIfNeeded();
-    if (this.minuteCount + cost > this.perMinuteLimit) {
-      throw new Error('AI per-minute quota exceeded');
+    if (AiService.minuteCount + cost > this.perMinuteLimit) {
+      throw new HttpException(
+        'AI is temporarily at its per-minute limit. Please wait and try again.',
+        HttpStatus.TOO_MANY_REQUESTS,
+      );
     }
-    if (this.dayCount + cost > this.dailyLimit) {
-      throw new Error('AI daily quota exceeded');
+    if (AiService.dayCount + cost > this.dailyLimit) {
+      throw new HttpException(
+        'AI has reached its daily usage limit. Please contact human support.',
+        HttpStatus.TOO_MANY_REQUESTS,
+      );
     }
-    this.minuteCount += cost;
-    this.dayCount += cost;
+    AiService.minuteCount += cost;
+    AiService.dayCount += cost;
+  }
+
+  private responseText(data: any): string {
+    const parts = data?.candidates?.[0]?.content?.parts;
+    if (Array.isArray(parts)) {
+      return parts
+        .map((part: { text?: unknown }) => String(part?.text ?? ''))
+        .join('')
+        .trim();
+    }
+    return String(
+      data?.output?.[0]?.content?.[0]?.text ?? data?.output?.[0]?.content ?? '',
+    ).trim();
   }
 
   async generate(prompt: string): Promise<string> {
-    this.consumeToken(1);
-
     const apiKey = process.env.GEMINI_API_KEY;
     if (!apiKey) {
       this.logger.warn('GEMINI_API_KEY not configured');
-      return 'Sorry, AI is not configured.';
+      throw new ServiceUnavailableException(
+        'Gemini is not configured on the backend.',
+      );
     }
+    this.consumeBudgetUnits(1);
 
     try {
       const res = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/${this.model}:generateContent?key=${encodeURIComponent(apiKey)}`,
+        `https://generativelanguage.googleapis.com/v1beta/models/${this.model}:generateContent`,
         {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] }),
+          headers: {
+            'Content-Type': 'application/json',
+            'x-goog-api-key': apiKey,
+          },
+          body: JSON.stringify({
+            contents: [{ role: 'user', parts: [{ text: prompt }] }],
+            generationConfig: { maxOutputTokens: 800, temperature: 0.4 },
+          }),
           signal: AbortSignal.timeout(this.requestTimeoutMs),
         },
       );
       const data = await res.json();
       if (!res.ok) {
-        this.logger.error(`Gemini generate failed (${res.status}): ${JSON.stringify(data)}`);
-        return 'Sorry, AI is temporarily unavailable.';
+        this.logger.error(
+          `Gemini generate failed (${res.status}): ${JSON.stringify(data)}`,
+        );
+        if (res.status === 429) {
+          throw new HttpException(
+            'Gemini has reached its current free-tier limit. Please wait and try again.',
+            HttpStatus.TOO_MANY_REQUESTS,
+          );
+        }
+        throw new ServiceUnavailableException(
+          'Gemini is temporarily unavailable. Please try again later.',
+        );
       }
-      const text = data?.candidates?.[0]?.content?.[0]?.text || data?.output?.[0]?.content?.[0]?.text || JSON.stringify(data);
-      return String(text);
+      const text = this.responseText(data);
+      if (!text) {
+        throw new ServiceUnavailableException(
+          'Gemini returned an empty response. Please try again.',
+        );
+      }
+      return text;
     } catch (err) {
+      if (err instanceof HttpException) throw err;
       this.logger.error('AI generate failed', err as any);
-      return 'Sorry, AI is temporarily unavailable.';
+      throw new ServiceUnavailableException(
+        'Gemini is temporarily unavailable. Please try again later.',
+      );
     }
   }
 
@@ -82,45 +138,90 @@ export class AiService {
    * whether to escalate to admin. The model SHOULD respond with JSON
    * object: { reply: string, escalate: boolean, reason?: string }
    */
-  async analyzeAndReply(prompt: string, contextJson?: any): Promise<{ reply: string; escalate: boolean; reason?: string }> {
-    this.consumeToken(2);
+  async analyzeAndReply(
+    prompt: string,
+    contextJson?: any,
+  ): Promise<{ reply: string; escalate: boolean; reason?: string }> {
     const apiKey = process.env.GEMINI_API_KEY;
     if (!apiKey) {
       this.logger.warn('GEMINI_API_KEY not configured');
       return { reply: 'Sorry, AI is not configured.', escalate: false };
     }
-    const system = `You are Halal Connect support assistant. Given the user message and context, produce a JSON object exactly with keys: reply (string), escalate (true/false), reason (optional short string). Only set escalate to true when human intervention is required (security, payment, account ownership, moderation, unclear/confusing). Keep reply concise.`;
+    try {
+      this.consumeBudgetUnits(2);
+    } catch (err) {
+      if (
+        err instanceof HttpException &&
+        err.getStatus() === HttpStatus.TOO_MANY_REQUESTS
+      ) {
+        return {
+          reply:
+            'AI support is at its current usage limit. A support handler will review this request.',
+          escalate: true,
+          reason: 'AI usage limit reached',
+        };
+      }
+      throw err;
+    }
+    const system = `You are Halal Connect support assistant. You receive only a predefined general-help topic, never a user's message, account, or conversation history. Give concise general app guidance, do not request personal information, and direct any account-specific, payment, health, identity, or safety issue to human support. Produce JSON exactly with keys: reply (string), escalate (true/false), reason (optional short string).`;
     const body = {
+      systemInstruction: { parts: [{ text: system }] },
       contents: [
-        { parts: [{ text: system }] },
-        { parts: [{ text: `Context: ${JSON.stringify(contextJson || {})}` }] },
-        { parts: [{ text: `User: ${prompt}` }] },
-        { parts: [{ text: `Respond with JSON: {"reply":"...","escalate":true|false,"reason":"..."}` }] },
+        {
+          role: 'user',
+          parts: [
+            {
+              text: `Context: ${JSON.stringify(contextJson || {})}\nQuestion: ${prompt}\nRespond with JSON: {"reply":"...","escalate":true|false,"reason":"..."}`,
+            },
+          ],
+        },
       ],
+      generationConfig: {
+        responseMimeType: 'application/json',
+        maxOutputTokens: 700,
+        temperature: 0.3,
+      },
     };
 
     try {
       const res = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/${this.model}:generateContent?key=${encodeURIComponent(apiKey)}`,
+        `https://generativelanguage.googleapis.com/v1beta/models/${this.model}:generateContent`,
         {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: {
+            'Content-Type': 'application/json',
+            'x-goog-api-key': apiKey,
+          },
           body: JSON.stringify(body),
           signal: AbortSignal.timeout(this.requestTimeoutMs),
         },
       );
       const data = await res.json();
       if (!res.ok) {
-        this.logger.error(`Gemini analysis failed (${res.status}): ${JSON.stringify(data)}`);
-        return { reply: 'Sorry, AI is temporarily unavailable.', escalate: false };
+        this.logger.error(
+          `Gemini analysis failed (${res.status}): ${JSON.stringify(data)}`,
+        );
+        return {
+          reply: 'Sorry, AI is temporarily unavailable.',
+          escalate: false,
+        };
       }
-      const text = data?.candidates?.[0]?.content?.[0]?.text || data?.output?.[0]?.content?.[0]?.text || JSON.stringify(data);
-      // Try to extract JSON object from the text
+      const text = this.responseText(data);
+      if (!text) {
+        return {
+          reply: 'Sorry, AI is temporarily unavailable.',
+          escalate: false,
+        };
+      }
       const jsonStart = text.indexOf('{');
       const jsonText = jsonStart >= 0 ? text.slice(jsonStart) : text;
       try {
         const parsed = JSON.parse(jsonText);
-        return { reply: String(parsed.reply ?? ''), escalate: !!parsed.escalate, reason: parsed.reason };
+        return {
+          reply: String(parsed.reply ?? ''),
+          escalate: !!parsed.escalate,
+          reason: parsed.reason,
+        };
       } catch (e) {
         // Fallback: return full text as reply, no escalation
         return { reply: String(text), escalate: false };

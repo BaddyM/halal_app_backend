@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { AiService } from 'src/chat/ai.service';
+import { generalAiHelpTopic, isBareGreeting } from './ai-safety';
 import {
   CreatePublicSupportTicketDto,
   CreateSupportTicketDto,
@@ -10,7 +11,10 @@ import {
 
 @Injectable()
 export class SupportService {
-  constructor(private readonly prisma: PrismaService, private readonly ai: AiService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly ai: AiService,
+  ) {}
 
   /// The admin console tracks three states; the backend stores five. Collapse
   /// for display so badges, filters and counts resolve, and keep the precise
@@ -102,13 +106,22 @@ export class SupportService {
     return this.serialize(ticket);
   }
 
-  async replyForUser(userId: string, ticketId: string, dto: ReplySupportTicketDto) {
-    const ticket = await this.prisma.supportTicket.findFirst({ where: { id: ticketId, userId } });
+  async replyForUser(
+    userId: string,
+    ticketId: string,
+    dto: ReplySupportTicketDto,
+  ) {
+    const ticket = await this.prisma.supportTicket.findFirst({
+      where: { id: ticketId, userId },
+    });
     if (!ticket) throw new NotFoundException('Support ticket not found');
     await this.prisma.supportTicketMessage.create({
       data: { ticketId, body: dto.body, fromAdmin: false },
     });
-    await this.prisma.supportTicket.update({ where: { id: ticketId }, data: { status: 'open' } });
+    await this.prisma.supportTicket.update({
+      where: { id: ticketId },
+      data: { status: 'open' },
+    });
     return this.getForUser(userId, ticketId);
   }
 
@@ -138,9 +151,15 @@ export class SupportService {
     const tickets = await this.prisma.supportTicket.findMany({
       where: statusFilter,
       orderBy: { updatedAt: 'desc' },
-      include: { user: { select: { id: true, name: true, email: true } }, messages: { orderBy: { createdAt: 'asc' } } },
+      include: {
+        user: { select: { id: true, name: true, email: true } },
+        messages: { orderBy: { createdAt: 'asc' } },
+      },
     });
-    return tickets.map((ticket) => ({ ...this.serialize(ticket), user: ticket.user }));
+    return tickets.map((ticket) => ({
+      ...this.serialize(ticket),
+      user: ticket.user,
+    }));
   }
 
   /// Inverse of displayStatus: turns the console's three-state vocabulary into
@@ -152,24 +171,42 @@ export class SupportService {
   async updateForAdmin(ticketId: string, dto: UpdateSupportTicketDto) {
     const ticket = await this.prisma.supportTicket.update({
       where: { id: ticketId },
-      data: { ...(dto.status !== undefined && { status: this.storedStatus(dto.status) }), ...(dto.priority !== undefined && { priority: dto.priority }) },
-      include: { user: { select: { id: true, name: true, email: true } }, messages: { orderBy: { createdAt: 'asc' } } },
+      data: {
+        ...(dto.status !== undefined && {
+          status: this.storedStatus(dto.status),
+        }),
+        ...(dto.priority !== undefined && { priority: dto.priority }),
+      },
+      include: {
+        user: { select: { id: true, name: true, email: true } },
+        messages: { orderBy: { createdAt: 'asc' } },
+      },
     });
     return { ...this.serialize(ticket), user: ticket.user };
   }
 
   async replyForAdmin(ticketId: string, dto: ReplySupportTicketDto) {
-    const ticket = await this.prisma.supportTicket.findUnique({ where: { id: ticketId } });
+    const ticket = await this.prisma.supportTicket.findUnique({
+      where: { id: ticketId },
+    });
     if (!ticket) throw new NotFoundException('Support ticket not found');
-    await this.prisma.supportTicketMessage.create({ data: { ticketId, body: dto.body, fromAdmin: true } });
-    await this.prisma.supportTicket.update({ where: { id: ticketId }, data: { status: 'waitingForUser' } });
+    await this.prisma.supportTicketMessage.create({
+      data: { ticketId, body: dto.body, fromAdmin: true },
+    });
+    await this.prisma.supportTicket.update({
+      where: { id: ticketId },
+      data: { status: dto.close ? 'closed' : 'waitingForUser' },
+    });
     return this.getAdmin(ticketId);
   }
 
   async getAdmin(ticketId: string) {
     const ticket = await this.prisma.supportTicket.findUnique({
       where: { id: ticketId },
-      include: { user: { select: { id: true, name: true, email: true } }, messages: { orderBy: { createdAt: 'asc' } } },
+      include: {
+        user: { select: { id: true, name: true, email: true } },
+        messages: { orderBy: { createdAt: 'asc' } },
+      },
     });
     if (!ticket) throw new NotFoundException('Support ticket not found');
     return { ...this.serialize(ticket), user: ticket.user };
@@ -177,32 +214,58 @@ export class SupportService {
 
   async askAi(userId: string, body: string, ticketId?: string) {
     let ticket = ticketId
-      ? await this.prisma.supportTicket.findFirst({ where: { id: ticketId, userId, category: 'ai' } })
-      : await this.prisma.supportTicket.findFirst({ where: { userId, category: 'ai', status: { not: 'closed' } }, orderBy: { updatedAt: 'desc' } });
+      ? await this.prisma.supportTicket.findFirst({
+          where: { id: ticketId, userId, category: 'ai' },
+        })
+      : await this.prisma.supportTicket.findFirst({
+          where: { userId, category: 'ai', status: { not: 'closed' } },
+          orderBy: { updatedAt: 'desc' },
+        });
     if (!ticket) {
       ticket = await this.prisma.supportTicket.create({
-        data: { userId, subject: 'AI Support', category: 'ai', priority: 'normal' },
+        data: {
+          userId,
+          subject: 'AI Support',
+          category: 'ai',
+          priority: 'normal',
+        },
       });
     }
-    await this.prisma.supportTicketMessage.create({ data: { ticketId: ticket.id, body, fromAdmin: false } });
-    const history = await this.prisma.supportTicketMessage.findMany({ where: { ticketId: ticket.id }, orderBy: { createdAt: 'asc' }, take: 12 });
+    await this.prisma.supportTicketMessage.create({
+      data: { ticketId: ticket.id, body, fromAdmin: false },
+    });
+    const history = await this.prisma.supportTicketMessage.findMany({
+      where: { ticketId: ticket.id },
+      orderBy: { createdAt: 'desc' },
+      take: 13,
+    });
     const userQuestionCount = history.filter((item) => !item.fromAdmin).length;
-    const greeting = /^(hi|hello|hey|salam|assalamu alaikum)\b/i.test(body.trim());
+    const greeting = isBareGreeting(body);
+    const topic = generalAiHelpTopic(body);
     const result = greeting
       ? {
-          reply: 'Wa alaikum assalam. Welcome to Halal Connect support. How can I help you today?',
+          reply:
+            'Wa alaikum assalam. Welcome to Halal Connect support. How can I help you today?',
           escalate: false,
         }
       : userQuestionCount > 6
+        ? {
+            reply:
+              'I have shared this conversation with our support handler. They will reply soon, so there is no need to send more messages for now.',
+            escalate: true,
+          }
+        : topic == null
           ? {
-              reply: 'I have shared this conversation with our support handler. They will reply soon, so there is no need to send more messages for now.',
+              reply:
+                'For your privacy, this message was not sent to the AI assistant. A support handler will review your request and reply here.',
               escalate: true,
             }
-          : await this.ai.analyzeAndReply(body, {
-              supportTicketId: ticket.id,
-              history: history.map((item) => ({ fromAdmin: item.fromAdmin, body: item.body })),
-            });
-    const unavailable = result.reply.toLowerCase().includes('ai is not configured') ||
+          : await this.ai.analyzeAndReply(
+              `Give concise, general app guidance about ${topic}.`,
+              { topic },
+            );
+    const unavailable =
+      result.reply.toLowerCase().includes('ai is not configured') ||
       result.reply.toLowerCase().includes('ai is temporarily unavailable') ||
       result.reply.toLowerCase().includes('ai is unavailable');
     const finalResult = unavailable
@@ -213,8 +276,13 @@ export class SupportService {
           escalate: true,
         }
       : result;
-    await this.prisma.supportTicketMessage.create({ data: { ticketId: ticket.id, body: finalResult.reply, fromAdmin: true } });
-    await this.prisma.supportTicket.update({ where: { id: ticket.id }, data: { status: finalResult.escalate ? 'waitingForUser' : 'open' } });
+    await this.prisma.supportTicketMessage.create({
+      data: { ticketId: ticket.id, body: finalResult.reply, fromAdmin: true },
+    });
+    await this.prisma.supportTicket.update({
+      where: { id: ticket.id },
+      data: { status: finalResult.escalate ? 'waitingForUser' : 'open' },
+    });
     return this.getForUser(userId, ticket.id);
   }
 }

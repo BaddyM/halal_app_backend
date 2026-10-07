@@ -74,8 +74,8 @@ export class AdminMessagingService {
     return { sent: targets.length };
   }
 
-  /// Broadcast an announcement: live in-app banner (admin:broadcast) for
-  /// connected clients + inbox record + push for the targeted audience.
+  /// Broadcast an announcement to the recipient-scoped activity feed, sockets,
+  /// and push notifications. Support inbox messages remain a separate workflow.
   async broadcast(
     title: string,
     message: string,
@@ -87,6 +87,20 @@ export class AdminMessagingService {
     const direct = !!userIds?.length;
     const segment = direct ? undefined : (audience ?? 'all');
     const targets = await this.resolveTargets(userIds, segment);
+
+    const broadcast = await this.prisma.broadcast.create({
+      data: {
+        title,
+        message,
+        audience: direct ? 'selected' : (audience ?? 'all'),
+        reach: targets.length,
+        recipients: {
+          createMany: {
+            data: targets.map((userId) => ({ userId })),
+          },
+        },
+      },
+    });
 
     if (segment === 'all') {
       // Whole-population send — one cheap fan-out to every open socket.
@@ -100,29 +114,18 @@ export class AdminMessagingService {
     }
 
     if (targets.length > 0) {
-      await this.prisma.inboxMessage.createMany({
-        data: targets.map((userId) => ({
-          userId,
-          fromAdmin: true,
-          subject: title,
-          body: message,
-        })),
-      });
       for (const userId of targets) {
-        this.realtime.emitToUser(userId, 'notification:new', { kind: 'broadcast' });
-        void this.push.sendToUser(userId, { title, body: message, data: { type: 'broadcast' } });
+        this.realtime.emitToUser(userId, 'notification:new', {
+          kind: 'broadcast',
+          broadcastId: broadcast.id,
+        });
+        void this.push.sendToUser(userId, {
+          title,
+          body: message,
+          data: { type: 'broadcast', broadcastId: broadcast.id },
+        });
       }
     }
-
-    // Persist to the broadcast history shown in the dashboard.
-    await this.prisma.broadcast.create({
-      data: {
-        title,
-        message,
-        audience: direct ? `direct:${targets.length}` : (audience ?? 'all'),
-        reach: targets.length,
-      },
-    });
 
     return { sent: targets.length };
   }

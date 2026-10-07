@@ -17,7 +17,7 @@ export class MailService {
   private readonly resendFrom: string;
 
   constructor(private readonly config: ConfigService) {
-    const host = this.config.get<string>('MAIL_HOST');
+    const host = this.config.get<string>('MAIL_HOST')?.trim();
     const user = this.config.get<string>('MAIL_USER');
     const pass = this.config.get<string>('MAIL_PASS');
     this.resendApiKey =
@@ -31,13 +31,17 @@ export class MailService {
     this.fromName = this.config.get<string>('MAIL_FROM_NAME') ?? 'Halal Connect';
 
     if (host && user && pass) {
+      const smtpPassword =
+        host.toLowerCase() === 'smtp.gmail.com'
+          ? pass.replace(/\s/g, '')
+          : pass;
       this.transporter = nodemailer.createTransport({
         host,
         port: Number(this.config.get<string>('MAIL_PORT') ?? '587'),
         secure:
           this.config.get<string>('MAIL_SECURE') === 'true' ||
           this.config.get<string>('MAIL_SECURE') === '1',
-        auth: { user, pass },
+        auth: { user: user.trim(), pass: smtpPassword },
       });
     } else {
       this.transporter = null;
@@ -75,15 +79,27 @@ export class MailService {
       return { accepted: [args.to], rejected: [], messageId: null };
     }
 
-    const info = await this.transporter.sendMail({
-      from: `${this.fromName} <${this.fromAddress}>`,
-      to: args.to,
-      subject: args.subject,
-      html: args.html,
-      text: args.text,
-    });
-
-    return info;
+    try {
+      return await this.transporter.sendMail({
+        from: `${this.fromName} <${this.fromAddress}>`,
+        to: args.to,
+        subject: args.subject,
+        html: args.html,
+        text: args.text,
+      });
+    } catch (error) {
+      const code =
+        typeof error === 'object' &&
+        error !== null &&
+        'code' in error &&
+        typeof error.code === 'string'
+          ? error.code
+          : 'SMTP_ERROR';
+      this.logger.error(`SMTP email delivery failed (${code})`);
+      throw new ServiceUnavailableException(
+        'Email delivery is temporarily unavailable. Please try again later.',
+      );
+    }
   }
 
   async sendResendMail(args: {
@@ -156,6 +172,23 @@ export class MailService {
       subject,
       html,
       text: `${appName} code: ${code}`,
+    });
+  }
+
+  async sendAdminLoginCode(to: string, code: string) {
+    const appName = this.config.get<string>('APP_NAME') ?? 'Halal Connect';
+    return this.sendMail({
+      to,
+      subject: `${appName} admin sign-in code`,
+      html: `
+        <div style="font-family: Arial, sans-serif; max-width: 560px; margin: 0 auto;">
+          <h2>${this.escapeHtml(appName)} admin sign-in</h2>
+          <p>Enter this one-time code to finish signing in:</p>
+          <div style="font-size: 32px; font-weight: 700; letter-spacing: 4px; margin: 20px 0;">${code}</div>
+          <p>This code expires in 10 minutes. If you did not request it, change your password.</p>
+        </div>
+      `,
+      text: `${appName} admin sign-in code: ${code}. It expires in 10 minutes.`,
     });
   }
 

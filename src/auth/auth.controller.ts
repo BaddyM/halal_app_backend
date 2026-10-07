@@ -13,6 +13,8 @@ import {
     OAuthLoginDto,
     SendOtpDto,
     VerifyOtpDto,
+    VerifyAdminLoginDto,
+    ResendAdminLoginDto,
 } from './dto';
 
 @Controller('auth')
@@ -38,6 +40,20 @@ export class AuthController {
     @Post('login')
     login(@Body() dto: LoginDto) {
         return this.auth.login(dto.email, dto.password);
+    }
+
+    @Throttle({ default: { ttl: 600_000, limit: 5 } })
+    @Post('admin-login/verify')
+    @HttpCode(HttpStatus.OK)
+    verifyAdminLogin(@Body() dto: VerifyAdminLoginDto) {
+        return this.auth.verifyAdminLogin(dto.challengeId, dto.code);
+    }
+
+    @Throttle({ default: { ttl: 600_000, limit: 3 } })
+    @Post('admin-login/resend')
+    @HttpCode(HttpStatus.OK)
+    resendAdminLogin(@Body() dto: ResendAdminLoginDto) {
+        return this.auth.resendAdminLogin(dto.challengeId);
     }
 
     /// Passwordless phone login. Tightly throttled: sending costs real SMS

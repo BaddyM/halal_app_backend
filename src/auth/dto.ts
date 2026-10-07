@@ -31,6 +31,23 @@ export class LoginDto {
     password!: string;
 }
 
+export class VerifyAdminLoginDto {
+    @IsString()
+    @IsNotEmpty()
+    challengeId!: string;
+
+    @IsString()
+    @Length(6, 6)
+    @Matches(/^\d{6}$/)
+    code!: string;
+}
+
+export class ResendAdminLoginDto {
+    @IsString()
+    @IsNotEmpty()
+    challengeId!: string;
+}
+
 export class VerifyEmailDto {
     @IsEmail()
     email!: string;

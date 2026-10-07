@@ -214,18 +214,20 @@ model User {
   photoRequestsMade     PhotoAccessRequest[] @relation("PhotoRequester")
   photoRequestsReceived PhotoAccessRequest[] @relation("PhotoOwner")
 
-  subscription        Subscription?
-  transactions        Transaction[]
-  paymentOrders       PaymentOrder[]
-  discountRedemptions DiscountReservation[]
-  giftInventory       GiftInventory[]
-  giftsSent           GiftSent[]            @relation("GiftsSent")
-  giftsReceived       GiftSent[]            @relation("GiftsReceived")
-  wallet              WalletAccount?
-  walletTransactions  WalletTransaction[]
-  withdrawals         WithdrawalRequest[]
-  notificationReads   NotificationRead[]
-  journeySteps        JourneyStep[]
+  subscription         Subscription?
+  transactions         Transaction[]
+  paymentOrders        PaymentOrder[]
+  discountRedemptions  DiscountReservation[]
+  giftInventory        GiftInventory[]
+  giftsSent            GiftSent[]            @relation("GiftsSent")
+  giftsReceived        GiftSent[]            @relation("GiftsReceived")
+  wallet               WalletAccount?
+  walletTransactions   WalletTransaction[]
+  withdrawals          WithdrawalRequest[]
+  notificationReads    NotificationRead[]
+  broadcastRecipients  BroadcastRecipient[]
+  adminLoginChallenges AdminLoginChallenge[]
+  journeySteps         JourneyStep[]
 
   devices        Device[]
   inboxMessages  InboxMessage[]
@@ -853,6 +855,32 @@ model NotificationRead {
   @@index([userId, readAt])
 }
 
+model BroadcastRecipient {
+  id          String    @id @default(uuid())
+  broadcastId String
+  broadcast   Broadcast @relation(fields: [broadcastId], references: [id], onDelete: Cascade)
+  userId      String
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt   DateTime  @default(now())
+
+  @@unique([broadcastId, userId])
+  @@index([userId, createdAt])
+}
+
+model AdminLoginChallenge {
+  id        String    @id @default(uuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  codeHash  String
+  attempts  Int       @default(0)
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId, expiresAt])
+  @@index([expiresAt, usedAt])
+}
+
 model JourneyStep {
   id          String    @id @default(uuid())
   userId      String
@@ -1056,14 +1084,15 @@ model AppSetting {
 
 // Sent broadcast announcements (dashboard "Notifications" history).
 model Broadcast {
-  id        String   @id @default(uuid())
-  title     String
-  message   String   @db.Text
+  id         String               @id @default(uuid())
+  title      String
+  message    String               @db.Text
   // all | free | premium (the segment it targeted)
-  audience  String   @default("all") @db.VarChar(16)
+  audience   String               @default("all") @db.VarChar(16)
   // Number of users it reached at send time.
-  reach     Int      @default(0)
-  createdAt DateTime @default(now())
+  reach      Int                  @default(0)
+  createdAt  DateTime             @default(now())
+  recipients BroadcastRecipient[]
 
   @@index([createdAt])
 }
