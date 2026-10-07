@@ -9,6 +9,7 @@ import { ConfigService } from '@nestjs/config';
 import { Plan } from '@prisma/client';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { RealtimeBus } from 'src/realtime/realtime.bus';
+import { MailService } from 'src/mail/mail.service';
 import { BillingProvider } from './dto';
 
 @Injectable()
@@ -19,6 +20,7 @@ export class BillingService {
     private readonly prisma: PrismaService,
     private readonly config: ConfigService,
     private readonly realtime: RealtimeBus,
+    private readonly mail: MailService,
   ) {}
 
   private isDev() {
@@ -190,6 +192,8 @@ export class BillingService {
     plan: Plan,
     provider: BillingProvider,
     externalId?: string,
+    amountCents = plan.priceCents,
+    sendReceipt = true,
   ) {
     const end = this.periodEnd(plan.interval);
 
@@ -222,20 +226,59 @@ export class BillingService {
       },
     });
 
-    await this.prisma.transaction.create({
-      data: {
-        userId,
-        planId: plan.id,
-        provider,
-        amountCents: plan.priceCents,
-        currency: plan.currency,
-        status: 'succeeded',
-        externalId: externalId ?? null,
-      },
-    });
+    const existingTransaction = externalId
+      ? await this.prisma.transaction.findFirst({
+          where: { provider, externalId, status: 'succeeded' },
+          select: { id: true },
+        })
+      : null;
+    const transaction = existingTransaction
+      ? null
+      : await this.prisma.transaction.create({
+          data: {
+            userId,
+            planId: plan.id,
+            provider,
+            amountCents,
+            currency: plan.currency,
+            status: 'succeeded',
+            externalId: externalId ?? null,
+          },
+        });
 
     const sub = await this.getSubscription(userId);
     this.realtime.emitToUser(userId, 'subscription:updated', sub);
+
+    if (sendReceipt && transaction && amountCents > 0 && provider !== 'manual' && !this.isDev()) {
+      try {
+        const user = await this.prisma.user.findUnique({
+          where: { id: userId },
+          select: { email: true, name: true },
+        });
+        if (!user) {
+          this.logger.error(`Payment receipt skipped: user ${userId} was not found`);
+        } else {
+          const interval = plan.interval === 'once'
+            ? 'lifetime access'
+            : plan.interval === 'year'
+              ? 'annual'
+              : 'monthly';
+          await this.mail.sendPaymentReceipt({
+            to: user.email,
+            customerName: user.name,
+            itemName: `${plan.name} subscription (${interval})`,
+            amount: this.mail.formatPaymentAmount(amountCents, plan.currency),
+            provider,
+            reference: externalId ?? transaction.id,
+            purchasedAt: transaction.createdAt,
+          });
+        }
+      } catch (error) {
+        this.logger.error(
+          `Payment succeeded but receipt email failed (${error instanceof Error ? error.name : 'unknown error'})`,
+        );
+      }
+    }
 
     // Live admin feed.
     this.realtime.emitAdminEvent('payment', `New ${plan.name} subscription`, {
@@ -426,14 +469,19 @@ export class BillingService {
     return this.activate(userId, plan, provider, externalId);
   }
 
-  async activateVerifiedPesapalPlan(userId: string, planId: string, trackingId: string) {
+  async activateVerifiedPesapalPlan(
+    userId: string,
+    planId: string,
+    trackingId: string,
+    amountCents?: number,
+  ) {
     const existing = await this.prisma.transaction.findFirst({
       where: { provider: 'pesapal', externalId: trackingId, status: 'succeeded' },
       select: { id: true },
     });
     if (existing) return this.getSubscription(userId);
     const plan = await this.planOrThrow(planId);
-    return this.activate(userId, plan, 'pesapal', trackingId);
+    return this.activate(userId, plan, 'pesapal', trackingId, amountCents ?? plan.priceCents, false);
   }
 
   /// Expire/revoke a subscription (e.g. Stripe customer.subscription.deleted or

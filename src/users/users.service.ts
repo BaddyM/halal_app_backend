@@ -1298,10 +1298,10 @@ export class UsersService implements OnModuleInit {
                   ? 'male'
                   : undefined;
 
-        // Hide users the viewer has already swiped on (like / superLike / pass).
-        // They reappear only if the viewer un-likes them (not supported yet).
+        // Likes stay hidden from discovery. Passes are not persisted, so they
+        // can appear again after the current deck is refreshed.
         const alreadyActed = await this.prisma.like.findMany({
-            where: { fromUserId: viewerId },
+            where: { fromUserId: viewerId, type: { in: ['like', 'superLike'] } },
             select: { toUserId: true },
         });
         const excludedIds = new Set(alreadyActed.map((l) => l.toUserId));
@@ -1312,6 +1312,8 @@ export class UsersService implements OnModuleInit {
         const where: Prisma.UserWhereInput = {
             id: { not: viewerId, notIn: [...excludedIds] },
             isActive: true,
+            incognitoMode: false,
+            profileVisibility: 'everyone',
             profile: {
                 isComplete: true,
                 ...(oppositeGender && { gender: oppositeGender }),
@@ -1462,6 +1464,19 @@ export class UsersService implements OnModuleInit {
         });
         if (!target) throw new NotFoundException('Profile not found');
 
+        const [a, b] = [viewerId, profileUserId].sort();
+        const matched = await this.prisma.match.findUnique({
+            where: { userAId_userBId: { userAId: a, userBId: b } },
+        });
+        if (viewerId !== profileUserId) {
+            const visibleToViewer =
+                target.profileVisibility === 'everyone' ||
+                (target.profileVisibility === 'matchesOnly' && !!matched);
+            if (!visibleToViewer) {
+                throw new NotFoundException('Profile not found');
+            }
+        }
+
         const details = this.compatibilityDetails(viewer, target);
         const access = await this.privateAccessFor(viewerId, profileUserId);
         const payload: any = this.serializeProfile(
@@ -1471,8 +1486,6 @@ export class UsersService implements OnModuleInit {
             details.reasons,
             access,
         );
-        const [a, b] = [viewerId, profileUserId].sort();
-        const matched = await this.prisma.match.findUnique({ where: { userAId_userBId: { userAId: a, userBId: b } } });
         if (matched && target.phone) payload.phone = target.phone;
         return payload;
     }
@@ -1565,12 +1578,17 @@ export class UsersService implements OnModuleInit {
         });
         if (!target) throw new NotFoundException('Target user not found');
 
-        let approvedWaliRequestIds: string[] = [];
-        if (dto.type !== 'pass') {
-            const approval = await this.checkWaliApproval(viewerId, dto.toUserId, approvalAction);
-            if (approval.pending) return { success: true, matched: false, pendingApproval: true };
-            approvedWaliRequestIds = approval.approvalIds;
+        if (dto.type === 'pass') {
+            await this.prisma.like.deleteMany({
+                where: { fromUserId: viewerId, toUserId: dto.toUserId },
+            });
+            return { success: true, matched: false };
         }
+
+        let approvedWaliRequestIds: string[] = [];
+        const approval = await this.checkWaliApproval(viewerId, dto.toUserId, approvalAction);
+        if (approval.pending) return { success: true, matched: false, pendingApproval: true };
+        approvedWaliRequestIds = approval.approvalIds;
 
         const viewer = await this.resetLikesIfNeeded(viewerId);
         const subscription = await this.prisma.subscription.findUnique({
@@ -1585,13 +1603,11 @@ export class UsersService implements OnModuleInit {
             );
         }
 
-        if (dto.type !== 'pass') {
-            const likesLimit = subscription?.plan.likesLimit ?? (viewer.plan === 'basic' ? 5 : null);
-            if (likesLimit != null && viewer.likesUsedToday >= likesLimit) {
-                throw new ForbiddenException(
-                    `Like limit reached for this ${subscription?.plan.likesPeriod ?? (viewer.plan === 'basic' ? 'lifetime' : 'day')} period.`,
-                );
-            }
+        const likesLimit = subscription?.plan.likesLimit ?? (viewer.plan === 'basic' ? 5 : null);
+        if (likesLimit != null && viewer.likesUsedToday >= likesLimit) {
+            throw new ForbiddenException(
+                `Like limit reached for this ${subscription?.plan.likesPeriod ?? (viewer.plan === 'basic' ? 'lifetime' : 'day')} period.`,
+            );
         }
 
         // Upsert the like
@@ -1617,12 +1633,10 @@ export class UsersService implements OnModuleInit {
             });
         }
 
-        if (dto.type !== 'pass') {
-            await this.prisma.user.update({
-                where: { id: viewerId },
-                data: { likesUsedToday: { increment: 1 } },
-            });
-        }
+        await this.prisma.user.update({
+            where: { id: viewerId },
+            data: { likesUsedToday: { increment: 1 } },
+        });
 
         // Check for mutual match
         let matched = false;

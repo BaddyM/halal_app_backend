@@ -4,6 +4,7 @@ import { DiscountsService } from './discounts.service';
 import { PesapalService } from './pesapal.service';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { RealtimeBus } from 'src/realtime/realtime.bus';
+import { MailService } from 'src/mail/mail.service';
 
 describe('PesapalService admin configuration', () => {
   const encryptionKey = Buffer.alloc(32, 7).toString('base64');
@@ -38,6 +39,7 @@ describe('PesapalService admin configuration', () => {
       {} as BillingService,
       {} as DiscountsService,
       {} as RealtimeBus,
+      {} as MailService,
     );
     return { service, prisma, paymentOrder };
   }

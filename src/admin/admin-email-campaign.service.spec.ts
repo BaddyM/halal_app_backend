@@ -67,7 +67,9 @@ describe('AdminEmailCampaignService', () => {
   it('returns partial failures without stopping the remaining recipients', async () => {
     mail.sendResendMail
       .mockRejectedValueOnce(
-        Object.assign(new Error('SMTP failure'), { code: 'EAUTH' }),
+        Object.assign(new Error('Resend API key rejected'), {
+          code: 'RESEND_HTTP_401',
+        }),
       )
       .mockResolvedValueOnce({ accepted: [], rejected: [] });
     const input: SendEmailCampaignDto = {
@@ -81,7 +83,13 @@ describe('AdminEmailCampaignService', () => {
 
     await expect(service.send(input)).resolves.toEqual({
       sent: 1,
-      failed: [{ email: 'first@example.com', error: 'Email delivery failed' }],
+      failed: [
+        {
+          email: 'first@example.com',
+          error:
+            'Resend rejected the API key (401). Check RESEND_API_KEY on the backend.',
+        },
+      ],
     });
     expect(mail.sendResendMail).toHaveBeenCalledTimes(2);
   });
@@ -100,7 +108,13 @@ describe('AdminEmailCampaignService', () => {
       }),
     ).resolves.toEqual({
       sent: 0,
-      failed: [{ email: 'member@example.com', error: 'Email delivery failed' }],
+      failed: [
+        {
+          email: 'member@example.com',
+          error:
+            'Resend rejected this recipient. Check the address and Resend delivery logs.',
+        },
+      ],
     });
   });
 

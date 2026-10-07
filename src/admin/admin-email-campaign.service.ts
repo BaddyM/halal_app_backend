@@ -42,7 +42,9 @@ export class AdminEmailCampaignService {
           text: personalise(input.body, recipient.name),
         });
         if (recipientWasRejected(result, recipient.email)) {
-          throw new Error('RESEND_REJECTED');
+          throw Object.assign(new Error('RESEND_REJECTED'), {
+            code: 'RESEND_REJECTED',
+          });
         }
         sent += 1;
       } catch (error) {
@@ -51,7 +53,7 @@ export class AdminEmailCampaignService {
         );
         failed.push({
           email: recipient.email,
-          error: 'Email delivery failed',
+          error: this.getDeliveryError(error),
         });
       }
     }
@@ -109,6 +111,24 @@ export class AdminEmailCampaignService {
       return error.code;
     }
     return 'EMAIL_DELIVERY_ERROR';
+  }
+
+  private getDeliveryError(error: unknown) {
+    const code = this.getErrorCode(error);
+    switch (code) {
+      case 'RESEND_HTTP_401':
+        return 'Resend rejected the API key (401). Check RESEND_API_KEY on the backend.';
+      case 'RESEND_HTTP_403':
+        return 'Resend denied this sender (403). Verify the sender domain and RESEND_FROM.';
+      case 'RESEND_HTTP_422':
+        return 'Resend rejected the sender or message (422). Check RESEND_FROM and the recipient address.';
+      case 'RESEND_HTTP_429':
+        return 'Resend rate limit or sending quota reached (429). Check the Resend account and retry later.';
+      case 'RESEND_REJECTED':
+        return 'Resend rejected this recipient. Check the address and Resend delivery logs.';
+      default:
+        return `Email delivery failed (${code}). Check the backend logs and Resend configuration.`;
+    }
   }
 }
 

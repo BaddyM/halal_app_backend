@@ -14,6 +14,7 @@ import {
 } from 'crypto';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { RealtimeBus } from 'src/realtime/realtime.bus';
+import { MailService } from 'src/mail/mail.service';
 import { BillingService } from './billing.service';
 import { DiscountsService } from './discounts.service';
 
@@ -42,6 +43,7 @@ export class PesapalService {
     private readonly billing: BillingService,
     private readonly discounts: DiscountsService,
     private readonly realtime: RealtimeBus,
+    private readonly mail: MailService,
   ) {}
 
   private encryptionKey(): Buffer {
@@ -636,6 +638,74 @@ export class PesapalService {
     });
   }
 
+  private async sendOrderReceipt(order: {
+    id: string;
+    userId: string;
+    itemType: string;
+    itemId: string;
+    quantity: number;
+    amountCents: number;
+    subtotalAmountCents: number;
+    discountAmountCents: number;
+    currency: string;
+    orderTrackingId: string | null;
+    merchantReference: string;
+  }) {
+    try {
+      const [user, item] = await Promise.all([
+        this.prisma.user.findUnique({
+          where: { id: order.userId },
+          select: { email: true, name: true },
+        }),
+        order.itemType === 'subscription'
+          ? this.prisma.plan.findUnique({
+              where: { id: order.itemId },
+              select: { name: true, interval: true },
+            })
+          : this.prisma.giftCatalogItem.findUnique({
+              where: { id: order.itemId },
+              select: { name: true },
+            }),
+      ]);
+      if (!user) {
+        this.logger.error(`Payment receipt skipped: user ${order.userId} was not found`);
+        return;
+      }
+
+      const productName =
+        item && 'interval' in item
+          ? `${item.name} subscription (${
+              item.interval === 'once'
+                ? 'lifetime access'
+                : item.interval === 'year'
+                  ? 'annual'
+                  : 'monthly'
+            })`
+          : item?.name
+            ? `${item.name}${order.quantity > 1 ? ` x ${order.quantity}` : ''}`
+            : order.itemType === 'subscription'
+              ? 'Subscription'
+              : 'Gift';
+      await this.mail.sendPaymentReceipt({
+        to: user.email,
+        customerName: user.name,
+        itemName: productName,
+        amount: this.mail.formatPaymentAmount(order.amountCents, order.currency),
+        provider: 'Pesapal',
+        reference: order.orderTrackingId ?? order.merchantReference,
+        purchasedAt: new Date(),
+        ...(order.discountAmountCents > 0 && {
+          subtotal: this.mail.formatPaymentAmount(order.subtotalAmountCents, order.currency),
+          discount: `-${this.mail.formatPaymentAmount(order.discountAmountCents, order.currency)}`,
+        }),
+      });
+    } catch (error) {
+      this.logger.error(
+        `Payment succeeded but receipt email failed (${error instanceof Error ? error.name : 'unknown error'})`,
+      );
+    }
+  }
+
   private async providerStatus(orderTrackingId: string) {
     const settings = await this.settings();
     const token = await this.accessToken();
@@ -677,6 +747,7 @@ export class PesapalService {
               order.userId,
               order.itemId,
               orderTrackingId,
+              order.amountCents,
             );
             await this.prisma.$transaction(async (tx) => {
               await tx.paymentOrder.update({
@@ -694,6 +765,7 @@ export class PesapalService {
           } else {
             throw new BadRequestException('Unsupported payment item');
           }
+          await this.sendOrderReceipt(order);
           if (order.itemType === 'gift') {
             this.realtime.emitAdminEvent('payment', 'Gift payment completed', {
               userId: order.userId,
