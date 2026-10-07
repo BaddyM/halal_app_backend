@@ -20,12 +20,51 @@ interface AuthedSocket extends Socket {
     data: { userId?: string };
 }
 
+const CHAT_DEFAULT_CORS_ORIGINS = [
+    'https://halalconnect.space',
+    'https://www.halalconnect.space',
+    'https://admin.halalconnect.space',
+    'http://localhost:3000',
+    'http://localhost:3001',
+    'http://127.0.0.1:3000',
+    'http://127.0.0.1:3001',
+];
+
+function isAllowedSocketOrigin(origin: string | undefined): boolean {
+    if (!origin) return true;
+    const configured = (
+        process.env.CORS_ORIGINS ??
+        process.env.DASHBOARD_ORIGINS ??
+        process.env.FRONTEND_URL ??
+        ''
+    )
+        .split(',')
+        .map((value) => value.trim())
+        .filter(Boolean);
+    const allowed = Array.from(new Set([...CHAT_DEFAULT_CORS_ORIGINS, ...configured]));
+    if (allowed.includes(origin)) return true;
+
+    try {
+        const host = new URL(origin).hostname.toLowerCase();
+        return ['localhost', '127.0.0.1'].includes(host) || allowed.some((candidate) => {
+            try {
+                const candidateHost = new URL(candidate).hostname.toLowerCase();
+                return host === candidateHost || host.endsWith(`.${candidateHost}`);
+            } catch {
+                return false;
+            }
+        });
+    } catch {
+        return false;
+    }
+}
+
 @WebSocketGateway({
     cors: {
-        origin: (process.env.CORS_ORIGINS ?? process.env.DASHBOARD_ORIGINS ?? process.env.FRONTEND_URL ?? 'https://admin.halalconnect.space')
-            .split(',')
-            .map((origin) => origin.trim())
-            .filter(Boolean),
+        origin: (origin, callback) => {
+            if (isAllowedSocketOrigin(origin)) return callback(null, true);
+            return callback(new Error('Origin is not allowed by CORS'));
+        },
     },
     namespace: '/chat',
 })
