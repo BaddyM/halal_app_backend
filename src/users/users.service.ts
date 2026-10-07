@@ -102,6 +102,9 @@ export class UsersService implements OnModuleInit {
                     throw new NotFoundException('Photo not found');
                 }
             }
+            if (photo.moderationStatus !== 'approved' && viewerId === photo.userId) {
+                return { id: photo.id, url: this.signedPrivatePhotoUrl(photo.id, viewerId), isPrivate: false };
+            }
             return { id: photo.id, url: this.toRelativeAssetPath(photo.url), isPrivate: false };
         }
         if ((await this.privateAccessFor(viewerId, photo.userId)) !== 'granted' ||
@@ -143,20 +146,28 @@ export class UsersService implements OnModuleInit {
         if (claims.photoId !== photoId || claims.expiresAt <= Date.now()) throw new NotFoundException('Photo not found');
 
         const photo = await this.prisma.photo.findUnique({ where: { id: photoId } });
-        if (!photo?.isPrivate || (photo.moderationStatus !== 'approved' && !claims.admin)) throw new NotFoundException('Photo not found');
+        if (!photo) throw new NotFoundException('Photo not found');
         if (claims.admin) {
             const admin = await this.prisma.user.findUnique({ where: { id: claims.viewerId }, select: { role: true } });
             if (admin?.role !== 'admin') throw new NotFoundException('Photo not found');
         } else if (claims.viewerId !== photo.userId) {
-            const [grant, blocked] = await Promise.all([
-                this.prisma.photoAccessRequest.findUnique({
+            if (photo.moderationStatus !== 'approved') throw new NotFoundException('Photo not found');
+            const blocked = await this.blockedIdsFor(claims.viewerId);
+            if (blocked.has(photo.userId)) throw new NotFoundException('Photo not found');
+            if (photo.isPrivate) {
+                const grant = await this.prisma.photoAccessRequest.findUnique({
                     where: { requesterId_ownerId: { requesterId: claims.viewerId, ownerId: photo.userId } },
-                }),
-                this.blockedIdsFor(claims.viewerId),
-            ]);
-            if (!grant || grant.status !== 'granted' || blocked.has(photo.userId) ||
-                (grant.expiresAt && grant.expiresAt <= new Date())) {
-                throw new NotFoundException('Photo not found');
+                });
+                if (!grant || grant.status !== 'granted' ||
+                    (grant.expiresAt && grant.expiresAt <= new Date())) {
+                    throw new NotFoundException('Photo not found');
+                }
+            } else {
+                const match = await this.prisma.match.findFirst({
+                    where: { OR: [{ userAId: claims.viewerId, userBId: photo.userId }, { userAId: photo.userId, userBId: claims.viewerId }] },
+                    select: { id: true },
+                });
+                if (!match) throw new NotFoundException('Photo not found');
             }
         }
         await this.prisma.photoAccessAudit.create({
@@ -377,17 +388,24 @@ export class UsersService implements OnModuleInit {
         // a viewer sees public photos plus, only if granted, the private ones.
         const visiblePhotos = isSelf ? allPhotos : canSeePrivate ? approvedPhotos : publicPhotos;
         const visibleSlice = visiblePhotos.slice(0, maxPhotos);
+        const photoUrl = (photo: typeof visibleSlice[number]) =>
+            (photo.isPrivate || (isSelf && photo.moderationStatus !== 'approved')) && viewer
+                ? this.signedPrivatePhotoUrl(photo.id, viewer.id)
+                : this.toRelativeAssetPath(photo.url);
         const photos = visibleSlice.map((p) => ({
             id: p.id,
-            url: p.isPrivate && viewer ? this.signedPrivatePhotoUrl(p.id, viewer.id) : this.toRelativeAssetPath(p.url),
+            url: photoUrl(p),
             isPrimary: p.isPrimary ?? false,
             isPrivate: p.isPrivate ?? false,
         }));
-        const galleryImages = visibleSlice.map((p) =>
-            p.isPrivate && viewer ? this.signedPrivatePhotoUrl(p.id, viewer.id) : this.toRelativeAssetPath(p.url),
-        );
+        const galleryImages = visibleSlice.map(photoUrl);
+        const selfPrimaryPhoto = allPhotos.find((p) => p.url === profile?.primaryImageUrl) ??
+            allPhotos.find((p) => p.isPrimary && !p.isPrivate) ??
+            publicPhotos[0];
         const primaryImage = isSelf
-            ? this.toRelativeAssetPath(profile?.primaryImageUrl ?? publicPhotos[0]?.url ?? null)
+            ? selfPrimaryPhoto && (selfPrimaryPhoto.isPrivate || selfPrimaryPhoto.moderationStatus !== 'approved') && viewer
+                ? this.signedPrivatePhotoUrl(selfPrimaryPhoto.id, viewer.id)
+                : this.toRelativeAssetPath(profile?.primaryImageUrl ?? selfPrimaryPhoto?.url ?? null)
             : this.toRelativeAssetPath(publicPhotos.find((p) => p.isPrimary)?.url ?? publicPhotos[0]?.url ?? null);
 
         const basePayload = {
@@ -2044,7 +2062,9 @@ export class UsersService implements OnModuleInit {
         });
         return photos.map((p) => ({
             id: p.id,
-            url: p.isPrivate ? this.signedPrivatePhotoUrl(p.id, userId) : p.url,
+            url: p.isPrivate || p.moderationStatus !== 'approved'
+                ? this.signedPrivatePhotoUrl(p.id, userId)
+                : p.url,
             isPrimary: p.isPrimary,
             isPrivate: p.isPrivate,
             moderationStatus: p.moderationStatus,
@@ -2054,7 +2074,7 @@ export class UsersService implements OnModuleInit {
         }));
     }
 
-    async adminPhotoQueue(status = 'pending', search?: string) {
+    async adminPhotoQueue(adminId: string, status = 'pending', search?: string) {
         const photos = await this.prisma.photo.findMany({
             where: status === 'flagged'
                 ? { flags: { not: Prisma.DbNull } }
@@ -2069,7 +2089,7 @@ export class UsersService implements OnModuleInit {
             userId: photo.userId,
             user: photo.user,
             visibility: photo.isPrivate ? 'private' : 'public',
-            url: photo.isPrivate ? this.signedPrivatePhotoUrl(photo.id, photo.userId, true) : photo.url,
+            url: this.signedPrivatePhotoUrl(photo.id, adminId, true),
             status: photo.moderationStatus,
             reason: photo.moderationReason,
             flags: Array.isArray(photo.flags) ? photo.flags : [],
@@ -2194,7 +2214,9 @@ export class UsersService implements OnModuleInit {
         });
         return {
             id: updated.id,
-            url: updated.isPrivate ? this.signedPrivatePhotoUrl(updated.id, userId) : updated.url,
+            url: updated.isPrivate || updated.moderationStatus !== 'approved'
+                ? this.signedPrivatePhotoUrl(updated.id, userId)
+                : updated.url,
             isPrimary: updated.isPrimary,
             isPrivate: updated.isPrivate,
             moderationStatus: updated.moderationStatus,

@@ -3,6 +3,11 @@ import { PrismaService } from 'src/prisma/prisma.service';
 import { PesapalService } from 'src/billing/pesapal.service';
 import { PushService } from 'src/push/push.service';
 
+const GIFT_ICONS = new Set([
+  '🎁', '🌹', '💐', '💝', '🌙', '🌴', '🍫', '🍰', '🧁', '☕',
+  '🧸', '💍', '📿', '🧴', '📚',
+]);
+
 @Injectable()
 export class GiftsService {
   constructor(
@@ -28,14 +33,20 @@ export class GiftsService {
         !Number.isInteger(input.cashValue) || input.cashValue < 0 || input.cashValue > input.price) {
       throw new BadRequestException('Gift name, positive price and cash value between zero and price are required');
     }
+    if (input.image !== undefined && !GIFT_ICONS.has(input.image)) {
+      throw new BadRequestException('Choose a gift icon from the supported set');
+    }
     return this.prisma.giftCatalogItem.create({
-      data: { ...input, name: input.name.trim(), currency: input.currency ?? 'UGX' },
+      data: { ...input, image: input.image ?? '🎁', name: input.name.trim(), currency: input.currency ?? 'UGX' },
     });
   }
 
   async updateCatalogItem(id: string, input: { name?: string; description?: string; image?: string; price?: number; cashValue?: number; currency?: string; enabled?: boolean; sortOrder?: number }) {
     const existing = await this.prisma.giftCatalogItem.findUnique({ where: { id } });
     if (!existing) throw new NotFoundException('Gift not found');
+    if (input.image !== undefined && !GIFT_ICONS.has(input.image)) {
+      throw new BadRequestException('Choose a gift icon from the supported set');
+    }
     const price = input.price ?? existing.price;
     const cashValue = input.cashValue ?? existing.cashValue;
     if (!Number.isInteger(price) || price <= 0 || !Number.isInteger(cashValue) || cashValue < 0 || cashValue > price) {

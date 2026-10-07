@@ -51,4 +51,33 @@ describe('private photo access', () => {
       select: { id: true, url: true },
     });
   });
+
+  it('signs moderation previews for the authenticated admin', async () => {
+    const prisma = {
+      photo: {
+        findMany: jest.fn().mockResolvedValue([{
+          id: 'photo-1',
+          userId: 'owner-1',
+          url: '/uploads/photos/users/pending.jpg',
+          isPrivate: false,
+          moderationStatus: 'pending',
+          flags: null,
+          createdAt: new Date(),
+          user: { id: 'owner-1', name: 'Owner', email: 'owner@example.test' },
+        }]),
+      },
+    };
+    const service = makeService(prisma);
+
+    const [photo] = await service.adminPhotoQueue('admin-1');
+    const token = new URL(photo.url, 'https://api.example.test').searchParams.get('token');
+    const [payload] = token!.split('.');
+    const claims = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8'));
+
+    expect(claims).toMatchObject({
+      photoId: 'photo-1',
+      viewerId: 'admin-1',
+      admin: true,
+    });
+  });
 });

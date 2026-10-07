@@ -87,8 +87,12 @@ export class AdminPhotoModerationController {
   constructor(private readonly users: UsersService) {}
 
   @Get()
-  queue(@Query('status') status = 'pending', @Query('search') search?: string) {
-    return this.users.adminPhotoQueue(status, search);
+  queue(
+    @Req() req: AuthedRequest,
+    @Query('status') status = 'pending',
+    @Query('search') search?: string,
+  ) {
+    return this.users.adminPhotoQueue(req.user.userId, status, search);
   }
 
   @Patch(':id')
