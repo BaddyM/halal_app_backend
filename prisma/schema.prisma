@@ -162,6 +162,8 @@ model User {
   phoneVerificationStatus ManualVerificationStatus @default(notSubmitted)
   phoneVerificationReason String?
   isActive                Boolean                  @default(true)
+  failedLoginAttempts     Int                      @default(0)
+  loginLockedUntil        DateTime?
 
   // Admin / moderation
   role   Role       @default(user)

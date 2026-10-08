@@ -22,6 +22,7 @@ import { Response } from 'express';
 import { AuthGuard, AuthedRequest } from 'src/auth/auth.guard';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { extensionForMime, verificationDir } from './storage-paths';
+import { hasValidUploadContent } from './content-validation';
 
 const ALLOWED_MIME = ['image/jpeg', 'image/png', 'image/webp', 'image/jpg'];
 import { randomUUID } from 'crypto';
@@ -80,6 +81,12 @@ export class UploadController {
     @UploadedFile() file: Express.Multer.File,
   ) {
     if (!file) throw new BadRequestException('No file uploaded');
+    if (!(await hasValidUploadContent(file.path, file.mimetype))) {
+      unlinkSync(file.path);
+      throw new BadRequestException(
+        'Uploaded file contents do not match an allowed image type',
+      );
+    }
 
     const url = `/uploads/photos/users/${file.filename}`;
     const photo = await this.prisma.photo.create({
@@ -137,9 +144,15 @@ export class UploadController {
   )
   async uploadChatMedia(@Req() req: AuthedRequest, @UploadedFile() file: Express.Multer.File) {
     if (!file) throw new BadRequestException('No file uploaded');
+    if (!(await hasValidUploadContent(file.path, file.mimetype))) {
+      unlinkSync(file.path);
+      throw new BadRequestException(
+        'Uploaded file contents do not match an allowed image or audio type',
+      );
+    }
     const user = await this.prisma.user.findUnique({ where: { id: req.user.userId }, select: { plan: true } });
     if (!user || user.plan === 'basic') {
-      try { unlinkSync(file.path); } catch (_) {}
+      unlinkSync(file.path);
       throw new ForbiddenException('Photo and voice messages are a Premium feature.');
     }
     return { url: `/uploads/photos/chat/${file.filename}` };
@@ -188,6 +201,12 @@ export class UploadController {
       throw new BadRequestException('Invalid verification document kind');
     }
     if (!file) throw new BadRequestException('No verification file uploaded');
+    if (!(await hasValidUploadContent(file.path, file.mimetype))) {
+      unlinkSync(file.path);
+      throw new BadRequestException(
+        'Uploaded file contents do not match the declared image or video type',
+      );
+    }
     const isVideo = file.mimetype.startsWith('video/');
     if ((kind === 'front' || kind === 'back' || kind === 'selfie') && isVideo) {
       try { unlinkSync(file.path); } catch (_) {}

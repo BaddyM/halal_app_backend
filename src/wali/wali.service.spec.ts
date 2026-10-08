@@ -131,4 +131,34 @@ describe('WaliService member policies', () => {
     ).resolves.toBeUndefined();
     expect(prisma.waliLink.count).not.toHaveBeenCalled();
   });
+
+  it('uses a conditional update so only one invitation response can succeed', async () => {
+    const prisma = {
+      appSetting: { findMany: jest.fn().mockResolvedValue([]) },
+      profile: {
+        findUnique: jest
+          .fn()
+          .mockResolvedValue({ gender: 'female', waliEnabled: true }),
+      },
+      waliLink: {
+        findUnique: jest.fn().mockResolvedValue({
+          id: 'link-1',
+          userId: 'member-1',
+          waliId: 'wali-1',
+          status: 'pending',
+        }),
+        updateMany: jest.fn().mockResolvedValue({ count: 0 }),
+      },
+    };
+    const service = serviceWith(prisma);
+
+    await expect(
+      service.respondToInvitation('wali-1', 'link-1', { action: 'accept' }),
+    ).rejects.toThrow('Link already responded to');
+    expect(prisma.waliLink.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: 'link-1', waliId: 'wali-1', status: 'pending' },
+      }),
+    );
+  });
 });

@@ -20,6 +20,8 @@ import { OAuthService } from './oauth.service';
 @Injectable()
 export class AuthService {
     private readonly logger = new Logger(AuthService.name);
+    private readonly maxFailedLoginAttempts = 10;
+    private readonly loginLockoutDurationMs = 15 * 60 * 1000;
 
     constructor(
         private readonly prisma: PrismaService,
@@ -192,8 +194,55 @@ export class AuthService {
         if (!user) throw new UnauthorizedException('Invalid email or password');
         if (!user.isActive) throw new UnauthorizedException('Account disabled');
 
+        const now = new Date();
+        if (user.loginLockedUntil && user.loginLockedUntil > now) {
+            throw new UnauthorizedException('Invalid email or password');
+        }
+        if (user.loginLockedUntil && user.loginLockedUntil <= now) {
+            const reset = await this.prisma.user.updateMany({
+                where: { id: user.id, loginLockedUntil: { lte: now } },
+                data: { failedLoginAttempts: 0, loginLockedUntil: null },
+            });
+            if (reset.count !== 1) {
+                const latest = await this.prisma.user.findUnique({
+                    where: { id: user.id },
+                    select: { loginLockedUntil: true },
+                });
+                if (
+                    !latest ||
+                    (latest.loginLockedUntil && latest.loginLockedUntil > new Date())
+                ) {
+                    throw new UnauthorizedException('Invalid email or password');
+                }
+            }
+            user.failedLoginAttempts = 0;
+            user.loginLockedUntil = null;
+        }
+
         const ok = await this.compare(password, user.password);
-        if (!ok) throw new UnauthorizedException('Invalid email or password');
+        if (!ok) {
+            await this.prisma.$transaction(async (tx) => {
+                const updatedUser = await tx.user.update({
+                    where: { id: user.id },
+                    data: { failedLoginAttempts: { increment: 1 } },
+                    select: { failedLoginAttempts: true },
+                });
+                if (
+                    updatedUser.failedLoginAttempts >=
+                    this.maxFailedLoginAttempts
+                ) {
+                    await tx.user.update({
+                        where: { id: user.id },
+                        data: {
+                            loginLockedUntil: new Date(
+                                Date.now() + this.loginLockoutDurationMs,
+                            ),
+                        },
+                    });
+                }
+            });
+            throw new UnauthorizedException('Invalid email or password');
+        }
 
         // Bootstrap admins from config: any email in ADMIN_EMAILS is promoted to
         // the admin role on login (so the dashboard works without manual DB edits).
@@ -218,6 +267,8 @@ export class AuthService {
             where: { id: user.id },
             data: {
                 lastSeenAt: new Date(),
+                failedLoginAttempts: 0,
+                loginLockedUntil: null,
                 ...(shouldBeAdmin && user.role !== 'admin' && { role: 'admin' }),
             },
         });

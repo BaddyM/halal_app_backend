@@ -1,4 +1,5 @@
 import {
+    BadRequestException,
     Body,
     Controller,
     Delete,
@@ -12,11 +13,13 @@ import {
     UseGuards,
     UseInterceptors,
 } from '@nestjs/common';
+import { unlinkSync } from 'fs';
 import { FilesInterceptor } from '@nestjs/platform-express';
 import { ApiBody, ApiConsumes } from '@nestjs/swagger';
 import { UsersService } from './users.service';
 import { AuthGuard, AuthedRequest } from 'src/auth/auth.guard';
 import { photoMulterOptions, publicPhotoUrl } from 'src/upload/photo-storage';
+import { hasValidUploadContent } from 'src/upload/content-validation';
 import {
     ChangePlanDto,
     DiscoverQueryDto,
@@ -110,13 +113,24 @@ export class UsersController {
         },
     })
     @UseInterceptors(FilesInterceptor('files', 6, photoMulterOptions))
-    addPhotos(
+    async addPhotos(
         @Req() req: AuthedRequest,
         @UploadedFiles() files: Express.Multer.File[],
         @Body('isPrivate') isPrivate?: string,
     ) {
+        const uploadedFiles = files ?? [];
+        for (const file of uploadedFiles) {
+            if (!(await hasValidUploadContent(file.path, file.mimetype))) {
+                for (const uploadedFile of uploadedFiles) {
+                    unlinkSync(uploadedFile.path);
+                }
+                throw new BadRequestException(
+                    'Uploaded file contents do not match an allowed image type',
+                );
+            }
+        }
         const isPrivateUpload = isPrivate === 'true' || isPrivate === '1';
-        const urls = (files ?? []).map((f) => ({ url: publicPhotoUrl(f.filename, isPrivateUpload) }));
+        const urls = uploadedFiles.map((f) => ({ url: publicPhotoUrl(f.filename, isPrivateUpload) }));
         return this.users.addPhotos(req.user.userId, urls, {
             isPrivate: isPrivate === 'true' || isPrivate === '1',
         });

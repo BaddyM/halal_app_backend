@@ -505,8 +505,8 @@ export class WaliService {
       await this.assertMemberFeatureEnabled(link.userId);
     }
 
-    const updatedLink = await this.prisma.waliLink.update({
-      where: { id: linkId },
+    const updateResult = await this.prisma.waliLink.updateMany({
+      where: { id: linkId, waliId, status: 'pending' },
       data: {
         status: data.action === 'accept' ? 'active' : 'rejected',
         acceptedAt: data.action === 'accept' ? new Date() : undefined,
@@ -514,6 +514,13 @@ export class WaliService {
         ...data.permissions,
       },
     });
+    if (updateResult.count !== 1) {
+      throw new BadRequestException('Link already responded to');
+    }
+    const updatedLink = await this.prisma.waliLink.findUnique({
+      where: { id: linkId },
+    });
+    if (!updatedLink) throw new NotFoundException('Link not found');
 
     // Emit events
     if (data.action === 'accept') {
