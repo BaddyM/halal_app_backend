@@ -127,4 +127,85 @@ describe('MailService', () => {
     expect(sent[0].html).toContain('Premium subscription');
     expect(sent[0].html).toContain('order-123');
   });
+
+  it('sends an account-free Wali invitation through Gmail with an API confirmation link', async () => {
+    const values: Record<string, string> = {
+      APP_NAME: 'Halal Connect',
+      MODE: 'Prod',
+      MAIL_HOST: 'smtp.gmail.com',
+      MAIL_USER: 'sender@example.com',
+      MAIL_PASS: 'app-password',
+      API_BASE_URL: 'https://halalconnect.space/api',
+      RESEND_API_KEY: 'resend-must-not-be-used-for-wali',
+    };
+    const config = {
+      get: (key: string) => values[key],
+    } as unknown as ConfigService;
+    const service = new MailService(config);
+    const sendMail = jest.spyOn(service, 'sendMail').mockResolvedValue({});
+    const sendResendMail = jest.spyOn(service, 'sendResendMail');
+
+    await service.sendWaliInvitation({
+      to: 'wali@example.com',
+      waliName: 'Amina',
+      userName: 'Maryam',
+      invitationToken: 'signed.accept.token',
+      declineToken: 'signed.reject.token',
+    });
+
+    expect(sendMail).toHaveBeenCalledWith(
+      expect.objectContaining({
+        to: 'wali@example.com',
+        subject: 'Maryam has invited you as their Wali (Guardian)',
+        html: expect.stringContaining(
+          'https://halalconnect.space/api/wali/confirm/signed.accept.token?decline=signed.reject.token',
+        ),
+        text: expect.stringContaining(
+          'You do not need to create an account, install the app, or sign in',
+        ),
+      }),
+    );
+    expect(sendMail.mock.calls[0][0].html).toContain(
+      'Opening the link will not accept it until you confirm',
+    );
+    expect(sendResendMail).not.toHaveBeenCalled();
+  });
+
+  it('sends an organized Wali summary through Gmail and escapes shared content', async () => {
+    const values: Record<string, string> = {
+      APP_NAME: 'Halal Connect',
+      MODE: 'Prod',
+      MAIL_HOST: 'smtp.gmail.com',
+      MAIL_USER: 'sender@example.com',
+      MAIL_PASS: 'app-password',
+      RESEND_API_KEY: 'resend-must-not-be-used-for-wali',
+    };
+    const config = {
+      get: (key: string) => values[key],
+    } as unknown as ConfigService;
+    const service = new MailService(config);
+    const sendMail = jest.spyOn(service, 'sendMail').mockResolvedValue({});
+    const sendResendMail = jest.spyOn(service, 'sendResendMail');
+
+    await service.sendWaliSummary({
+      to: 'wali@example.com',
+      userName: 'Maryam',
+      participantNames: 'Maryam and Ahmed',
+      summary: '<script>alert(1)</script>',
+      messageCount: 3,
+      frequency: 'weekly',
+    });
+
+    expect(sendMail).toHaveBeenCalledWith(
+      expect.objectContaining({
+        to: 'wali@example.com',
+        html: expect.stringContaining('Messages included'),
+        text: expect.stringContaining('Messages included: 3'),
+      }),
+    );
+    expect(sendMail.mock.calls[0][0].html).toContain(
+      '&lt;script&gt;alert(1)&lt;/script&gt;',
+    );
+    expect(sendResendMail).not.toHaveBeenCalled();
+  });
 });

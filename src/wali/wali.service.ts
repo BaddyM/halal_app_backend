@@ -338,8 +338,9 @@ export class WaliService {
       },
     });
 
-    // Walis act through email links. Reuse an existing account or create an
-    // email-only guardian identity for the invitation flow.
+    // The link relation requires a user row, so an email-only identity is
+    // created when needed. Guardians can accept and receive summaries by email
+    // without ever signing in to or installing the app.
     const wali = await this.prisma.user.findUnique({
       where: { email: data.waliEmail },
     });
@@ -770,12 +771,12 @@ export class WaliService {
         : `No new matches this ${period === 'daily' ? 'day' : 'week'}.`;
       try {
         await this.mail.sendWaliSummary({
-        to: link.wali.email,
-        userName: link.user.name,
-        participantNames: `${link.user.name} ${period} update`,
-        summary: `${matchSummary}\n\n${messageSummary}`,
-        messageCount: messages.length,
-        frequency: period,
+          to: link.wali.email,
+          userName: link.user.name,
+          participantNames: `${link.user.name} ${period} update`,
+          summary: `${matchSummary}\n\n${messageSummary}`,
+          messageCount: messages.length,
+          frequency: period,
         });
         await this.prisma.waliDigest.update({ where: { id: digest.id }, data: { sentAt: new Date() } });
       } catch (error) {
@@ -1406,8 +1407,8 @@ export class WaliService {
       }
       if (key === 'inviteExpiryDays' && (
         typeof value !== 'number' ||
-        !Number.isInteger(value) ||
-        value < 1 ||
+          !Number.isInteger(value) ||
+          value < 1 ||
         value > 30
       )) {
         throw new BadRequestException('inviteExpiryDays must be an integer from 1 to 30');

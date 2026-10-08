@@ -341,12 +341,12 @@ export class MailService {
     declineToken?: string;
   }) {
     const appName = this.config.get<string>('APP_NAME') ?? 'Halal Connect';
-    const frontendUrl =
-      this.config.get<string>('FRONTEND_URL') ?? 'http://localhost:3000';
-    const acceptUrl = `${frontendUrl}/api/wali/confirm/${encodeURIComponent(args.invitationToken)}`;
-    const declineUrl = args.declineToken
-      ? `${frontendUrl}/api/wali/decline/${encodeURIComponent(args.declineToken)}`
-      : undefined;
+    const apiBaseUrl = this.apiBaseUrl();
+    const acceptUrl = `${apiBaseUrl}/wali/confirm/${encodeURIComponent(args.invitationToken)}${
+      args.declineToken
+        ? `?decline=${encodeURIComponent(args.declineToken)}`
+        : ''
+    }`;
     const safeWaliName = this.escapeHtml(args.waliName);
     const safeUserName = this.escapeHtml(args.userName);
     const safeMessage = args.message ? this.escapeHtml(args.message) : '';
@@ -356,28 +356,27 @@ export class MailService {
       '',
       `${args.userName} has invited you to be their Wali (Guardian) on ${appName}.`,
       'As Wali, you may receive conversation summaries when the user chooses to involve you.',
-      'Updates follow the member’s consent and the delivery schedule selected by the service.',
+      'Accepting confirms the invitation and lets Halal Connect email you summaries. The member controls whether chat content is shared and which updates are enabled.',
+      'You do not need to create an account, install the app, or sign in to accept.',
       ...(args.message
         ? ['', `Message from ${args.userName}: ${args.message}`]
         : []),
       '',
-      `Accept invitation: ${acceptUrl}`,
-      ...(declineUrl ? [`Decline invitation: ${declineUrl}`] : []),
+      `Review and accept the invitation: ${acceptUrl}`,
+      'If you were not expecting this invitation, you can ignore this email.',
     ].join('\n');
     const html = this.renderEmail(
       `
-      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; color: #1c172b;">
-        <h2>${this.escapeHtml(appName)}: Wali invitation</h2>
-        <p>Hello ${safeWaliName},</p>
-        <p><strong>${safeUserName}</strong> has invited you to be their Wali (Guardian).</p>
-        <p>When the user chooses to involve you, you may receive conversation updates by email, subject to their consent and the service delivery schedule.</p>
-        ${safeMessage ? `<p><strong>Message from ${safeUserName}:</strong> ${safeMessage}</p>` : ''}
-        <p><a href="${acceptUrl}">Accept Wali invitation</a></p>
-        ${declineUrl ? `<p><a href="${declineUrl}">Decline invitation</a></p>` : ''}
-        <p style="font-size: 12px; color: #667">This invitation does not provide access to the user's account or password.</p>
-      </div>
+      <h1 style="margin:0 0 16px;color:#622cb5;font-size:25px;line-height:1.3;">You have been invited as a Wali</h1>
+      <p style="margin:0 0 14px;color:#67677a;font-size:15px;line-height:1.65;">Assalamu alaikum ${safeWaliName},</p>
+      <p style="margin:0 0 14px;color:#67677a;font-size:15px;line-height:1.65;"><strong style="color:#1c172b;">${safeUserName}</strong> has invited you to be their Wali (guardian) on ${this.escapeHtml(appName)}.</p>
+      ${safeMessage ? `<div style="margin:18px 0;padding:16px;border-left:3px solid #8047e1;background:#f7f4fd;color:#39334a;line-height:1.6;"><strong>Message from ${safeUserName}</strong><br>${safeMessage}</div>` : ''}
+      <p style="margin:0 0 18px;color:#67677a;font-size:14px;line-height:1.65;">Accepting lets us email you the summaries this member has chosen to share. The member controls whether chat content is included and which updates are enabled.</p>
+      <p style="margin:0 0 20px;color:#67677a;font-size:14px;line-height:1.65;">No account, app installation, or sign-in is required. Review the invitation and choose whether to accept using the button below.</p>
+      <p style="margin:24px 0;text-align:center;"><a href="${acceptUrl}" style="display:inline-block;padding:14px 24px;border-radius:10px;background:#8047e1;color:#fff;text-decoration:none;font-weight:700;">Review Wali invitation</a></p>
+      <p style="margin:0;color:#8a8794;font-size:12px;line-height:1.6;">If you were not expecting this invitation, you can ignore this email. Opening the link will not accept it until you confirm on the next page.</p>
     `,
-      'You have received a Wali invitation.',
+      `${args.userName} invited you to be their Wali. No app or account is needed.`,
     );
     return this.sendMail({ to: args.to, subject, html, text });
   }
@@ -423,21 +422,45 @@ export class MailService {
       args.frequency === 'instant'
         ? 'Here is the new message the member has chosen to share.'
         : `Here is the ${args.frequency} conversation update.`;
-    const text = `Hello,\n\n${intro} Summary for ${args.userName}.\n\n${args.summary}`;
+    const safeFrequency = this.escapeHtml(frequencyLabel);
+    const safeCount = this.escapeHtml(String(args.messageCount));
+    const text = [
+      `Halal Connect — ${frequencyLabel}`,
+      '',
+      `Summary for ${args.userName}`,
+      `Conversation: ${args.participantNames}`,
+      `Messages included: ${args.messageCount}`,
+      '',
+      intro,
+      args.summary,
+      '',
+      'You received this email because the member invited you as their Wali and you accepted. The member controls which information is shared.',
+    ].join('\n');
     const html = this.renderEmail(
       `
-      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; color: #1c172b;">
-        <h2>${this.escapeHtml(appName)}: ${this.escapeHtml(frequencyLabel)}</h2>
-        <p>Hello,</p>
-        <p>${this.escapeHtml(intro)} Summary for <strong>${safeUserName}</strong>.</p>
-        <p><strong>Conversation:</strong> ${safeParticipants}</p>
-        <p><strong>Recent messages:</strong> ${args.messageCount}</p>
-        <pre style="white-space: pre-wrap; background: #f4f6f7; padding: 16px; border-radius: 8px;">${safeSummary}</pre>
-      </div>
+      <h1 style="margin:0 0 10px;color:#622cb5;font-size:25px;line-height:1.3;">Wali summary</h1>
+      <p style="margin:0 0 20px;color:#67677a;font-size:14px;line-height:1.6;">${safeFrequency} from ${this.escapeHtml(appName)}</p>
+      <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin:0 0 20px;border-collapse:collapse;background:#f7f4fd;border:1px solid #e5e3ee;border-radius:10px;">
+        <tr><td style="padding:12px 14px;color:#67677a;border-bottom:1px solid #e5e3ee;">Member</td><td align="right" style="padding:12px 14px;color:#1c172b;font-weight:700;border-bottom:1px solid #e5e3ee;">${safeUserName}</td></tr>
+        <tr><td style="padding:12px 14px;color:#67677a;border-bottom:1px solid #e5e3ee;">Conversation</td><td align="right" style="padding:12px 14px;color:#1c172b;font-weight:600;border-bottom:1px solid #e5e3ee;">${safeParticipants}</td></tr>
+        <tr><td style="padding:12px 14px;color:#67677a;">Messages included</td><td align="right" style="padding:12px 14px;color:#622cb5;font-weight:700;">${safeCount}</td></tr>
+      </table>
+      <p style="margin:0 0 12px;color:#1c172b;font-size:15px;line-height:1.6;">${this.escapeHtml(intro)}</p>
+      <div style="padding:18px;border:1px solid #e5e3ee;border-radius:10px;background:#fff;color:#39334a;font-size:14px;line-height:1.7;white-space:pre-wrap;word-break:break-word;">${safeSummary}</div>
+      <p style="margin:18px 0 0;color:#8a8794;font-size:12px;line-height:1.6;">You received this email because the member invited you as their Wali and you accepted. The member controls which information is shared.</p>
     `,
       `${frequencyLabel} from ${appName}.`,
     );
     return this.sendMail({ to: args.to, subject, html, text });
+  }
+
+  private apiBaseUrl() {
+    const configured = this.config.get<string>('API_BASE_URL')?.trim();
+    if (configured) return configured.replace(/\/+$/, '');
+    if (this.config.get<string>('MODE') === 'Dev') {
+      return `http://localhost:${this.config.get<string>('PORT') ?? '3000'}/api`;
+    }
+    return 'https://halalconnect.space/api';
   }
 
   async sendWaliChangeNotification(args: {

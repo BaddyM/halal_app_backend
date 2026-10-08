@@ -20,6 +20,7 @@ services:
       - PESAPAL_IPN_URL=${PESAPAL_IPN_URL:-https://admin.halalconnect.space/api/public/payments/pesapal/ipn}
       - MODE=Prod
       - CORS_ORIGINS=https://halalconnect.space,https://www.halalconnect.space,https://admin.halalconnect.space
+      - API_BASE_URL=${API_BASE_URL:-https://halalconnect.space/api}
       - REDIS_URL=redis://redis:6379
       - MAIL_HOST=smtp.gmail.com
       - MAIL_PORT=587

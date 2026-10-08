@@ -10,6 +10,7 @@ import {
   UseGuards,
   Request,
   HttpCode,
+  Header,
   Query,
   NotFoundException,
 } from '@nestjs/common';
@@ -79,10 +80,38 @@ export class WaliController {
   decline(@Query('token') token: string) { return this.waliService.respondToToken(token, 'reject'); }
 
   @Get('confirm/:token')
-  confirmSigned(@Param('token') token: string) { return this.waliService.respondToToken(token, 'accept'); }
+  @Header('Content-Type', 'text/html; charset=utf-8')
+  confirmSigned(
+    @Param('token') token: string,
+    @Query('decline') declineToken?: string,
+  ) {
+    return this.invitationPage(token, declineToken);
+  }
 
   @Get('decline/:token')
-  declineSigned(@Param('token') token: string) { return this.waliService.respondToToken(token, 'reject'); }
+  @Header('Content-Type', 'text/html; charset=utf-8')
+  declineSigned(@Param('token') token: string) {
+    return this.invitationPage(undefined, token);
+  }
+
+  @Post('respond-token')
+  @Header('Content-Type', 'text/html; charset=utf-8')
+  async respondToToken(@Body() body: { token?: string; action?: string }) {
+    if (
+      typeof body?.token !== 'string' ||
+      (body.action !== 'accept' && body.action !== 'reject')
+    ) {
+      throw new NotFoundException('Invitation link is invalid or expired.');
+    }
+    await this.waliService.respondToToken(body.token, body.action);
+    const accepted = body.action === 'accept';
+    return this.invitationResultPage(
+      accepted ? 'Invitation accepted' : 'Invitation declined',
+      accepted
+        ? 'You will receive email summaries when the member has enabled them. No app or account is needed.'
+        : 'You will not receive Wali summaries for this invitation.',
+    );
+  }
 
   @Get('unsubscribe')
   unsubscribe(@Query('token') token: string) { return this.waliService.unsubscribeByToken(token); }
@@ -146,6 +175,61 @@ export class WaliController {
       message: data?.message,
     };
     return this.waliService.inviteWali(req.user.id, payload);
+  }
+
+  private invitationPage(acceptToken?: string, declineToken?: string) {
+    const escapeAttribute = (token: string) =>
+      token.replace(
+        /[&<>"']/g,
+        (character) =>
+          ({
+            '&': '&amp;',
+            '<': '&lt;',
+            '>': '&gt;',
+            '"': '&quot;',
+            "'": '&#39;',
+          })[character] ?? character,
+      );
+    const action = '/api/wali/respond-token';
+    const acceptForm = acceptToken
+      ? `<form method="post" action="${action}" style="margin:24px 0 12px;">
+              <input type="hidden" name="token" value="${escapeAttribute(acceptToken)}">
+              <input type="hidden" name="action" value="accept">
+              <button type="submit" style="width:100%;padding:14px;border:0;border-radius:10px;background:#8047e1;color:#fff;font-size:15px;font-weight:700;cursor:pointer;">Accept and receive enabled email summaries</button>
+            </form>`
+      : '';
+    const declineForm = declineToken
+      ? `<form method="post" action="${action}">
+              <input type="hidden" name="token" value="${escapeAttribute(declineToken)}">
+              <input type="hidden" name="action" value="reject">
+              <button type="submit" style="width:100%;padding:12px;border:1px solid #e5e3ee;border-radius:10px;background:#fff;color:#67677a;font-size:14px;cursor:pointer;">Decline invitation</button>
+            </form>`
+      : '';
+    return `<!doctype html>
+      <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Wali invitation — Halal Connect</title></head>
+      <body style="margin:0;padding:28px 14px;background:#fcfbff;font-family:Arial,Helvetica,sans-serif;color:#1c172b;">
+        <main style="max-width:520px;margin:8vh auto;background:#fff;border:1px solid #e5e3ee;border-radius:16px;overflow:hidden;">
+          <header style="padding:22px 28px;background:#8047e1;border-bottom:3px solid #bf83fe;color:#fff;font-size:19px;font-weight:700;">Halal Connect</header>
+          <section style="padding:28px;">
+            <h1 style="margin:0 0 14px;color:#622cb5;font-size:24px;">Wali invitation</h1>
+            <p style="color:#67677a;font-size:15px;line-height:1.7;">Accepting confirms that you agree to receive email summaries when the member has enabled them. The member controls whether chat content is shared. You do not need an app or account.</p>
+            ${acceptForm}
+            ${declineForm}
+            <p style="margin:20px 0 0;color:#8a8794;font-size:12px;line-height:1.6;">Opening this page does not accept or decline the invitation. It expires automatically.</p>
+          </section>
+        </main>
+      </body></html>`;
+  }
+
+  private invitationResultPage(title: string, message: string) {
+    return `<!doctype html>
+      <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${title} — Halal Connect</title></head>
+      <body style="margin:0;padding:28px 14px;background:#fcfbff;font-family:Arial,Helvetica,sans-serif;color:#1c172b;">
+        <main style="max-width:520px;margin:8vh auto;background:#fff;border:1px solid #e5e3ee;border-radius:16px;overflow:hidden;">
+          <header style="padding:22px 28px;background:#8047e1;border-bottom:3px solid #bf83fe;color:#fff;font-size:19px;font-weight:700;">Halal Connect</header>
+          <section style="padding:28px;"><h1 style="margin:0 0 14px;color:#622cb5;font-size:24px;">${title}</h1><p style="color:#67677a;font-size:15px;line-height:1.7;">${message}</p></section>
+        </main>
+      </body></html>`;
   }
 
   /**
@@ -248,7 +332,11 @@ export class WaliController {
     @Param('approvalId') approvalId: string,
     @Body() data: any,
   ) {
-    return this.waliService.respondToApproval(req.user.id, approvalId, data.action);
+    return this.waliService.respondToApproval(
+      req.user.id,
+      approvalId,
+      data.action,
+    );
   }
 
   // ────────────────────────────────────────────────────────────────
