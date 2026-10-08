@@ -120,7 +120,8 @@ export class NotificationsService {
         return url;
     }
 
-    /// Return a chronologically-merged feed of matches, likes, and broadcasts:
+    /// Return a chronologically-merged feed of matches, likes, broadcasts, and
+    /// messages sent to this user from the admin inbox:
     ///   - "match": a Match row this user is part of
     ///   - "likeRequest": an incoming Like that hasn't yet led to a match
     ///                    (i.e. the viewer hasn't liked them back)
@@ -137,7 +138,7 @@ export class NotificationsService {
         const isRead = (id: string, createdAt: Date) =>
             readIds.has(id) || (!!readMarker && createdAt <= readMarker);
 
-        const [matches, incomingLikes, conversationsByPair, broadcasts] = await Promise.all([
+        const [matches, incomingLikes, conversationsByPair, broadcasts, inboxMessages] = await Promise.all([
             this.prisma.match.findMany({
                 where: { OR: [{ userAId: userId }, { userBId: userId }] },
                 orderBy: { createdAt: 'desc' },
@@ -183,6 +184,17 @@ export class NotificationsService {
                     broadcast: {
                         select: { id: true, title: true, message: true, createdAt: true },
                     },
+                },
+            }),
+            this.prisma.inboxMessage.findMany({
+                where: { userId, fromAdmin: true },
+                orderBy: { createdAt: 'desc' },
+                take: 100,
+                select: {
+                    id: true,
+                    subject: true,
+                    body: true,
+                    createdAt: true,
                 },
             }),
         ]);
@@ -239,7 +251,16 @@ export class NotificationsService {
             message: broadcast.message,
         }));
 
-        const all = [...matchItems, ...likeItems, ...broadcastItems];
+        const inboxItems = inboxMessages.map((item) => ({
+            id: `inbox-${item.id}`,
+            type: 'inboxMessage' as const,
+            createdAt: item.createdAt,
+            isRead: isRead(`inbox-${item.id}`, item.createdAt),
+            title: item.subject ?? 'Message from Halal Connect',
+            message: item.body,
+        }));
+
+        const all = [...matchItems, ...likeItems, ...broadcastItems, ...inboxItems];
         all.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
         return all;
     }

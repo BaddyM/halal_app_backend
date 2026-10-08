@@ -27,13 +27,25 @@ export class AuthController {
     @Throttle({ default: { ttl: 3_600_000, limit: 10 } })
     @Post('signup')
     signup(@Body() dto: SignupDto) {
-        return this.auth.signup(dto.name, dto.email, dto.password);
+        return this.auth.signup(
+            dto.name,
+            dto.email,
+            dto.password,
+            dto.acceptedTerms,
+            dto.termsVersion,
+        );
     }
 
     @Throttle({ default: { ttl: 3_600_000, limit: 10 } })
     @Post('register')
     register(@Body() dto: SignupDto) {
-        return this.auth.signup(dto.name, dto.email, dto.password);
+        return this.auth.signup(
+            dto.name,
+            dto.email,
+            dto.password,
+            dto.acceptedTerms,
+            dto.termsVersion,
+        );
     }
 
     @Throttle({ default: { ttl: 300_000, limit: 20 } })

@@ -1,4 +1,15 @@
-import { Controller, Get } from '@nestjs/common';
+import {
+  BadRequestException,
+  Body,
+  Controller,
+  Get,
+  Patch,
+  UseGuards,
+} from '@nestjs/common';
+import { Prisma } from '@prisma/client';
+import { AuthGuard } from 'src/auth/auth.guard';
+import { AdminGuard } from 'src/admin/admin.guard';
+import { PrismaService } from 'src/prisma/prisma.service';
 
 const PRIVACY = [
   { title: 'Information We Collect', body: 'We collect information you provide directly, such as your name, email address, date of birth, location, and profile photos. We also collect usage data including how you interact with profiles, matches, and messages within the app.' },
@@ -26,13 +37,87 @@ const TERMS = [
 
 @Controller('legal')
 export class LegalController {
+  constructor(private readonly prisma: PrismaService) {}
+
   @Get('privacy')
   privacy() {
     return { title: 'Privacy Policy', updatedAt: 'January 1, 2025', intro: 'Your privacy is important to us. This policy explains how Halal Connect collects, uses, and protects your personal information.', sections: PRIVACY };
   }
 
   @Get('terms')
-  terms() {
-    return { title: 'Terms of Service', updatedAt: 'January 1, 2025', intro: 'Please read these terms carefully before using Halal Connect. They govern your use of our services.', sections: TERMS };
+  async terms() {
+    const saved = await this.prisma.appSetting.findUnique({
+      where: { key: 'legal.terms' },
+      select: { value: true },
+    });
+    if (saved?.value && typeof saved.value === 'object' && !Array.isArray(saved.value)) {
+      const document = saved.value as Record<string, unknown>;
+      return {
+        ...document,
+        version: String(document.version ?? '1'),
+      };
+    }
+    return {
+      title: 'Terms of Service',
+      updatedAt: 'January 1, 2025',
+      intro: 'Please read these terms carefully before using Halal Connect. They govern your use of our services.',
+      version: '1',
+      sections: TERMS,
+    };
+  }
+
+  @Patch('terms')
+  @UseGuards(AuthGuard, AdminGuard)
+  async updateTerms(
+    @Body()
+    body: {
+      title?: unknown;
+      intro?: unknown;
+      sections?: unknown;
+    },
+  ) {
+    if (
+      typeof body?.title !== 'string' ||
+      !body.title.trim() ||
+      typeof body.intro !== 'string' ||
+      !body.intro.trim() ||
+      !Array.isArray(body.sections) ||
+      body.sections.length === 0 ||
+      body.sections.some(
+        (section) =>
+          !section ||
+          typeof section.title !== 'string' ||
+          !section.title.trim() ||
+          typeof section.body !== 'string' ||
+          !section.body.trim(),
+      )
+    ) {
+      throw new BadRequestException(
+        'Terms must include a title, introduction, and at least one complete section.',
+      );
+    }
+
+    const current = await this.terms();
+    const currentVersion = Number(
+      (current as { version?: string }).version ?? '1',
+    );
+    const document = {
+      title: body.title.trim(),
+      intro: body.intro.trim(),
+      sections: (body.sections as Array<{ title: string; body: string }>).map(
+        (section) => ({
+          title: section.title.trim(),
+          body: section.body.trim(),
+        }),
+      ),
+      version: String(Number.isFinite(currentVersion) ? currentVersion + 1 : 2),
+      updatedAt: new Date().toISOString(),
+    };
+    await this.prisma.appSetting.upsert({
+      where: { key: 'legal.terms' },
+      update: { value: document as Prisma.InputJsonValue },
+      create: { key: 'legal.terms', value: document as Prisma.InputJsonValue },
+    });
+    return document;
   }
 }

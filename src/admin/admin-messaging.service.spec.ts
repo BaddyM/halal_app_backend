@@ -39,7 +39,10 @@ describe('AdminMessagingService broadcast notifications', () => {
     expect(realtime.emitToUser).toHaveBeenCalledWith(
       'user-1',
       'notification:new',
-      { kind: 'broadcast', broadcastId: 'broadcast-1' },
+      {
+        kind: 'broadcast',
+        broadcastId: 'broadcast-1',
+      },
     );
   });
 });

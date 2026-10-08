@@ -117,7 +117,29 @@ export class AuthService {
     }
 
     // ── signup ──────────────────────────────────────────────────
-    async signup(name: string, email: string, password: string) {
+    async signup(
+        name: string,
+        email: string,
+        password: string,
+        acceptedTerms: boolean,
+        termsVersion: string,
+    ) {
+        if (!acceptedTerms) {
+            throw new BadRequestException('You must accept the Terms & Conditions to register');
+        }
+        const termsSetting = await this.prisma.appSetting.findUnique({
+            where: { key: 'legal.terms' },
+            select: { value: true },
+        });
+        const currentTermsVersion = String(
+            (termsSetting?.value as { version?: string | number } | undefined)?.version ?? '1',
+        );
+        if (termsVersion !== currentTermsVersion) {
+            throw new BadRequestException(
+                'The Terms & Conditions have changed. Review and accept the current version.',
+            );
+        }
+
         const existing = await this.prisma.user.findUnique({ where: { email } });
         if (existing) throw new ConflictException('Email already registered');
 
@@ -127,6 +149,8 @@ export class AuthService {
                 name,
                 email,
                 password: hashed,
+                termsAcceptedAt: new Date(),
+                termsVersion: currentTermsVersion,
                 profile: { create: {} },
             },
             include: { profile: true },

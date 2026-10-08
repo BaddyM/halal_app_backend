@@ -603,7 +603,7 @@ export class WaliService {
     }
     const link = await this.prisma.waliLink.findFirst({
       where: { userId, status: { in: ['active', 'pending'] } },
-      include: { wali: { select: { name: true, email: true } } },
+      include: { wali: { select: { name: true, email: true, phone: true } } },
       orderBy: { updatedAt: 'desc' },
     });
     return {
@@ -614,6 +614,7 @@ export class WaliService {
       status: link?.status ?? 'notLinked',
       name: link?.wali.name ?? null,
       email: link?.wali.email ?? null,
+      phone: link?.wali.phone ?? null,
       confirmedAt: link?.acceptedAt ?? null,
       preferences: link
         ? {

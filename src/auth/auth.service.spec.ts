@@ -21,6 +21,7 @@ describe('AuthService', () => {
       create: jest.Mock;
       update: jest.Mock;
     };
+    appSetting: { findUnique: jest.Mock };
     emailVerificationToken: { create: jest.Mock };
     adminLoginChallenge: {
       create: jest.Mock;
@@ -43,6 +44,7 @@ describe('AuthService', () => {
         create: jest.fn().mockResolvedValue({ id: 'u1', email: 'user@example.com', profile: {} }),
         update: jest.fn().mockResolvedValue({}),
       },
+      appSetting: { findUnique: jest.fn().mockResolvedValue(null) },
       emailVerificationToken: { create: jest.fn().mockResolvedValue({}) },
       adminLoginChallenge: {
         create: jest.fn().mockResolvedValue({ id: 'challenge-1' }),
@@ -71,9 +73,16 @@ describe('AuthService', () => {
   });
 
   it('sends a verification email when a user signs up', async () => {
-    await service.signup('Test', 'user@example.com', 'password123');
+    await service.signup('Test', 'user@example.com', 'password123', true, '1');
 
     expect(mailService.sendCodeEmail).toHaveBeenCalledWith('user@example.com', expect.any(String), 'verify');
+  });
+
+  it('rejects signup when the user has not accepted the terms', async () => {
+    await expect(
+      service.signup('Test', 'user@example.com', 'password123', false, '1'),
+    ).rejects.toThrow('You must accept the Terms & Conditions to register');
+    expect(prismaService.user.create).not.toHaveBeenCalled();
   });
 
   it('requires an emailed one-time code before creating admin tokens', async () => {

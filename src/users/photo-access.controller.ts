@@ -95,6 +95,25 @@ export class AdminPhotoModerationController {
     return this.users.adminPhotoQueue(req.user.userId, status, search);
   }
 
+  @Post('bulk-review')
+  bulkReview(
+    @Req() req: AuthedRequest,
+    @Body()
+    body: {
+      photoIds: string[];
+      status: 'approved' | 'rejected';
+      reason?: string;
+    },
+  ) {
+    return this.users.reviewPhotoModerationBulk(
+      body.photoIds,
+      body.status,
+      body.reason,
+      req.user.userId,
+      req.user.email,
+    );
+  }
+
   @Patch(':id')
   review(@Req() req: AuthedRequest, @Param('id') id: string, @Body() body: { status: 'approved' | 'rejected'; reason?: string }) {
     return this.users.reviewPhotoModeration(id, body.status, body.reason, req.user.userId, req.user.email);

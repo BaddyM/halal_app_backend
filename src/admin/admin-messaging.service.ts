@@ -64,10 +64,16 @@ export class AdminMessagingService {
     });
 
     for (const userId of targets) {
-      this.realtime.emitToUser(userId, 'notification:new', { kind: 'inbox' });
+      const title = input.subject ?? 'Message from Halal Connect';
+      const preview = input.body.length > 120 ? `${input.body.slice(0, 120)}…` : input.body;
+      this.realtime.emitToUser(userId, 'notification:new', {
+        kind: 'inbox',
+        title,
+        body: preview,
+      });
       void this.push.sendToUser(userId, {
-        title: input.subject ?? 'Message from Halal Connect',
-        body: input.body.length > 120 ? `${input.body.slice(0, 120)}…` : input.body,
+        title,
+        body: preview,
         data: { type: 'inbox' },
       });
     }

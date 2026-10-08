@@ -1,0 +1,4 @@
+ALTER TABLE `User`
+  ADD COLUMN `profileViews` INTEGER NOT NULL DEFAULT 0,
+  ADD COLUMN `termsAcceptedAt` DATETIME(3) NULL,
+  ADD COLUMN `termsVersion` VARCHAR(64) NULL;

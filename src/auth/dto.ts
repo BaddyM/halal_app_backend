@@ -7,6 +7,8 @@ import {
     IsOptional,
     IsIn,
     Matches,
+    IsBoolean,
+    MaxLength,
 } from 'class-validator';
 
 export class SignupDto {
@@ -20,6 +22,14 @@ export class SignupDto {
     @IsString()
     @MinLength(6)
     password!: string;
+
+    @IsBoolean()
+    acceptedTerms!: boolean;
+
+    @IsString()
+    @IsNotEmpty()
+    @MaxLength(64)
+    termsVersion!: string;
 }
 
 export class LoginDto {

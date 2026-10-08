@@ -444,6 +444,7 @@ export class UsersService implements OnModuleInit {
 
         return {
             ...basePayload,
+            profileViews: user.profileViews ?? 0,
             onboardingAnswers: Object.fromEntries(
                 (user.onboardingAnswers ?? []).map((answer: any) => [
                     answer.questionId,
@@ -1493,6 +1494,12 @@ export class UsersService implements OnModuleInit {
             if (!visibleToViewer) {
                 throw new NotFoundException('Profile not found');
             }
+            const updatedViewerCount = await this.prisma.user.update({
+                where: { id: profileUserId },
+                data: { profileViews: { increment: 1 } },
+                select: { profileViews: true },
+            });
+            target.profileViews = updatedViewerCount.profileViews;
         }
 
         const details = this.compatibilityDetails(viewer, target);
@@ -2115,6 +2122,80 @@ export class UsersService implements OnModuleInit {
         this.realtime.emitToUser(photo.userId, 'notification:new', { kind: 'photo_moderation', photoId, status });
         this.realtime.emitAdminEvent('moderation', `${photo.user.name}'s photo ${status}`, { photoId, userId: photo.userId });
         return { id: updated.id, status: updated.moderationStatus, reason: updated.moderationReason };
+    }
+
+    async reviewPhotoModerationBulk(
+        photoIds: string[],
+        status: 'approved' | 'rejected',
+        reason: string | undefined,
+        adminId: string,
+        adminEmail?: string,
+    ) {
+        if (status !== 'approved' && status !== 'rejected') {
+            throw new BadRequestException('Invalid photo review status');
+        }
+        if (!Array.isArray(photoIds)) throw new BadRequestException('Photo IDs are required');
+        const ids = [...new Set(photoIds)];
+        if (ids.length === 0 || ids.length > 50) {
+            throw new BadRequestException('Select between 1 and 50 photos');
+        }
+
+        const photos = await this.prisma.photo.findMany({
+            where: { id: { in: ids } },
+            include: { user: { select: { id: true, name: true } } },
+        });
+        if (photos.length !== ids.length) throw new NotFoundException('One or more photos were not found');
+        const userId = photos[0].userId;
+        const memberName = photos[0].user.name;
+        if (photos.some((photo) => photo.userId !== userId)) {
+            throw new BadRequestException('Photos in a review must belong to the same member');
+        }
+
+        const moderationReason = reason?.slice(0, 1000) ?? null;
+        await this.prisma.$transaction(async (tx) => {
+            await tx.photo.updateMany({
+                where: { id: { in: ids }, userId },
+                data: { moderationStatus: status, moderationReason },
+            });
+            await tx.auditLog.createMany({
+                data: photos.map((photo) => ({
+                    adminId,
+                    adminEmail,
+                    action: `photo ${status}`,
+                    target: JSON.stringify({
+                        photoId: photo.id,
+                        userId,
+                        reason: moderationReason,
+                        bulkCount: ids.length,
+                    }),
+                })),
+            });
+        });
+
+        const count = ids.length;
+        const label = count === 1 ? 'photo' : 'photos';
+        const approved = status === 'approved';
+        const body = approved
+            ? `${count} ${label} ${count === 1 ? 'is' : 'are'} approved and now visible on your profile.`
+            : `${count} ${label} ${count === 1 ? 'needs' : 'need'} changes.${moderationReason ? ` ${moderationReason}` : ' Please choose a different photo.'}`;
+        void this.push.sendToUser(userId, {
+            title: approved ? (count === 1 ? 'Photo approved' : 'Photos approved') : 'Photo review update',
+            body,
+            data: { type: 'photo_moderation', status, count },
+        });
+        this.realtime.emitToUser(userId, 'notification:new', {
+            kind: 'photo_moderation',
+            status,
+            count,
+            title: approved ? (count === 1 ? 'Photo approved' : 'Photos approved') : 'Photo review update',
+            body,
+        });
+        this.realtime.emitAdminEvent(
+            'moderation',
+            `${memberName}'s ${count} ${label} ${status}`,
+            { userId, photoIds: ids, count },
+        );
+        return { count, status };
     }
 
     async adminPhotoRequests() {
