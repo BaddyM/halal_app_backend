@@ -72,7 +72,18 @@ export class GiftsService {
   inventory(userId: string) {
     return this.prisma.giftInventory.findMany({
       where: { userId, quantity: { gt: 0 } },
-      include: { gift: true },
+      include: {
+        gift: {
+          select: {
+            id: true,
+            name: true,
+            description: true,
+            image: true,
+            price: true,
+            currency: true,
+          },
+        },
+      },
       orderBy: { updatedAt: 'desc' },
     });
   }
@@ -133,7 +144,17 @@ export class GiftsService {
       body: `${sender?.name ?? 'Someone'} gifted you${quantity > 1 ? ` ${quantity}` : ''} ${gift.name}. Tap to view your gifts.`,
       data: { type: 'gift_received', giftSentId: giftSent.id, fromName: sender?.name ?? '', giftName: gift.name, quantity },
     });
-    return { success: true, gift: giftSent };
+    return {
+      success: true,
+      gift: {
+        id: giftSent.id,
+        giftId: giftSent.giftId,
+        recipientId: giftSent.recipientId,
+        quantity: giftSent.quantity,
+        message: giftSent.message,
+        createdAt: giftSent.createdAt,
+      },
+    };
   }
 
   received(userId: string) {

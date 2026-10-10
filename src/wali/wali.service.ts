@@ -197,7 +197,7 @@ export class WaliService {
       });
       if (!activeWali) {
         throw new ForbiddenException(
-          'A female member must have an active Wali before this chat can continue. They can turn off Wali in settings.',
+          'A female member must have an active Wali before this conversation can continue. Set up a Wali and ask them to accept the invitation.',
         );
       }
     }
@@ -258,10 +258,16 @@ export class WaliService {
     }
   }
 
-  private async signInvitation(linkId: string, action: 'accept' | 'reject') {
+  private async signInvitation(
+    linkId: string,
+    waliId: string,
+    action: 'accept' | 'reject',
+  ) {
     const policy = await this.getPolicySettings();
     const expiresAt = Date.now() + policy.inviteExpiryDays * 24 * 60 * 60 * 1000;
-    const payload = Buffer.from(JSON.stringify({ linkId, action, expiresAt })).toString('base64url');
+    const payload = Buffer.from(
+      JSON.stringify({ linkId, waliId, action, expiresAt }),
+    ).toString('base64url');
     const secret = getWaliLinkSecret(this.config);
     const signature = createHmac('sha256', secret).update(payload).digest('base64url');
     return `${payload}.${signature}`;
@@ -276,13 +282,23 @@ export class WaliService {
     if (expected.length !== supplied.length || !timingSafeEqual(expected, supplied)) {
       throw new BadRequestException('Invalid invitation link');
     }
-    let claims: { linkId: string; action: string; expiresAt: number };
+    let claims: {
+      linkId: string;
+      waliId: string;
+      action: string;
+      expiresAt: number;
+    };
     try { claims = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8')); }
     catch { throw new BadRequestException('Invalid invitation link'); }
-    if (claims.action !== action || claims.expiresAt <= Date.now()) {
+    if (
+      !claims.linkId ||
+      !claims.waliId ||
+      claims.action !== action ||
+      claims.expiresAt <= Date.now()
+    ) {
       throw new BadRequestException('Invitation link has expired or is invalid');
     }
-    return claims.linkId;
+    return { linkId: claims.linkId, waliId: claims.waliId };
   }
 
   // ────────────────────────────────────────────────────────────────
@@ -417,8 +433,16 @@ export class WaliService {
         waliName: waliAccount.name,
         userName: user.name,
         message: data.message,
-        invitationToken: await this.signInvitation(link.id, 'accept'),
-        declineToken: await this.signInvitation(link.id, 'reject'),
+        invitationToken: await this.signInvitation(
+          link.id,
+          waliAccount.id,
+          'accept',
+        ),
+        declineToken: await this.signInvitation(
+          link.id,
+          waliAccount.id,
+          'reject',
+        ),
       });
     }
 
@@ -449,8 +473,16 @@ export class WaliService {
       to: link.wali.email,
       waliName: link.wali.name,
       userName: link.user.name,
-      invitationToken: await this.signInvitation(link.id, 'accept'),
-      declineToken: await this.signInvitation(link.id, 'reject'),
+      invitationToken: await this.signInvitation(
+        link.id,
+        link.waliId,
+        'accept',
+      ),
+      declineToken: await this.signInvitation(
+        link.id,
+        link.waliId,
+        'reject',
+      ),
     });
     return this.prisma.waliLink.update({
       where: { id: link.id },
@@ -475,8 +507,16 @@ export class WaliService {
       to: link.wali.email,
       waliName: link.wali.name,
       userName: link.user.name,
-      invitationToken: await this.signInvitation(link.id, 'accept'),
-      declineToken: await this.signInvitation(link.id, 'reject'),
+      invitationToken: await this.signInvitation(
+        link.id,
+        link.wali.id,
+        'accept',
+      ),
+      declineToken: await this.signInvitation(
+        link.id,
+        link.wali.id,
+        'reject',
+      ),
     });
     return this.prisma.waliLink.update({
       where: { id: link.id },
@@ -539,12 +579,57 @@ export class WaliService {
   }
 
   async respondToToken(token: string, action: 'accept' | 'reject') {
-    const linkId = this.verifyInvitation(token, action);
+    const { linkId, waliId } = this.verifyInvitation(token, action);
     const link = await this.prisma.waliLink.findUnique({
       where: { id: linkId },
     });
     if (!link) throw new NotFoundException('Invitation not found');
+    if (link.waliId !== waliId) {
+      throw new BadRequestException('Invitation link is invalid or expired');
+    }
     return this.respondToInvitation(link.waliId, link.id, { action });
+  }
+
+  async getShareableInvitation(userId: string) {
+    await this.assertMemberFeatureEnabled(userId);
+    const link = await this.prisma.waliLink.findFirst({
+      where: { userId, status: 'pending' },
+      orderBy: { updatedAt: 'desc' },
+      include: {
+        wali: { select: { id: true, email: true } },
+      },
+    });
+    if (!link) throw new NotFoundException('No pending Wali invitation');
+
+    const profile = await this.prisma.profile.findUnique({
+      where: { userId },
+      select: { waliEmail: true },
+    });
+    if (
+      !profile?.waliEmail ||
+      profile.waliEmail.trim().toLowerCase() !==
+        link.wali.email.trim().toLowerCase()
+    ) {
+      throw new BadRequestException(
+        'The pending invitation no longer matches your saved Wali contact.',
+      );
+    }
+
+    const invitationToken = await this.signInvitation(
+      link.id,
+      link.wali.id,
+      'accept',
+    );
+    const declineToken = await this.signInvitation(
+      link.id,
+      link.wali.id,
+      'reject',
+    );
+    return {
+      status: 'pending',
+      recipientEmail: link.wali.email,
+      url: this.mail.buildWaliInvitationUrl(invitationToken, declineToken),
+    };
   }
 
   async unsubscribeByToken(token: string) {

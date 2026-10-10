@@ -17,6 +17,7 @@ import { RealtimeBus } from 'src/realtime/realtime.bus';
 import { MailService } from 'src/mail/mail.service';
 import { BillingService } from './billing.service';
 import { DiscountsService } from './discounts.service';
+import { calculatePaymentFee } from './payment-fees';
 
 type PesapalEnvironment = 'sandbox' | 'live';
 type PesapalSettings = {
@@ -427,6 +428,9 @@ export class PesapalService {
 
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
     if (!user) throw new NotFoundException('User not found');
+    const feeAmount = calculatePaymentFee(pricing.amount);
+    const vatAmount = 0;
+    const totalAmount = pricing.amount + feeAmount + vatAmount;
     const merchantReference = randomUUID();
     const order = await this.prisma.paymentOrder.create({
       data: {
@@ -436,8 +440,10 @@ export class PesapalService {
         merchantReference,
         subtotalAmountCents: plan.priceCents,
         discountAmountCents: pricing.discountAmount,
+        feeAmountCents: feeAmount,
+        vatAmountCents: vatAmount,
         discountCodeId: pricing.code?.id ?? null,
-        amountCents: pricing.amount,
+        amountCents: totalAmount,
         currency: plan.currency,
       },
     });
@@ -464,7 +470,7 @@ export class PesapalService {
           body: JSON.stringify({
             id: merchantReference,
             currency: plan.currency,
-            amount: this.toProviderAmount(pricing.amount, plan.currency, true),
+            amount: this.toProviderAmount(totalAmount, plan.currency, true),
             description: `${plan.name} subscription`,
             callback_url: settings.callbackUrl,
             notification_id: settings.ipnId,
@@ -492,6 +498,12 @@ export class PesapalService {
       return {
         redirectUrl: payload.redirect_url,
         orderTrackingId: payload.order_tracking_id,
+        subtotalAmountCents: plan.priceCents,
+        discountAmountCents: pricing.discountAmount,
+        feeAmountCents: feeAmount,
+        vatAmountCents: vatAmount,
+        amountCents: totalAmount,
+        currency: plan.currency,
       };
     } catch (error) {
       await this.prisma.paymentOrder.update({
@@ -518,6 +530,10 @@ export class PesapalService {
     if (!gift) throw new NotFoundException('Gift not found');
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
     if (!user) throw new NotFoundException('User not found');
+    const subtotalAmount = gift.price * quantity;
+    const feeAmount = calculatePaymentFee(subtotalAmount);
+    const vatAmount = 0;
+    const totalAmount = subtotalAmount + feeAmount + vatAmount;
     const merchantReference = randomUUID();
     const order = await this.prisma.paymentOrder.create({
       data: {
@@ -526,7 +542,10 @@ export class PesapalService {
         itemId: gift.id,
         merchantReference,
         quantity,
-        amountCents: gift.price * quantity,
+        subtotalAmountCents: subtotalAmount,
+        feeAmountCents: feeAmount,
+        vatAmountCents: vatAmount,
+        amountCents: totalAmount,
         currency: gift.currency,
       },
     });
@@ -545,11 +564,7 @@ export class PesapalService {
           body: JSON.stringify({
             id: merchantReference,
             currency: gift.currency,
-            amount: this.toProviderAmount(
-              gift.price * quantity,
-              gift.currency,
-              false,
-            ),
+            amount: this.toProviderAmount(totalAmount, gift.currency, false),
             description: `${quantity} x ${gift.name}`,
             callback_url: settings.callbackUrl,
             notification_id: settings.ipnId,
@@ -577,6 +592,13 @@ export class PesapalService {
       return {
         redirectUrl: payload.redirect_url,
         orderTrackingId: payload.order_tracking_id,
+        quantity,
+        subtotalAmountCents: subtotalAmount,
+        discountAmountCents: 0,
+        feeAmountCents: feeAmount,
+        vatAmountCents: vatAmount,
+        amountCents: totalAmount,
+        currency: gift.currency,
       };
     } catch (error) {
       await this.prisma.paymentOrder.update({
@@ -721,9 +743,33 @@ export class PesapalService {
       throw new ServiceUnavailableException(
         'Could not retrieve payment status from Pesapal',
       );
-    return String(
-      result.payment_status_description ?? result.status ?? 'PENDING',
-    ).toUpperCase();
+    return {
+      status: String(
+        result.payment_status_description ?? result.status ?? 'PENDING',
+      ).toUpperCase(),
+      amount: result.amount == null ? null : Number(result.amount),
+      currency:
+        result.currency == null ? null : String(result.currency),
+    };
+  }
+
+  private providerAmountMatches(
+    order: { itemType: string; amountCents: number; currency: string },
+    provider: { amount: number | null; currency: string | null },
+  ) {
+    if (
+      provider.amount === null ||
+      !Number.isFinite(provider.amount) ||
+      provider.currency?.toUpperCase() !== order.currency.toUpperCase()
+    ) {
+      return false;
+    }
+    const expected = this.toProviderAmount(
+      order.amountCents,
+      order.currency,
+      order.itemType === 'subscription',
+    );
+    return Math.round(provider.amount * 100) === Math.round(expected * 100);
   }
 
   async refreshOrder(userId: string | null, orderTrackingId: string) {
@@ -733,9 +779,19 @@ export class PesapalService {
     if (!order || (userId && order.userId !== userId))
       throw new NotFoundException('Payment order not found');
     if (order.status === 'completed') return { status: 'completed' };
+    if (order.status === 'failed') return { status: 'failed' };
     if (order.status === 'processing') return { status: 'pending' };
-    const providerStatus = await this.providerStatus(orderTrackingId);
+    const providerResult = await this.providerStatus(orderTrackingId);
+    const providerStatus = providerResult.status;
     if (providerStatus === 'COMPLETED') {
+      if (!this.providerAmountMatches(order, providerResult)) {
+        await this.prisma.paymentOrder.updateMany({
+          where: { id: order.id, status: 'pending' },
+          data: { status: 'failed', providerStatus: 'AMOUNT_MISMATCH' },
+        });
+        await this.discounts.release(order.id);
+        return { status: 'failed' };
+      }
       const claim = await this.prisma.paymentOrder.updateMany({
         where: { id: order.id, status: 'pending' },
         data: { status: 'processing', providerStatus },
@@ -787,7 +843,12 @@ export class PesapalService {
         where: { id: order.id },
       });
       return {
-        status: latest?.status === 'completed' ? 'completed' : 'pending',
+        status:
+          latest?.status === 'completed'
+            ? 'completed'
+            : latest?.status === 'failed'
+              ? 'failed'
+              : 'pending',
       };
     }
     if (['FAILED', 'INVALID', 'REVERSED'].includes(providerStatus)) {

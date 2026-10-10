@@ -138,7 +138,7 @@ export class NotificationsService {
         const isRead = (id: string, createdAt: Date) =>
             readIds.has(id) || (!!readMarker && createdAt <= readMarker);
 
-        const [matches, incomingLikes, conversationsByPair, broadcasts, inboxMessages] = await Promise.all([
+        const [matches, incomingLikes, conversationsByPair, broadcasts, inboxMessages, declinedPartners] = await Promise.all([
             this.prisma.match.findMany({
                 where: { OR: [{ userAId: userId }, { userBId: userId }] },
                 orderBy: { createdAt: 'desc' },
@@ -197,7 +197,12 @@ export class NotificationsService {
                     createdAt: true,
                 },
             }),
+            this.prisma.like.findMany({
+                where: { fromUserId: userId, type: 'pass' },
+                select: { toUserId: true },
+            }),
         ]);
+        const declinedPartnerIds = new Set(declinedPartners.map((like) => like.toUserId));
 
         // Build a (sorted-pair → conversationId) lookup so match notifications
         // can deep-link straight into chat.
@@ -239,6 +244,7 @@ export class NotificationsService {
                 partner: this.serializePartner(l.fromUser),
                 conversationId: null,
                 isSuperLike: l.type === 'superLike',
+                isDeclined: declinedPartnerIds.has(l.fromUserId),
             }));
 
         // Newest first
@@ -258,6 +264,7 @@ export class NotificationsService {
             isRead: isRead(`inbox-${item.id}`, item.createdAt),
             title: item.subject ?? 'Message from Halal Connect',
             message: item.body,
+            inboxMessageId: item.id,
         }));
 
         const all = [...matchItems, ...likeItems, ...broadcastItems, ...inboxItems];

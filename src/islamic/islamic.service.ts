@@ -37,28 +37,47 @@ export class IslamicService {
     tz?: number,
     method?: CalcMethod,
     asrFactor: AsrFactor = 1,
+    date?: string,
   ) {
     const settings = await this.getSettings();
     const tzOffset = tz ?? Math.round(lng / 15);
     const calcMethod = (method ?? settings.calcMethod) as CalcMethod;
     const now = new Date();
-    const times = computePrayerTimes(now, lat, lng, tzOffset, calcMethod, asrFactor);
+    const localNow = new Date(now.getTime() + tzOffset * 60 * 60 * 1000);
+    const calculationDate = date
+      ? new Date(`${date}T00:00:00.000Z`)
+      : new Date(
+          Date.UTC(
+            localNow.getUTCFullYear(),
+            localNow.getUTCMonth(),
+            localNow.getUTCDate(),
+          ),
+        );
+    const times = computePrayerTimes(
+      calculationDate,
+      lat,
+      lng,
+      tzOffset,
+      calcMethod,
+      asrFactor,
+    );
 
     return {
-      date: now.toISOString(),
+      date: calculationDate.toISOString(),
       timezone: tzOffset,
       method: calcMethod,
       asrFactor,
       ramadanMode: settings.ramadanMode,
       times,
       // The next upcoming prayer (by local clock) for "time until" UIs.
-      next: this.nextPrayer(times, tzOffset),
+      next: this.nextPrayer(times, tzOffset, calculationDate),
     };
   }
 
   private nextPrayer(
     times: PrayerTimesResult,
     tz: number,
+    date: Date,
   ): { name: string; time: string } | null {
     const order: Array<keyof PrayerTimesResult> = [
       'fajr',
@@ -68,9 +87,12 @@ export class IslamicService {
       'isha',
     ];
     // Current local time in minutes.
-    const nowUtc = new Date();
-    const localMinutes =
-      (nowUtc.getUTCHours() + tz) * 60 + nowUtc.getUTCMinutes();
+    const now = new Date();
+    const requestedDate = date.toISOString().slice(0, 10);
+    const localNow = new Date(now.getTime() + tz * 60 * 60 * 1000);
+    const localMinutes = localNow.toISOString().slice(0, 10) === requestedDate
+      ? localNow.getUTCHours() * 60 + localNow.getUTCMinutes()
+      : 0;
     const norm = ((localMinutes % 1440) + 1440) % 1440;
     for (const name of order) {
       const [h, m] = times[name].split(':').map(Number);

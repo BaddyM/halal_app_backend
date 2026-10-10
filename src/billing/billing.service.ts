@@ -284,7 +284,7 @@ export class BillingService {
     this.realtime.emitAdminEvent('payment', `New ${plan.name} subscription`, {
       userId,
       planId: plan.id,
-      amountCents: plan.priceCents,
+      amountCents,
     });
 
     return sub;

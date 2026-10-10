@@ -44,7 +44,14 @@ export class IslamicController {
 
   @Get('prayer-times')
   prayerTimes(@Query() q: PrayerTimesQueryDto) {
-    return this.islamic.getPrayerTimes(q.lat, q.lng, q.tz, q.method, q.asrFactor ?? 1);
+    return this.islamic.getPrayerTimes(
+      q.lat,
+      q.lng,
+      q.tz,
+      q.method,
+      q.asrFactor ?? 1,
+      q.date,
+    );
   }
 
   @Get('qibla')

@@ -62,4 +62,98 @@ describe('SupportService admin ticket lifecycle', () => {
       }),
     );
   });
+
+  it('sends a safe general-support question to AI for an answer', async () => {
+    const question = 'How do I turn on prayer alerts?';
+    const ticket = { id: 'ai-ticket-1' };
+    const prisma = {
+      supportTicket: {
+        findFirst: jest
+          .fn()
+          .mockResolvedValueOnce(null)
+          .mockResolvedValueOnce({
+            ...ticket,
+            userId: 'user-1',
+            subject: 'AI Support',
+            category: 'ai',
+            status: 'open',
+            createdAt: new Date(),
+            updatedAt: new Date(),
+            messages: [
+              { id: 'q', body: question, fromAdmin: false, createdAt: new Date() },
+              {
+                id: 'a',
+                body: 'Open notification settings and enable prayer alerts.',
+                fromAdmin: true,
+                createdAt: new Date(),
+              },
+            ],
+          }),
+        create: jest.fn().mockResolvedValue(ticket),
+        update: jest.fn().mockResolvedValue({}),
+      },
+      supportTicketMessage: {
+        create: jest.fn().mockResolvedValue({}),
+        findMany: jest.fn().mockResolvedValue([
+          { body: question, fromAdmin: false },
+        ]),
+      },
+    };
+    const ai = {
+      analyzeAndReply: jest.fn().mockResolvedValue({
+        reply: 'Open notification settings and enable prayer alerts.',
+        escalate: false,
+      }),
+    };
+    const service = new SupportService(prisma as never, ai as never);
+
+    await service.askAi('user-1', question);
+
+    expect(ai.analyzeAndReply).toHaveBeenCalledWith(question, {
+      topic: 'prayer times and prayer alerts',
+      scope: 'general app support',
+    });
+  });
+
+  it('does not send payment questions to AI and escalates them to a handler', async () => {
+    const ticket = { id: 'ai-ticket-1' };
+    const prisma = {
+      supportTicket: {
+        findFirst: jest
+          .fn()
+          .mockResolvedValueOnce(null)
+          .mockResolvedValueOnce({
+            ...ticket,
+            userId: 'user-1',
+            subject: 'AI Support',
+            category: 'ai',
+            status: 'waitingForUser',
+            createdAt: new Date(),
+            updatedAt: new Date(),
+            messages: [],
+          }),
+        create: jest.fn().mockResolvedValue(ticket),
+        update: jest.fn().mockResolvedValue({}),
+      },
+      supportTicketMessage: {
+        create: jest.fn().mockResolvedValue({}),
+        findMany: jest.fn().mockResolvedValue([
+          { body: 'My payment failed, can you check it?', fromAdmin: false },
+        ]),
+      },
+    };
+    const ai = { analyzeAndReply: jest.fn() };
+    const service = new SupportService(prisma as never, ai as never);
+
+    await service.askAi('user-1', 'My payment failed, can you check it?');
+
+    expect(ai.analyzeAndReply).not.toHaveBeenCalled();
+    expect(prisma.supportTicketMessage.create).toHaveBeenLastCalledWith({
+      data: {
+        ticketId: ticket.id,
+        body: 'For your privacy, this message was not sent to the AI assistant. A support handler will review your request and reply here.',
+        fromAdmin: true,
+      },
+    });
+  });
 });

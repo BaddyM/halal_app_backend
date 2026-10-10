@@ -341,12 +341,10 @@ export class MailService {
     declineToken?: string;
   }) {
     const appName = this.config.get<string>('APP_NAME') ?? 'Halal Connect';
-    const apiBaseUrl = this.apiBaseUrl();
-    const acceptUrl = `${apiBaseUrl}/wali/confirm/${encodeURIComponent(args.invitationToken)}${
-      args.declineToken
-        ? `?decline=${encodeURIComponent(args.declineToken)}`
-        : ''
-    }`;
+    const acceptUrl = this.buildWaliInvitationUrl(
+      args.invitationToken,
+      args.declineToken,
+    );
     const safeWaliName = this.escapeHtml(args.waliName);
     const safeUserName = this.escapeHtml(args.userName);
     const safeMessage = args.message ? this.escapeHtml(args.message) : '';
@@ -379,6 +377,12 @@ export class MailService {
       `${args.userName} invited you to be their Wali. No app or account is needed.`,
     );
     return this.sendMail({ to: args.to, subject, html, text });
+  }
+
+  buildWaliInvitationUrl(invitationToken: string, declineToken?: string) {
+    return `${this.apiBaseUrl()}/wali/confirm/${encodeURIComponent(invitationToken)}${
+      declineToken ? `?decline=${encodeURIComponent(declineToken)}` : ''
+    }`;
   }
 
   async sendWaliCcTest(to: string) {

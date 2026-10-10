@@ -70,6 +70,12 @@ export class WaliController {
     return this.waliService.resendInvite(req.user.id);
   }
 
+  @Get('share-invitation')
+  @UseGuards(AuthGuard)
+  shareInvitation(@Request() req: any) {
+    return this.waliService.getShareableInvitation(req.user.id);
+  }
+
   @Get('confirm')
   confirm(@Query('token') token: string) { return this.waliService.respondToToken(token, 'accept'); }
 

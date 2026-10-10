@@ -36,7 +36,40 @@ export class ChatService implements OnModuleInit {
   private botUserId: string | null = null;
   private pendingReports = new Map<string, string>(); // conversationId -> reportId
 
-  private async replyToBotMessage(message: string) {
+  private async createAiSupportFollowUp(
+    userId: string,
+    conversationId: string,
+    message: string,
+    reason: string,
+  ) {
+    const ticket = await this.prisma.supportTicket.create({
+      data: {
+        userId,
+        subject: 'In-app AI support follow-up',
+        category: 'ai',
+        priority: 'normal',
+        messages: {
+          create: {
+            body: message.slice(0, 2000),
+            fromAdmin: false,
+          },
+        },
+      },
+      select: { id: true },
+    });
+    this.bus.emitAdminEvent(
+      'message',
+      'AI support follow-up requested',
+      { ticketId: ticket.id, userId, conversationId, reason },
+    );
+    return ticket.id as string;
+  }
+
+  private async replyToBotMessage(
+    userId: string,
+    conversationId: string,
+    message: string,
+  ) {
     if (isBareGreeting(message)) {
       return {
         reply:
@@ -46,20 +79,52 @@ export class ChatService implements OnModuleInit {
     }
     const topic = generalAiHelpTopic(message);
     if (topic == null) {
+      let ticketId: string | null = null;
+      try {
+        ticketId = await this.createAiSupportFollowUp(
+          userId,
+          conversationId,
+          message,
+          'Question is outside supported general topics or contains sensitive information',
+        );
+      } catch (error) {
+        this.logger.error('Could not create AI support follow-up', error);
+      }
       return {
-        reply:
-          'For your privacy, this message was not sent to the AI assistant. Please open Help & Support to contact a support handler.',
+        reply: ticketId
+          ? `For your privacy, this message was not sent to AI. I sent it to Support as request ${ticketId}.`
+          : 'For your privacy, this message was not sent to AI. Please open Help & Support to contact a support handler.',
         escalate: false,
       };
     }
     const result = await this.ai.analyzeAndReply(
-      `Give concise, general app guidance about ${topic}.`,
-      { topic },
+      message,
+      { topic, scope: 'general app support' },
     );
-    if (result.escalate) {
+    const unavailable =
+      result.reply.toLowerCase().includes('ai is not configured') ||
+      result.reply.toLowerCase().includes('ai is temporarily unavailable') ||
+      result.reply.toLowerCase().includes('ai is unavailable');
+    if (result.escalate || unavailable) {
+      let ticketId: string | null = null;
+      try {
+        ticketId = await this.createAiSupportFollowUp(
+          userId,
+          conversationId,
+          message,
+          result.reason ??
+            (unavailable
+              ? 'AI support is unavailable'
+              : 'AI could not answer confidently'),
+        );
+      } catch (error) {
+        this.logger.error('Could not create AI support follow-up', error);
+      }
       return {
         reply:
-          'This question needs a support handler. Please open Help & Support so your request reaches the right team.',
+          ticketId
+            ? `I couldn’t answer that confidently, so I sent your question to Support as request ${ticketId}.`
+            : 'I couldn’t answer that confidently. Please open Help & Support to contact a support handler.',
         escalate: false,
       };
     }
@@ -345,7 +410,8 @@ export class ChatService implements OnModuleInit {
     conversationId: string,
     opts: { before?: string; limit?: number },
   ) {
-    await this.assertMembership(userId, conversationId);
+    const conv = await this.assertMembership(userId, conversationId);
+    await this.wali.assertChatAllowed([conv.userAId, conv.userBId]);
     const limit = Math.min(Math.max(opts.limit ?? 50, 1), 200);
     const where: Prisma.MessageWhereInput = {
       conversationId,
@@ -418,18 +484,20 @@ export class ChatService implements OnModuleInit {
       });
       return m;
     });
-    void this.wali
-      .sendInstantMessageSummary(
-        [conv.userAId, conv.userBId],
-        userId,
-        clean,
-        type,
-      )
-      .catch((error) => {
-        this.logger.error(
-          `Instant Wali email delivery failed: ${String(error)}`,
-        );
-      });
+    if (conv.waliInvolved) {
+      void this.wali
+        .sendInstantMessageSummary(
+          [conv.userAId, conv.userBId],
+          userId,
+          clean,
+          type,
+        )
+        .catch((error) => {
+          this.logger.error(
+            `Instant Wali email delivery failed: ${String(error)}`,
+          );
+        });
+    }
 
     const other = conv.userAId === userId ? conv.userBId : conv.userAId;
     const payload = {
@@ -459,9 +527,11 @@ export class ChatService implements OnModuleInit {
     }
 
     // Bot / report commands handling
+    let botCommandHandled = false;
     try {
       const command = clean.split(' ')[0].toLowerCase();
       if (command === '/report') {
+        botCommandHandled = true;
         // Create a Report (stored but not sent to admins yet)
         const reason =
           clean.replace('/report', '').trim() || 'reported in conversation';
@@ -492,10 +562,14 @@ export class ChatService implements OnModuleInit {
           );
         }
       } else if (command === '/bot' || command === '/halalbot') {
+        botCommandHandled = true;
         const prompt = clean.replace(command, '').trim() || 'Hello';
         if (this.botUserId) {
-          // Use analyzeAndReply so AI can decide whether to escalate
-          const result = await this.replyToBotMessage(prompt);
+          const result = await this.replyToBotMessage(
+            userId,
+            conversationId,
+            prompt,
+          );
           const reply = result.reply;
           const botMsg = await this.prisma.message.create({
             data: {
@@ -510,19 +584,6 @@ export class ChatService implements OnModuleInit {
             'message:new',
             this.serializeMessage(botMsg),
           );
-          if (result.escalate) {
-            const report = await this.prisma.report.create({
-              data: {
-                reporterId: userId,
-                reportedId: other,
-                reason: result.reason ?? 'AI escalated',
-              },
-            });
-            this.bus.emitAdminEvent('report', 'AI escalated conversation', {
-              reportId: report.id,
-              conversationId,
-            });
-          }
         }
       } else if (
         clean.toLowerCase() === 'talk to human' ||
@@ -563,8 +624,16 @@ export class ChatService implements OnModuleInit {
 
     // Auto-reply when the other participant is the bot (direct chat with bot)
     try {
-      if (this.botUserId && other === this.botUserId) {
-        const result = await this.replyToBotMessage(clean);
+      if (
+        this.botUserId &&
+        other === this.botUserId &&
+        !botCommandHandled
+      ) {
+        const result = await this.replyToBotMessage(
+          userId,
+          conversationId,
+          clean,
+        );
         const reply = result.reply;
         const botMsg = await this.prisma.message.create({
           data: {
@@ -580,19 +649,6 @@ export class ChatService implements OnModuleInit {
           this.serializeMessage(botMsg),
         );
 
-        if (result.escalate) {
-          const report = await this.prisma.report.create({
-            data: {
-              reporterId: userId,
-              reportedId: other,
-              reason: result.reason ?? 'AI escalated',
-            },
-          });
-          this.bus.emitAdminEvent('report', 'AI escalated conversation', {
-            reportId: report.id,
-            conversationId,
-          });
-        }
       }
     } catch (e) {
       this.logger.warn('Error sending AI auto-reply', e as any);
@@ -716,16 +772,7 @@ export class ChatService implements OnModuleInit {
     requestedSummary?: string,
   ) {
     await this.assertMembership(userId, conversationId);
-    const profile = await this.prisma.profile.findUnique({
-      where: { userId },
-      select: { waliName: true, waliEmail: true, waliPhone: true },
-    });
-    if (!profile?.waliName || (!profile.waliEmail && !profile.waliPhone)) {
-      throw new BadRequestException(
-        'Add a guardian (wali) contact in your profile first.',
-      );
-    }
-
+    await this.wali.assertChatAllowed([userId]);
     const conversation = await this.prisma.conversation.findUnique({
       where: { id: conversationId },
       include: {
@@ -739,6 +786,32 @@ export class ChatService implements OnModuleInit {
       },
     });
     if (!conversation) throw new NotFoundException('Conversation not found');
+    if (conversation.waliInvolved) {
+      return { success: true, waliInvolved: true, alreadyInvolved: true };
+    }
+
+    const profile = await this.prisma.profile.findUnique({
+      where: { userId },
+      select: { waliName: true, waliEmail: true, waliPhone: true },
+    });
+    if (!profile?.waliName || !profile.waliEmail) {
+      throw new BadRequestException(
+        'Add your Wali name and email before involving them in this conversation.',
+      );
+    }
+    const activeLink = await this.prisma.waliLink.findFirst({
+      where: {
+        userId,
+        status: 'active',
+        wali: { email: profile.waliEmail },
+      },
+      select: { id: true },
+    });
+    if (!activeLink) {
+      throw new BadRequestException(
+        'Your Wali must accept the invitation before they can be involved in this conversation.',
+      );
+    }
 
     const recentMessages = conversation.messages.reverse();
     const participantNames = `${conversation.userA.name} and ${conversation.userB.name}`;
@@ -751,31 +824,42 @@ export class ChatService implements OnModuleInit {
       : 'No messages yet.';
     const summary = requestedSummary?.trim() || generatedSummary;
 
-    await this.prisma.conversation.update({
-      where: { id: conversationId },
+    const enabled = await this.prisma.conversation.updateMany({
+      where: { id: conversationId, waliInvolved: false },
       data: { waliInvolved: true, waliInvolvedAt: new Date() },
     });
+    if (enabled.count !== 1) {
+      return { success: true, waliInvolved: true, alreadyInvolved: true };
+    }
 
     const subject = `Conversation update for ${participantNames}`;
 
     if (profile.waliEmail) {
-      await this.mail.sendWaliSummary({
-        to: profile.waliEmail,
-        userName:
-          conversation.userAId === userId
-            ? conversation.userA.name
-            : conversation.userB.name,
-        participantNames,
-        summary,
-        messageCount: recentMessages.length,
-        frequency: 'instant',
-      });
+      try {
+        await this.mail.sendWaliSummary({
+          to: profile.waliEmail,
+          userName:
+            conversation.userAId === userId
+              ? conversation.userA.name
+              : conversation.userB.name,
+          participantNames,
+          summary,
+          messageCount: recentMessages.length,
+          frequency: 'instant',
+        });
+      } catch (error) {
+        this.logger.error(`Wali conversation email failed: ${String(error)}`);
+      }
     }
     if (profile.waliPhone) {
-      await this.sms.sendMessage(
-        profile.waliPhone,
-        `${subject}. ${recentMessages.length} recent message(s) are available in the app.`,
-      );
+      try {
+        await this.sms.sendMessage(
+          profile.waliPhone,
+          `${subject}. ${recentMessages.length} recent message(s) are available in the app.`,
+        );
+      } catch (error) {
+        this.logger.error(`Wali conversation SMS failed: ${String(error)}`);
+      }
     }
 
     this.bus.emitToConversation(conversationId, 'wali:involved', {

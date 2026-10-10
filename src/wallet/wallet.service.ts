@@ -3,6 +3,16 @@ import { ConfigService } from '@nestjs/config';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { PushService } from 'src/push/push.service';
 
+export function calculateWithdrawalBreakdown(amount: number) {
+  const transactionFee = Math.floor((amount * 25 + 500) / 1000);
+  const serviceFee = Math.floor((amount * 15 + 500) / 1000);
+  return {
+    transactionFee,
+    serviceFee,
+    netAmount: amount - transactionFee - serviceFee,
+  };
+}
+
 @Injectable()
 export class WalletService {
   constructor(
@@ -76,6 +86,7 @@ export class WalletService {
     if (typeof requiredDetail !== 'string' || !requiredDetail.trim()) {
       throw new BadRequestException(method === 'mobile_money' ? 'A phone number is required' : 'Bank account details are required');
     }
+    const fees = calculateWithdrawalBreakdown(amount);
 
     try {
       return await this.prisma.$transaction(async (tx) => {
@@ -85,7 +96,7 @@ export class WalletService {
         });
         if (reserved.count !== 1) throw new BadRequestException('Insufficient available balance');
         const request = await tx.withdrawalRequest.create({
-          data: { userId, pendingUserId: userId, amount, method, details: details as any },
+          data: { userId, pendingUserId: userId, amount, ...fees, method, details: details as any },
         });
         await tx.walletTransaction.create({
           data: { userId, type: 'withdrawal_pending', amount: -amount, reference: `withdrawal:${request.id}`, description: 'Withdrawal requested' },
@@ -124,7 +135,7 @@ export class WalletService {
           throw new BadRequestException('An approved withdrawal and payment reference are required');
         }
         await tx.walletAccount.update({ where: { userId: request.userId }, data: { pendingBalance: { decrement: request.amount } } });
-        await tx.walletTransaction.create({ data: { userId: request.userId, type: 'withdrawal_paid', amount: -request.amount, reference: `paid:${request.id}`, description: `Paid: ${data.reference}` } });
+        await tx.walletTransaction.create({ data: { userId: request.userId, type: 'withdrawal_paid', amount: -request.netAmount, reference: `paid:${request.id}`, description: `Paid: ${data.reference}` } });
         return tx.withdrawalRequest.update({ where: { id }, data: { status: 'paid', reference: data.reference.slice(0, 191), reviewedBy: adminId, reviewedAt: new Date() } });
       }
       if (!['pending', 'approved'].includes(request.status)) throw new BadRequestException('Withdrawal cannot be rejected in its current state');
@@ -142,7 +153,7 @@ export class WalletService {
       void this.push.sendToUser(result.userId, {
         title: action === 'paid' ? 'Withdrawal paid' : 'Withdrawal rejected',
         body: action === 'paid'
-          ? `Your withdrawal of ${result.amount.toLocaleString()} ${result.currency} was paid.`
+          ? `Your withdrawal of ${result.netAmount.toLocaleString()} ${result.currency} was paid.`
           : `Your withdrawal was rejected. ${result.reason ?? 'The amount has been returned to your balance.'}`,
         data: { type: 'withdrawal', withdrawalId: result.id, status: result.status },
       });

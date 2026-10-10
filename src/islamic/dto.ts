@@ -1,5 +1,5 @@
 import { Type } from 'class-transformer';
-import { IsIn, IsNumber, IsOptional, Max, Min } from 'class-validator';
+import { IsDateString, IsIn, IsNumber, IsOptional, Max, Min } from 'class-validator';
 
 export class GeoQueryDto {
   @Type(() => Number) @IsNumber() @Min(-90) @Max(90) lat!: number;
@@ -9,6 +9,8 @@ export class GeoQueryDto {
 export class PrayerTimesQueryDto extends GeoQueryDto {
   // Timezone offset in hours (e.g. 1, -5, 3.5). Defaults to lng/15 if omitted.
   @IsOptional() @Type(() => Number) @IsNumber() @Min(-12) @Max(14) tz?: number;
+
+  @IsOptional() @IsDateString({ strict: true }) date?: string;
 
   @IsOptional() @IsIn(['MWL', 'ISNA', 'Egypt', 'Makkah', 'Karachi']) method?:
     | 'MWL'

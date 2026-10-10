@@ -28,7 +28,22 @@ describe('GiftsService', () => {
   });
 
   it('deducts and credits the requested quantity atomically', async () => {
-    await service.send('sender-1', 'gift-1', 'recipient-1', 3, 'Salaam');
+    tx.giftSent.create.mockResolvedValue({
+      id: 'sent-1',
+      giftId: 'gift-1',
+      recipientId: 'recipient-1',
+      quantity: 3,
+      message: 'Salaam',
+      cashValue: 30,
+      createdAt: new Date('2026-10-09T00:00:00Z'),
+    });
+    const result = await service.send(
+      'sender-1',
+      'gift-1',
+      'recipient-1',
+      3,
+      'Salaam',
+    );
 
     expect(tx.giftInventory.updateMany).toHaveBeenCalledWith({
       where: { userId: 'sender-1', giftId: 'gift-1', quantity: { gte: 3 } },
@@ -55,11 +70,43 @@ describe('GiftsService', () => {
       title: 'Congratulations!',
       data: expect.objectContaining({ type: 'gift_received', giftSentId: 'sent-1', quantity: 3 }),
     }));
+    expect(result.gift).not.toHaveProperty('cashValue');
+    expect(result.gift.quantity).toBe(3);
   });
 
   it('rejects quantities outside the supported range', async () => {
     await expect(service.send('sender-1', 'gift-1', 'recipient-1', 21))
       .rejects.toBeInstanceOf(BadRequestException);
     expect(prisma.giftCatalogItem.findFirst).not.toHaveBeenCalled();
+  });
+
+  it('does not expose recipient cash value in the sender inventory query', async () => {
+    const findMany = jest.fn().mockResolvedValue([]);
+    const service = new GiftsService(
+      {
+        giftInventory: { findMany },
+      } as any,
+      {} as any,
+      {} as any,
+    );
+
+    await service.inventory('sender-1');
+
+    expect(findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        include: {
+          gift: {
+            select: {
+              id: true,
+              name: true,
+              description: true,
+              image: true,
+              price: true,
+              currency: true,
+            },
+          },
+        },
+      }),
+    );
   });
 });

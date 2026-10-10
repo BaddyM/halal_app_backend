@@ -78,4 +78,26 @@ describe('AiService Gemini response handling', () => {
       reason: undefined,
     });
   });
+
+  it('escalates a malformed assistant response instead of presenting it as an answer', async () => {
+    fetchMock.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        candidates: [{ content: { parts: [{ text: 'Not valid JSON' }] } }],
+      }),
+    } as Response);
+
+    const result = await new AiService().analyzeAndReply(
+      'How do I turn on prayer alerts?',
+      { topic: 'prayer times and prayer alerts' },
+    );
+
+    expect(result).toEqual({
+      reply:
+        'I couldn’t answer that confidently. A support handler will review this conversation.',
+      escalate: true,
+      reason: 'Invalid AI response',
+    });
+  });
 });

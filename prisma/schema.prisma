@@ -713,6 +713,8 @@ model PaymentOrder {
   quantity            Int                  @default(1)
   subtotalAmountCents Int                  @default(0)
   discountAmountCents Int                  @default(0)
+  feeAmountCents      Int                  @default(0)
+  vatAmountCents      Int                  @default(0)
   discountCodeId      String?              @db.VarChar(191)
   discountReservation DiscountReservation?
   currency            String               @default("UGX") @db.VarChar(8)
@@ -835,6 +837,9 @@ model WithdrawalRequest {
   user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   pendingUserId String?   @unique
   amount        Int
+  transactionFee Int      @default(0)
+  serviceFee     Int      @default(0)
+  netAmount      Int      @default(0)
   currency      String    @default("UGX") @db.VarChar(8)
   method        String    @db.VarChar(24)
   details       Json

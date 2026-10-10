@@ -161,4 +161,61 @@ describe('WaliService member policies', () => {
       }),
     );
   });
+
+  it('creates a share link only for the saved pending recipient and binds its token to that recipient', async () => {
+    const link = {
+      id: 'link-1',
+      userId: 'member-1',
+      waliId: 'wali-1',
+      status: 'pending',
+      wali: { id: 'wali-1', email: 'wali@example.com' },
+    };
+    const prisma = {
+      appSetting: { findMany: jest.fn().mockResolvedValue([]) },
+      profile: {
+        findUnique: jest
+          .fn()
+          .mockResolvedValueOnce({ gender: 'female', waliEnabled: true })
+          .mockResolvedValueOnce({ waliEmail: 'WALI@example.com' }),
+      },
+      waliLink: {
+        findFirst: jest.fn().mockResolvedValue(link),
+        findUnique: jest.fn().mockResolvedValue({ ...link, waliId: 'wali-2' }),
+      },
+    };
+    const mail = {
+      buildWaliInvitationUrl: jest.fn(
+        (acceptToken: string, declineToken: string) =>
+          `https://api.example.com/wali/confirm/${acceptToken}?decline=${declineToken}`,
+      ),
+    };
+    const service = new WaliService(
+      prisma as unknown as PrismaService,
+      {} as RealtimeBus,
+      mail as unknown as MailService,
+      { get: jest.fn() } as unknown as ConfigService,
+    );
+
+    const result = await service.getShareableInvitation('member-1');
+    expect(result).toMatchObject({
+      status: 'pending',
+      recipientEmail: 'wali@example.com',
+      url: expect.stringContaining(
+        'https://api.example.com/wali/confirm/',
+      ),
+    });
+
+    const acceptToken = mail.buildWaliInvitationUrl.mock.calls[0][0];
+    const claims = JSON.parse(
+      Buffer.from(acceptToken.split('.')[0], 'base64url').toString('utf8'),
+    );
+    expect(claims).toMatchObject({
+      linkId: 'link-1',
+      waliId: 'wali-1',
+      action: 'accept',
+    });
+    await expect(
+      service.respondToToken(acceptToken, 'accept'),
+    ).rejects.toThrow('Invitation link is invalid or expired');
+  });
 });

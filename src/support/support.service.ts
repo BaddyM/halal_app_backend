@@ -261,8 +261,8 @@ export class SupportService {
               escalate: true,
             }
           : await this.ai.analyzeAndReply(
-              `Give concise, general app guidance about ${topic}.`,
-              { topic },
+              body,
+              { topic, scope: 'general app support' },
             );
     const unavailable =
       result.reply.toLowerCase().includes('ai is not configured') ||

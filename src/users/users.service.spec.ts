@@ -20,18 +20,25 @@ describe('UsersService subscription authorization', () => {
   });
 
   describe('UsersService discovery and pass behavior', () => {
-    it('does not persist a pass so the profile can be discovered again later', async () => {
+    it('records a true pass distinctly without affecting discovery eligibility', async () => {
       const prisma = {
         user: { findUnique: jest.fn().mockResolvedValue({ id: 'target' }) },
-        like: { deleteMany: jest.fn().mockResolvedValue({ count: 1 }) },
+        like: { upsert: jest.fn().mockResolvedValue({}) },
       };
       const service = serviceWith(prisma);
 
       await expect(
         service.likeProfile('viewer', { toUserId: 'target', type: 'pass' }),
       ).resolves.toEqual({ success: true, matched: false });
-      expect(prisma.like.deleteMany).toHaveBeenCalledWith({
-        where: { fromUserId: 'viewer', toUserId: 'target' },
+      expect(prisma.like.upsert).toHaveBeenCalledWith({
+        where: {
+          fromUserId_toUserId: {
+            fromUserId: 'viewer',
+            toUserId: 'target',
+          },
+        },
+        update: { type: 'pass' },
+        create: { fromUserId: 'viewer', toUserId: 'target', type: 'pass' },
       });
     });
 
@@ -65,6 +72,43 @@ describe('UsersService subscription authorization', () => {
         select: { toUserId: true },
       });
     });
+
+    it.each([
+      ['male', 'female'],
+      ['female', 'male'],
+    ])('restricts %s discovery to %s profiles and queries the full pool', async (viewerGender, expectedGender) => {
+      const prisma = {
+        user: {
+          findUnique: jest.fn().mockResolvedValue({
+            id: 'viewer',
+            plan: 'basic',
+            profile: { gender: viewerGender },
+          }),
+          findMany: jest.fn().mockResolvedValue([]),
+        },
+        like: { findMany: jest.fn().mockResolvedValue([]) },
+        block: { findMany: jest.fn().mockResolvedValue([]) },
+      };
+      const service = serviceWith(prisma);
+
+      await service.discover('viewer', {});
+
+      const query = prisma.user.findMany.mock.calls[0][0];
+      expect(query.where.profile.gender).toBe(expectedGender);
+      expect(query).not.toHaveProperty('take');
+    });
+  });
+
+  it('does not mark an incomplete onboarding submission as complete', async () => {
+    const prisma = { $transaction: jest.fn() };
+    const service = serviceWith(prisma);
+
+    await expect(
+      service.submitOnboarding('user-1', {
+        answers: [{ questionId: 'gender', answer: 'Sister' }],
+      }),
+    ).rejects.toThrow('Onboarding is incomplete');
+    expect(prisma.$transaction).not.toHaveBeenCalled();
   });
 
   describe('UsersService profile visibility', () => {

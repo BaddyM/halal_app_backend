@@ -476,6 +476,7 @@ export class UsersService implements OnModuleInit {
             isPhoneVerified: isSelf ? user.isPhoneVerified : undefined,
             likesUsedToday: isSelf ? user.likesUsedToday : undefined,
             activeChatsCount: isSelf ? user.activeChatsCount : undefined,
+            onboardingCompleted: isSelf ? user.onboardingCompleted : undefined,
             prayerTimesEnabled: isSelf ? user.prayerTimesEnabled : undefined,
             readReceiptsEnabled: isSelf ? user.readReceiptsEnabled : undefined,
             showOnlineStatus: isSelf ? user.showOnlineStatus : undefined,
@@ -1106,6 +1107,52 @@ export class UsersService implements OnModuleInit {
     async submitOnboarding(userId: string, dto: SubmitOnboardingDto) {
         if (!dto.answers?.length) throw new BadRequestException('No answers');
 
+        const answersById = new Map(dto.answers.map((answer) => [answer.questionId, answer.answer]));
+        const requiredQuestionIds = [
+            'gender',
+            'profession',
+            'age_range',
+            'prayer',
+            'sect',
+            'marriage_timeline',
+            'cultural_background',
+            'children',
+            'values',
+            'family_involvement',
+            'cultural_compatibility',
+            'intercultural_marriage',
+            'children_values',
+            'location_pref',
+        ];
+        const hasAnswer = (questionId: string) => {
+            const answer = answersById.get(questionId);
+            return Array.isArray(answer)
+                ? answer.length > 0
+                : typeof answer === 'string' && answer.trim().length > 0;
+        };
+        if (requiredQuestionIds.some((questionId) => !hasAnswer(questionId))) {
+            throw new BadRequestException('Onboarding is incomplete');
+        }
+        const genderAnswer = String(answersById.get('gender')).toLowerCase();
+        if (
+            !genderAnswer.startsWith('brother') &&
+            !genderAnswer.startsWith('sister')
+        ) {
+            throw new BadRequestException('Onboarding is incomplete');
+        }
+        if (
+            (genderAnswer.startsWith('sister') && !hasAnswer('hijab')) ||
+            (genderAnswer.startsWith('brother') && !hasAnswer('beard'))
+        ) {
+            throw new BadRequestException('Onboarding is incomplete');
+        }
+        if (
+            String(answersById.get('cultural_background')).toLowerCase() === 'ugandan' &&
+            !hasAnswer('ugandan_tribe')
+        ) {
+            throw new BadRequestException('Onboarding is incomplete');
+        }
+
         await this.prisma.$transaction(
             dto.answers.map((a) =>
                 this.prisma.onboardingAnswer.upsert({
@@ -1239,6 +1286,11 @@ export class UsersService implements OnModuleInit {
             await this.refreshIsComplete(userId);
         }
 
+        await this.prisma.user.update({
+            where: { id: userId },
+            data: { onboardingCompleted: true },
+        });
+
         // Dev affordance: in MODE=Dev, give every newly-onboarded user
         // a few "they liked you first" rows so the match flow is
         // immediately testable. Skipped silently in production.
@@ -1317,8 +1369,8 @@ export class UsersService implements OnModuleInit {
                   ? 'male'
                   : undefined;
 
-        // Likes stay hidden from discovery. Passes are not persisted, so they
-        // can appear again after the current deck is refreshed.
+        // Likes stay hidden from discovery. Passes remain a distinct recorded
+        // decision but do not exclude candidates from a refreshed deck.
         const alreadyActed = await this.prisma.like.findMany({
             where: { fromUserId: viewerId, type: { in: ['like', 'superLike'] } },
             select: { toUserId: true },
@@ -1392,6 +1444,10 @@ export class UsersService implements OnModuleInit {
         const page = q.page ?? 1;
         const limit = q.limit ?? 20;
 
+        if (!oppositeGender) {
+            return { total: 0, page, limit, results: [] };
+        }
+
         const candidates = await this.prisma.user.findMany({
             where,
             include: {
@@ -1399,7 +1455,6 @@ export class UsersService implements OnModuleInit {
                 onboardingAnswers: true,
                 photos: { orderBy: { position: 'asc' }, take: 5 },
             },
-            take: 200,
         });
 
         // Interests filter (ANY match). Stored as a Json array, so filtered
@@ -1431,10 +1486,14 @@ export class UsersService implements OnModuleInit {
                 return true;
             });
 
-        // Sort
+        // Randomize the entire eligible pool before pagination so repeated
+        // refreshes are not limited to a deterministic top-N database slice.
         const sortBy = q.sortBy ?? 'compatibility';
         if (sortBy === 'compatibility') {
-            scored.sort((a, b) => b.score - a.score);
+            for (let i = scored.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [scored[i], scored[j]] = [scored[j], scored[i]];
+            }
         } else if (sortBy === 'age') {
             scored.sort((a, b) => (a.age ?? 0) - (b.age ?? 0));
         } else if (sortBy === 'name') {
@@ -1604,8 +1663,19 @@ export class UsersService implements OnModuleInit {
         if (!target) throw new NotFoundException('Target user not found');
 
         if (dto.type === 'pass') {
-            await this.prisma.like.deleteMany({
-                where: { fromUserId: viewerId, toUserId: dto.toUserId },
+            await this.prisma.like.upsert({
+                where: {
+                    fromUserId_toUserId: {
+                        fromUserId: viewerId,
+                        toUserId: dto.toUserId,
+                    },
+                },
+                update: { type: 'pass' },
+                create: {
+                    fromUserId: viewerId,
+                    toUserId: dto.toUserId,
+                    type: 'pass',
+                },
             });
             return { success: true, matched: false };
         }
