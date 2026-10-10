@@ -162,6 +162,7 @@ model User {
   phoneVerificationStatus ManualVerificationStatus @default(notSubmitted)
   phoneVerificationReason String?
   isActive                Boolean                  @default(true)
+  onboardingCompleted     Boolean                  @default(false)
   failedLoginAttempts     Int                      @default(0)
   loginLockedUntil        DateTime?
 
