@@ -90,6 +90,13 @@ enum SubscriptionPlan {
   vip
 }
 
+enum ContactAccessRequestStatus {
+  pending
+  approved
+  declined
+  revoked
+}
+
 enum LikeType {
   like
   superLike
@@ -220,6 +227,8 @@ model User {
 
   photoRequestsMade     PhotoAccessRequest[] @relation("PhotoRequester")
   photoRequestsReceived PhotoAccessRequest[] @relation("PhotoOwner")
+  contactRequestsSent     ContactAccessRequest[] @relation("ContactRequester")
+  contactRequestsReceived ContactAccessRequest[] @relation("ContactRecipient")
 
   subscription         Subscription?
   transactions         Transaction[]
@@ -457,6 +466,24 @@ model PhotoAccessAudit {
   @@index([ownerId, createdAt])
   @@index([requesterId, createdAt])
   @@index([photoId, createdAt])
+}
+
+// Contact details are shared only while this explicit consent record remains approved.
+model ContactAccessRequest {
+  id          String                     @id @default(uuid())
+  requesterId String
+  recipientId String
+  status      ContactAccessRequestStatus @default(pending)
+  createdAt   DateTime                   @default(now())
+  decidedAt   DateTime?
+
+  requester User @relation("ContactRequester", fields: [requesterId], references: [id], onDelete: Cascade)
+  recipient User @relation("ContactRecipient", fields: [recipientId], references: [id], onDelete: Cascade)
+
+  // One request per pair prevents a declined request from being bypassed.
+  @@unique([requesterId, recipientId])
+  @@index([recipientId, status, createdAt])
+  @@index([requesterId, status, createdAt])
 }
 
 // ─────────────────────────────────────────────────────────────

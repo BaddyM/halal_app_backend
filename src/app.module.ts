@@ -32,6 +32,7 @@ import { VerificationModule } from './verification/verification.module';
 import { JourneyModule } from './journey/journey.module';
 import { LegalModule } from './legal/legal.module';
 import { AccountDeletionModule } from './account-deletion/account-deletion.module';
+import { ContactAccessModule } from './contact-access/contact-access.module';
 import { ScheduleModule } from '@nestjs/schedule';
 import { AuditInterceptor } from './admin/audit.interceptor';
 
@@ -75,6 +76,7 @@ import { AuditInterceptor } from './admin/audit.interceptor';
         JourneyModule,
         LegalModule,
         AccountDeletionModule,
+        ContactAccessModule,
     ],
     providers: [
         { provide: APP_GUARD, useClass: ThrottlerGuard },

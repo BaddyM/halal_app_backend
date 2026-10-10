@@ -1570,7 +1570,6 @@ export class UsersService implements OnModuleInit {
             details.reasons,
             access,
         );
-        if (matched && target.phone) payload.phone = target.phone;
         return payload;
     }
 
@@ -2040,6 +2039,16 @@ export class UsersService implements OnModuleInit {
                 data: grants.map((grant) => ({ ...grant, action: 'revoke' })),
             });
         }
+        await this.prisma.contactAccessRequest.updateMany({
+            where: {
+                OR: [
+                    { requesterId: blockerId, recipientId: targetId },
+                    { requesterId: targetId, recipientId: blockerId },
+                ],
+                status: { in: ['pending', 'approved'] },
+            },
+            data: { status: 'revoked', decidedAt: new Date() },
+        });
         return { success: true };
     }
 

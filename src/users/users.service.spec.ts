@@ -19,6 +19,42 @@ describe('UsersService subscription authorization', () => {
     ).rejects.toBeInstanceOf(ForbiddenException);
   });
 
+  describe('UsersService profile contact privacy', () => {
+    it('does not return a matched member phone number from their profile', async () => {
+      const target = {
+        id: 'target',
+        name: 'Member',
+        phone: '+256700000000',
+        profileVisibility: 'everyone',
+        plan: 'basic',
+        profile: { gender: 'female' },
+        photos: [],
+        onboardingAnswers: [],
+      };
+      const prisma = {
+        user: {
+          findUnique: jest
+            .fn()
+            .mockResolvedValueOnce({
+              id: 'viewer',
+              plan: 'basic',
+              profile: { gender: 'male' },
+            })
+            .mockResolvedValueOnce(target),
+          update: jest.fn().mockResolvedValue({ profileViews: 1 }),
+        },
+        block: { findMany: jest.fn().mockResolvedValue([]) },
+        match: { findUnique: jest.fn().mockResolvedValue({ id: 'match' }) },
+        photoAccessRequest: { findUnique: jest.fn().mockResolvedValue(null) },
+      };
+      const service = serviceWith(prisma);
+
+      const profile = await service.getProfileById('viewer', 'target');
+
+      expect(profile.phone).toBeUndefined();
+    });
+  });
+
   describe('UsersService discovery and pass behavior', () => {
     it('records a true pass distinctly without affecting discovery eligibility', async () => {
       const prisma = {
