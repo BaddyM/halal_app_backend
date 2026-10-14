@@ -45,8 +45,8 @@ export class AdminModerationService {
     return { pending, reviewed, resolved };
   }
 
-  /// Resolve/review/dismiss a report. On `resolved` the reporter is notified
-  /// (notification + inbox), per the dashboard→app control flow.
+  /// Update a report. Terminal outcomes notify the reporter (notification +
+  /// inbox), per the dashboard→app control flow.
   async resolve(reportId: string, status: string, note?: string) {
     const report = await this.prisma.report.findUnique({ where: { id: reportId } });
     if (!report) throw new NotFoundException('Report not found');
@@ -59,8 +59,14 @@ export class AdminModerationService {
       },
     });
 
-    if (status === 'resolved') {
-      await this.notifyReporter(report.reporterId, note);
+    if (status === 'resolved' || status === 'dismissed') {
+      await this.notifyReporter(
+        report.reporterId,
+        note ??
+          (status === 'dismissed'
+            ? 'Our team reviewed your report and closed it without further action.'
+            : 'Thank you for your report. Our team has reviewed it.'),
+      );
     }
     return { id: reportId, status };
   }
